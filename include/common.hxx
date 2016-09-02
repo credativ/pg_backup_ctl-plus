@@ -20,7 +20,7 @@ namespace credativ {
       errstr = errString;
     }
 
-    virtual ~CPGBackupCtlFailure() _NOEXCEPT {};
+    virtual ~CPGBackupCtlFailure() {};
 
     const char *what() const throw() {
       return errstr.c_str();
