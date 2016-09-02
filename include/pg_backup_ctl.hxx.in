@@ -1,0 +1,11 @@
+#ifndef __PGBACKUPCTL_H__
+#define __PGBACKUPCTL_H__
+
+/*
+ * Version numbers
+ */
+#define GITREV @GITREV@
+#define PG_BACKUP_CTL_MAJOR @PG_BACKUP_CTL_MAJOR@
+#define PG_BACKUP_CTL_MINOR @PG_BACKUP_CTL_MINOR@
+
+#endif
