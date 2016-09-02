@@ -11,6 +11,10 @@ set(CMAKE_BUILD_TYPE Debug)
 ## to force C++11
 ##
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+## looks like older cmake needs this, too:
+add_definitions(-std=c++11)
 
 ##
 ## Additional modules for CMake
@@ -61,7 +65,7 @@ endif (sqlite3_FOUND)
 ##
 ## We need Boost::filesystem
 ##
-find_package(Boost REQUIRED COMPONENTS filesystem)
+find_package(Boost REQUIRED COMPONENTS filesystem system)
 if (Boost_FOUND)
    include_directories(${Boost_INCLUDE_DIRS})
    message("linking Boost ${Boost_LIBRARIES}")
