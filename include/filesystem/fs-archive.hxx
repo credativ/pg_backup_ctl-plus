@@ -1,6 +1,8 @@
 #ifndef __FS_ARCHIVE__
 #define __FS_ARCHIVE__
 #include <boost/filesystem.hpp>
+#include <string>
+#include <unordered_map>
 
 #include <common.hxx>
 #include <BackupCatalog.hxx>
@@ -11,17 +13,43 @@ using namespace boost::filesystem;
 
 namespace credativ {
 
+  /*
+   * Base archive exception.
+   */
   class CArchiveIssue : public CPGBackupCtlFailure {
   public:
     CArchiveIssue(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
 
+  /*
+   * Class which represents a backup history file.
+   */
+  class BackupHistoryFile : protected CPGBackupCtlBase {
+  protected:
+    string backupLabel;
+    string minWalLocation;
+    string maxWalLocation;
+  public:
+    BackupHistoryFile(path historyFile) throw(CArchiveIssue);
+    virtual ~BackupHistoryFile();
+  };
+
+  /*
+   * Class for filesystem level access of the
+   * backup archive.
+   */
   class CPGBackupCtlFS : protected CPGBackupCtlBase {
 
   private:
     string archiveDir;
 
   protected:
+
+    /*
+     * Holds all backup history files read in
+     * by readBackupHistory()
+     */
+    
 
     /*
      * Reference to archive directory path.

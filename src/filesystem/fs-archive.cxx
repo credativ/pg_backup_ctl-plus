@@ -1,11 +1,15 @@
+#include <boost/range/adaptors.hpp>
 #include <boost/range/iterator_range.hpp>
+#include <boost/regex.hpp>
 #include <iostream>
 #include <string>
 #include <fs-archive.hxx>
 
 using namespace credativ;
 using namespace std;
+using namespace boost::adaptors;
 using namespace boost::filesystem;
+using boost::regex;
 
 CPGBackupCtlFS::CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue) {
 
@@ -34,13 +38,32 @@ int CPGBackupCtlFS::readBackupHistory() throw(CArchiveIssue) {
 
   int countBackups = 0;
   path logDir      = this->archivePath / "log";
+
+  const std::string target_path( this->archiveDir + "/log" );
+  const regex my_filter( "[0-9A-F].*.backup.*" );
+  boost::smatch what;
+
   /*
    * Open directory iterator, loop
-   * through the segment files and try to find
+   * through the segment files and try to filter out
    * any *.backup history files.
+   *
+   * XXX:
+   *
+   * This might be an expensive operation, since the
+   * log/ directory could have tons of segments files
    */
-  for (auto& entry : boost::make_iterator_range(directory_iterator(logDir), {}))
-    cout << entry << "\n";
+  for (auto& entry : boost::make_iterator_range(directory_iterator(logDir), {})) {
+
+    /* skip if not a regular file */
+    if (!is_regular_file(entry.status()))
+      continue;
+
+    if(regex_match(entry.path().filename().string(), what, my_filter)) {
+      countBackups++;
+    }
+
+  }
 
   return countBackups;
 }
@@ -89,4 +112,12 @@ bool CPGBackupCtlFS::checkArchiveDirectory() throw(CArchiveIssue) {
 
 void CPGBackupCtlFS::readArchiveDirectory() {
 
+}
+
+BackupHistoryFile::BackupHistoryFile(path historyFile) throw(CArchiveIssue) {
+
+}
+
+BackupHistoryFile::~BackupHistoryFile() {
+   
 }
