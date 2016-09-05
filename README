@@ -1,0 +1,34 @@
+pg_backup_ctl-plus is a rewrite of the old sophisticated pg_backup_ctl script.
+
+Compiling:
+
+Checkout the repository:
+
+$ git clone git@gitlab.credativ.com:bhe/pg_backup_ctl-plus.git
+$ cd pg_backup_ctl-plus
+$ mkdir build
+
+pg_backup_ctl++ currently depends on the following packages:
+
+- boost-system
+- boost-filesystem
+- boost-regex
+
+(yes, you don't have a nightmare, its true, we rely on boost)
+
+- libpopt
+
+If everything is present, type
+
+$ cd build
+$ cmake ..
+$ make
+
+...and have fun.
+
+Notes on OSX:
+
+Tested with MacPorts and AppleClang C++ compiler. Other compilers
+(especially the ones from MacPorts) aren't supported!.
+
+Linux: clang/g++ seem to work
