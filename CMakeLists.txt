@@ -65,7 +65,7 @@ endif (sqlite3_FOUND)
 ##
 ## We need Boost::filesystem
 ##
-find_package(Boost REQUIRED COMPONENTS filesystem system regex)
+find_package(Boost REQUIRED COMPONENTS regex filesystem system)
 if (Boost_FOUND)
    include_directories(${Boost_INCLUDE_DIRS})
    message("linking Boost ${Boost_LIBRARIES}")
