@@ -20,6 +20,8 @@ string CPGBackupCtlBase::getVersionString() {
 }
 
 string CPGBackupCtlBase::intToStr(int in) {
-  string result = static_cast<ostringstream*>( &(ostringstream() << in) )->str();
-  return result;
+  stringstream ss;
+  
+  ss << in;
+  return ss.str();
 }
