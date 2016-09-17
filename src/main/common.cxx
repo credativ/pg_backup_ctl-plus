@@ -55,7 +55,7 @@ void CPGBackupCtlBase::openFile(std::ifstream& file,
                                 boost::filesystem::path pathHandle,
                                 bool *compressed) {
 
-  filtering_istream/*<boost::iostreams::input>*/ unzipped;
+  filtering_istream unzipped;
   file.open(pathHandle.string(), std::ios_base::in | std::ios_base::binary);
 
   /*
@@ -79,7 +79,14 @@ void CPGBackupCtlBase::openFile(std::ifstream& file,
   }
 
   unzipped.push(file);
+
+  /*
+   * Note: boost::iostreams::copy needs
+   * a stringstream object, others won't work
+   * as expected.
+   */
   boost::iostreams::copy(unzipped, out);
+  file.close();
   
 }
 
