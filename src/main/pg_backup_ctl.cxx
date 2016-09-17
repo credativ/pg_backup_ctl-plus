@@ -22,10 +22,11 @@ typedef struct PGBackupCtlArgs {
   char *hostname;
   char *password;
   char *port;
-  char *archiveDir;
+  char *archiveDir; /* mandatory */
   char *restoreDir;
   char *relocatedTblspcDir;
   char *action;
+  char *catalogDir; /* mandatory or compiled in default */
   bool useCompression;
 } PGBackupCtlArgs;
 
@@ -62,6 +63,8 @@ static void processCmdLineArgs(int argc,
       &handle->archiveDir, 0, "Backup archive directory"},
     { "action", 'a', POPT_ARG_STRING,
       &handle->action, 0, "Backup action command"},
+    { "catalog", 'C', POPT_ARG_STRING,
+      &handle->catalogDir, 0, PG_BACKUP_CTL_SQLITE},
 
     POPT_AUTOHELP { NULL, 0, 0, NULL, 0 }
   };
@@ -97,6 +100,14 @@ static void executeCommand(PGBackupCtlArgs *args) {
   if (args->action == NULL)
     throw CArchiveIssue("no action specified (--action)");
 
+  /*
+   * Catalog required, if not use compiled in default.
+   */
+  if (args->catalogDir == NULL) {
+    cerr << "--catalog not specified, using " << PG_BACKUP_CTL_SQLITE << endl;
+    args->catalogDir = (char *)string(PG_BACKUP_CTL_SQLITE).c_str();
+  }
+
   if (strcmp(args->action, "init-old-archive") == 0) {
 
     /*
@@ -104,17 +115,48 @@ static void executeCommand(PGBackupCtlArgs *args) {
      */
     if (args->archiveDir == NULL)
       throw CArchiveIssue("no archive directory specified");
+
+    /*
+     * Open the sqlite3 database
+     */
+    BackupCatalog catalog = BackupCatalog(PG_BACKUP_CTL_SQLITE,
+                                          string(args->archiveDir));
+
     /*
      * Read the structure of the specified archive directory
      * and import it into the sqlite backup catalog. Please
-     * note that we check if an existing catalog is already registed
+     * note that we check if an existing catalog is already registered
      * with the same archive directory.
      */
     CPGBackupCtlFS fs = CPGBackupCtlFS(args->archiveDir);
 
     try {
       fs.checkArchiveDirectory();
+
+      /*
+       * Read in all backup history files from archive.
+       */
       fs.readBackupHistory();
+
+      /*
+       * Iterate through all history files found and get
+       * a CatalogDescr from it. Pass it down to the catalog to
+       * create a new backup entry.
+       */
+      for (auto it : fs.history) {
+        shared_ptr<BackupHistoryFile> file = it.second;
+
+#ifdef __DEBUG__
+        cerr << "backup found: " << file->getBackupLabel() 
+             << " stopped at " << file->getBackupStopTime() 
+             <<  endl;
+#endif
+
+        /*
+         * Try to get a catalog descriptor from this history file
+         */
+
+      }
     } catch (CArchiveIssue &e) {
       cerr << e.what() << "\n";
     }

@@ -13,6 +13,8 @@ pg_backup_ctl++ currently depends on the following packages:
 - boost-system
 - boost-filesystem
 - boost-regex
+- boost-date_time
+- boost-iostreams
 
 (yes, you don't have a nightmare, its true, we rely on boost)
 
@@ -24,11 +26,29 @@ $ cd build
 $ cmake ..
 $ make
 
-...and have fun.
-
 Notes on OSX:
 
 Tested with MacPorts and AppleClang C++ compiler. Other compilers
 (especially the ones from MacPorts) aren't supported!.
 
 Linux: clang/g++ seem to work
+
+If you want some debugging output information, use:
+
+$ CXXFLAGS="-D__DEBUG__" cmake ..
+
+Preparation steps:
+
+You need a sqlite3 database for the pg_backup_ctl++ catalog. If you don't
+want to use --catalog everytime, you can rely on a compiled in default.
+Currently this is hardwired to /home/bernd/.pg_backup_ctl.sqlite, which
+obviously won't work on other dev machines. To adjust that, simply
+edit the CMakeLists.txt and change the following line:
+
+set(PG_BACKUP_CTL_SQLITE "/home/bernd/.pg_backup_ctl.sqlite")
+
+Then prepare the database files:
+
+$ sqlite3 /your/sqlite/database < src/sql/catalog.sql
+
+...and have fun.

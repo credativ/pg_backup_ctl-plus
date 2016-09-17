@@ -2,7 +2,28 @@
 #include "pg_backup_ctl.hxx"
 #define __PGBACKUPCTL_COMMON__
 
+#include <boost/date_time.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <iostream>
+#include <fstream>
 #include <stdexcept>
+
+/*
+ * Maximum length of XLOG filename
+ *
+ * src/include/access/xlog_internal.h
+ */
+#define MAXXLOGFNAMELEN 25
+
+/*
+ * Max length of a backup label
+ *
+ * src/include/pg_config_manual.h
+ */
+#define MAXPGPATH 1024
 
 namespace credativ {
 
@@ -17,6 +38,10 @@ namespace credativ {
   public:
 
     CPGBackupCtlFailure(const char *errString) throw() : errstr() {
+      errstr = errString;
+    }
+
+    CPGBackupCtlFailure(std::string errString) throw() : errstr() {
       errstr = errString;
     }
 
@@ -46,6 +71,13 @@ namespace credativ {
 
     static std::string getVersionString();
     static std::string intToStr(int in);
+    static boost::posix_time::ptime ISO8601_strTo_ptime(std::string input);
+    static std::string ptime_to_str(boost::posix_time::ptime input);
+    static void openFile(std::ifstream& file,
+                         std::stringstream& out,
+                         boost::filesystem::path pathHandle,
+                         bool *compressed);
+    static void test();
   };
 
 }

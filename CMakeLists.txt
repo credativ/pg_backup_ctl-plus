@@ -7,6 +7,11 @@ project (pg_backup_ctl++)
 set(CMAKE_BUILD_TYPE Debug)
 
 ##
+## Compiled in sqlite catalog database filename.
+##
+set(PG_BACKUP_CTL_SQLITE "/home/bernd/.pg_backup_ctl.sqlite")
+
+##
 ## Not sure this is a good idea, but i want
 ## to force C++11
 ##
@@ -39,7 +44,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/")
 include_directories ("${PROJECT_SOURCE_DIR}/include/filesystem")
 include_directories ("${PROJECT_SOURCE_DIR}/include/catalog")
 add_executable (pg_backup_ctl++ src/main/pg_backup_ctl.cxx)
-add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archive.cxx)
+add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archive.cxx src/catalog/catalog.cxx)
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
 ##
@@ -65,7 +70,7 @@ endif (sqlite3_FOUND)
 ##
 ## We need Boost::filesystem
 ##
-find_package(Boost REQUIRED COMPONENTS regex filesystem system)
+find_package(Boost REQUIRED COMPONENTS regex filesystem system date_time iostreams)
 if (Boost_FOUND)
    include_directories(${Boost_INCLUDE_DIRS})
    message("linking Boost ${Boost_LIBRARIES}")

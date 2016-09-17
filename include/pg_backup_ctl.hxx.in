@@ -8,4 +8,9 @@
 #define PG_BACKUP_CTL_MAJOR @PG_BACKUP_CTL_MAJOR@
 #define PG_BACKUP_CTL_MINOR @PG_BACKUP_CTL_MINOR@
 
+/*
+ * Compiled in sqlite database file
+ */
+#define PG_BACKUP_CTL_SQLITE "@PG_BACKUP_CTL_SQLITE@"
+
 #endif

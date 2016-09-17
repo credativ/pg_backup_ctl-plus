@@ -10,8 +10,18 @@
 using namespace credativ;
 using namespace std;
 using namespace boost::filesystem;
+using namespace boost::posix_time;
 
 namespace credativ {
+
+  typedef struct XLOGLocation {
+    string startXLOG;
+    string stopXLOG;
+    unsigned int hi;
+    unsigned int lo;
+    bool segment_avail;
+  } XLOGLocation;
+
 
   /*
    * Base archive exception.
@@ -22,16 +32,57 @@ namespace credativ {
   };
 
   /*
+   * Base class for archive files
+   */
+  class BackupFile : public CPGBackupCtlBase {
+
+  protected:
+
+    bool compressed = false;
+    bool available = false;
+
+    /* boost::filesystem handle */
+    path   handle;
+
+  public:
+
+    BackupFile(path handle) throw(CArchiveIssue);
+    virtual ~BackupFile();
+
+    virtual void setAvailable(bool avail);
+    virtual void setCompressed(bool compressed);
+
+  };
+
+  /*
    * Class which represents a backup history file.
    */
-  class BackupHistoryFile : protected CPGBackupCtlBase {
+  class BackupHistoryFile : public BackupFile {
   protected:
+
+    XLOGLocation startLoc;
+    XLOGLocation stopLoc;
+    XLOGLocation chkPtLoc;
+
     string backupLabel;
-    string minWalLocation;
-    string maxWalLocation;
+    string backupMethod;
+    string backupFrom;
+
+    ptime backupStarted;
+    ptime backupStopped;
   public:
-    BackupHistoryFile(path historyFile) throw(CArchiveIssue);
+    BackupHistoryFile(path handle);
     virtual ~BackupHistoryFile();
+
+    virtual void read() throw(CArchiveIssue);
+    virtual string getBackupStartTime();
+    virtual string getBackupStopTime();
+    virtual void setBackupStopTime(string timeStr);
+    virtual void setBackupStartTime(string timeStr);
+    virtual string getBackupLabel();
+    virtual string getBackupMethod();
+    virtual string getBackupFrom();
+    virtual string getBackupHistoryFilename();
   };
 
   /*
@@ -46,12 +97,6 @@ namespace credativ {
   protected:
 
     /*
-     * Holds all backup history files read in
-     * by readBackupHistory()
-     */
-    
-
-    /*
      * Reference to archive directory path.
      */
     path archivePath;
@@ -64,10 +109,28 @@ namespace credativ {
 
   public:
     /*
+     * Holds BackupHistoryFile objects read in
+     * read by readBackupHistory().
+     */
+    unordered_map<std::string, shared_ptr<BackupHistoryFile>> history;
+
+    /*
      * C'tor, needs archive directory to be specified
      */
     CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue);
     virtual ~CPGBackupCtlFS();
+
+    /*
+     * Checks if the specified base backup exists
+     * in the archive.
+     */
+    virtual bool backupExists(string backupName);
+
+    /*
+     * Checks if the specified XLOG segments
+     * exists in the archive.
+     */
+    virtual bool XLOGSegmentExists(string xlogFile);
 
     /*
      * Returns the configure archive directory
@@ -76,9 +139,9 @@ namespace credativ {
 
     /*
      * Get a catalog descriptor from the given
-     * archive directory.
+     * BackupHistoryFile object
      */
-    virtual shared_ptr<CatalogDescr> getCatalogDescrFromArchive();
+    virtual shared_ptr<CatalogDescr> catalogDescrFromBackupHistoryFile(shared_ptr<BackupHistoryFile> file);
 
     /*
      * Check archive directory.
