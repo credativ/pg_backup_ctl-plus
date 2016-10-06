@@ -40,12 +40,13 @@ $ CXXFLAGS="-D__DEBUG__" cmake ..
 Preparation steps:
 
 You need a sqlite3 database for the pg_backup_ctl++ catalog. If you don't
-want to use --catalog everytime, you can rely on a compiled in default.
+want to use --catalog everytime, you can rely on a compiled-in default.
 Currently this is hardwired to /home/bernd/.pg_backup_ctl.sqlite, which
-obviously won't work on other dev machines. To adjust that, simply
-edit the CMakeLists.txt and change the following line:
+obviously won't work on other dev machines. To override this default, just
+pass your favorite path to cmake like this:
 
-set(PG_BACKUP_CTL_SQLITE "/home/bernd/.pg_backup_ctl.sqlite")
+$ cmake -DPG_BACKUP_CTL_SQLITE:FILEPATH=/Users/bernd/.pg_backup_ctl.sqlite ..
+$ make
 
 Then prepare the database files:
 
