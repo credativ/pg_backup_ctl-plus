@@ -110,6 +110,8 @@ static void executeCommand(PGBackupCtlArgs *args) {
 
   if (strcmp(args->action, "init-old-archive") == 0) {
 
+    bool is_new_archive = false;
+
     /*
      * Archive directory is mandatory
      */
@@ -123,12 +125,36 @@ static void executeCommand(PGBackupCtlArgs *args) {
                                           string(args->archiveDir));
 
     /*
+     * Start a transaction in the catalog database.
+     */
+    catalog.startTransaction();
+
+    /*
      * Read the structure of the specified archive directory
      * and import it into the sqlite backup catalog. Please
      * note that we check if an existing catalog is already registered
      * with the same archive directory.
      */
     CPGBackupCtlFS fs = CPGBackupCtlFS(args->archiveDir);
+    shared_ptr<CatalogDescr> descr = catalog.exists(args->archiveDir);
+
+    if (descr->id < 0) {
+
+      /*
+       * The specified archive directory is not yet
+       * registered in the catalog database. We can't create
+       * it immediately, since we need to know wether any compressed
+       * files are found (which is reflected in the catalog
+       * as well). So just remember this task for later action.
+       */
+      is_new_archive = true;
+
+      /*
+       * Set properties
+       */
+      descr->directory = args->archiveDir;
+      
+    }
 
     try {
       fs.checkArchiveDirectory();
@@ -152,13 +178,33 @@ static void executeCommand(PGBackupCtlArgs *args) {
              <<  endl;
 #endif
 
+        if (file->isCompressed()) {
+          cout << "found compressed backup history file "
+               << file->getBackupHistoryFilename() << endl;
+          descr->compressed = 1;
+        }
+
         /*
          * Try to get a catalog descriptor from this history file
+         * and remember it.
          */
+        fs.catalogDescrFromBackupHistoryFile(file);
 
       }
+
+      if (is_new_archive) {
+        catalog.createArchive(descr);
+        cout << "new archive dir " << args->archiveDir << " registered in catalog" << endl;
+      } else {
+        cout << "archive directory " << args->archiveDir << " updated" << endl;
+      }
+
+      /* Commit the catalog transaction and we're done */
+      catalog.commitTransaction();
+
     } catch (CArchiveIssue &e) {
       cerr << e.what() << "\n";
+      catalog.rollbackTransaction();
     }
   }
   else if (strcmp(args->action, "help") == 0) {

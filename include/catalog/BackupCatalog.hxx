@@ -27,13 +27,14 @@ namespace credativ {
     CatalogDescr() {};
     ~CatalogDescr() {};
 
-    string id = "";
+    int id = -1;
     string label;
     bool compression = false;
     string directory;
     string pghost = "";
     int    pgport = -1;
     string pguser = "";
+    string pgdatabase = "";
   };
 
   class BackupCatalog : protected CPGBackupCtlBase {
@@ -47,6 +48,29 @@ namespace credativ {
     BackupCatalog();
     BackupCatalog(string sqliteDB, string archiveDir) throw(CCatalogIssue);
     virtual ~BackupCatalog();
+
+    /*
+     * Rollback an existing catalog transaction.
+     */
+    virtual void rollbackTransaction() throw(CCatalogIssue);
+
+    /*
+     * Checks and locks an existing archive entry.
+     */
+    virtual shared_ptr<CatalogDescr> exists(std::string directory)
+      throw (CCatalogIssue);
+
+    /*
+     * Commits the current catalog transaction.
+     */
+    virtual void commitTransaction()
+      throw (CCatalogIssue);
+
+    /*
+     * Starts a transaction in the catalog database.
+     */
+    virtual void startTransaction()
+      throw (CCatalogIssue);
 
     /*
      * Set sqlite database filename.

@@ -52,6 +52,9 @@ namespace credativ {
     virtual void setAvailable(bool avail);
     virtual void setCompressed(bool compressed);
 
+    virtual bool isCompressed() { return this->compressed; };
+    virtual bool isAvailable() { return this->available; };
+
   };
 
   /*

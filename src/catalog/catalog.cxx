@@ -1,5 +1,6 @@
 #include <sstream>
 
+#include <catalog.hxx>
 #include <BackupCatalog.hxx>
 
 using namespace credativ;
@@ -30,6 +31,124 @@ BackupCatalog::BackupCatalog(string sqliteDB, string archiveDir) throw (CCatalog
   this->checkCatalog();
 }
 
+void BackupCatalog::startTransaction()
+  throw (CCatalogIssue) {
+
+  int rc;
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  rc = sqlite3_exec(this->db_handle,
+                    "BEGIN;",
+                    NULL,
+                    NULL,
+                    NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "error starting catalog transaction: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+}
+
+void BackupCatalog::commitTransaction() 
+  throw (CCatalogIssue) {
+
+  int rc;
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  rc = sqlite3_exec(this->db_handle,
+                    "COMMIT;",
+                    NULL, NULL, NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "error committing catalog transaction: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+}
+
+void BackupCatalog::rollbackTransaction()
+  throw(CCatalogIssue) {
+
+  int rc;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  rc = sqlite3_exec(this->db_handle,
+                    "ROLLBACK;",
+                    NULL, NULL, NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "error rollback catalog transaction: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+}
+
+shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
+  throw(CCatalogIssue) {
+
+  sqlite3_stmt *stmt;
+  int rc;
+  shared_ptr<CatalogDescr> result = make_shared<CatalogDescr>();
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  /*
+   * Check for the specified directory. Note that SQLite3 here
+   * uses filesystem locking, so we can't just do row-level
+   * locking on our own.
+   */
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "SELECT * FROM archive WHERE directory = ?1;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  sqlite3_bind_text(stmt, 1, directory.c_str(), -1, SQLITE_STATIC);
+
+  /* ... perform SELECT */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* ... empty result set or single row expected */
+  while (rc == SQLITE_ROW && rc != SQLITE_DONE) {
+
+    /*
+     * Save archive properties into catalog
+     * descriptor
+     */
+    result->id = sqlite3_column_int(stmt, SQL_ARCHIVE_ID_ATTNO);
+    result->directory = directory;
+    result->compression = sqlite3_column_int(stmt, SQL_ARCHIVE_COMPRESSION_ATTNO);
+    result->pghost = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO);
+    result->pgport = sqlite3_column_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO);
+    result->pguser = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO);
+    result->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
+  }
+
+  sqlite3_finalize(stmt);
+
+  /* Everything >= 0 means valid dataset */
+  return result;
+
+}
+
 void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
   throw (CCatalogIssue) {
 
@@ -44,11 +163,18 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
                           -1,
                           &stmt,
                           NULL);
-  sqlite3_bind_text(stmt, 1, descr->directory.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 2, descr->compression);
-  sqlite3_bind_text(stmt, 3, descr->pghost.c_str(), -1 , SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 4, descr->pgport);
-  sqlite3_bind_text(stmt, 5, descr->pguser.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, SQL_ARCHIVE_DIRECTORY_ATTNO,
+                    descr->directory.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, SQL_ARCHIVE_COMPRESSION_ATTNO,
+                   descr->compression);
+  sqlite3_bind_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO,
+                    descr->pghost.c_str(), -1 , SQLITE_STATIC);
+  sqlite3_bind_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO,
+                   descr->pgport);
+  sqlite3_bind_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO,
+                    descr->pguser.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO,
+                    descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
 
