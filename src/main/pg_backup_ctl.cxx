@@ -181,7 +181,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
         if (file->isCompressed()) {
           cout << "found compressed backup history file "
                << file->getBackupHistoryFilename() << endl;
-          descr->compressed = 1;
+          descr->compression = 1;
         }
 
         /*
