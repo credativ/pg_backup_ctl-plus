@@ -136,10 +136,20 @@ shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
     result->id = sqlite3_column_int(stmt, SQL_ARCHIVE_ID_ATTNO);
     result->directory = directory;
     result->compression = sqlite3_column_int(stmt, SQL_ARCHIVE_COMPRESSION_ATTNO);
-    result->pghost = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO);
+
+    if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGHOST_ATTNO) != SQLITE_NULL)
+      result->pghost = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO);
+
     result->pgport = sqlite3_column_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO);
-    result->pguser = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO);
-    result->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
+
+    if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGUSER_ATTNO) != SQLITE_NULL)
+      result->pguser = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO);
+
+    if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO) != SQLITE_NULL)
+      result->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
+
+
+    rc = sqlite3_step(stmt);
   }
 
   sqlite3_finalize(stmt);

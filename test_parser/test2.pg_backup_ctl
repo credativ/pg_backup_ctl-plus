@@ -1,0 +1,4 @@
+CREATE ARCHIVE 
+DIRECTORY /etc/test2/bla
+PGHOST localhost
+PGDATABASE test

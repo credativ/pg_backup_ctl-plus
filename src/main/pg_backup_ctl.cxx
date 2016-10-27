@@ -11,6 +11,7 @@
 #include <pg_backup_ctl.hxx>
 #include <common.hxx>
 #include <fs-archive.hxx>
+#include <parser.hxx>
 
 using namespace credativ;
 using namespace std;
@@ -26,6 +27,7 @@ typedef struct PGBackupCtlArgs {
   char *restoreDir;
   char *relocatedTblspcDir;
   char *action;
+  char *actionFile; /* commands read from file */
   char *catalogDir; /* mandatory or compiled in default */
   bool useCompression;
 } PGBackupCtlArgs;
@@ -65,6 +67,8 @@ static void processCmdLineArgs(int argc,
       &handle->action, 0, "Backup action command"},
     { "catalog", 'C', POPT_ARG_STRING,
       &handle->catalogDir, 0, PG_BACKUP_CTL_SQLITE},
+    { "action-file", 'F', POPT_ARG_STRING,
+      &handle->actionFile, 0, "command file"},
 
     POPT_AUTOHELP { NULL, 0, 0, NULL, 0 }
   };
@@ -93,12 +97,6 @@ static void processCmdLineArgs(int argc,
 }
 
 static void executeCommand(PGBackupCtlArgs *args) {
-
-  /*
-   * Empty action not allowed
-   */
-  if (args->action == NULL)
-    throw CArchiveIssue("no action specified (--action)");
 
   /*
    * Catalog required, if not use compiled in default.
@@ -232,11 +230,37 @@ int main(int argc, const char **argv) {
     processCmdLineArgs(argc, argv, &args);
 
     /*
+     * Iff --action and --action-file are specified concurrently, throw
+     * an error.
+     */
+    if ((args.action != NULL)
+        && (args.actionFile != NULL)) {
+      throw CArchiveIssue("--action and --action-file cannot be specified concurrently");
+    }
+
+    /*
+     * Either --action or --action-file is required
+     */
+    if ((args.action == NULL) && (args.actionFile == NULL))
+      throw CArchiveIssue("either --action or --action-file command line option is required");
+
+    /*
      * All required command line arguments read, proceed ...
      * This is also the main entry point into
      * the backup machinery.
+     *
+     * We support action commands directly passed to
+     * the program and a small grammar automating certain
+     * tasks. It doesn't make sense to parse them equally,
+     * so check them separately...
      */
-    executeCommand(&args);
+    if (args.action != NULL)
+      executeCommand(&args);
+
+    if (args.actionFile != NULL) {
+      PGBackupCtlParser parser(path(args.actionFile));
+      parser.parseFile();
+    }
   }
   catch (exception& e) {
     cerr << e.what() << "\n";

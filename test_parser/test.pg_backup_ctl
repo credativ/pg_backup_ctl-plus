@@ -1,0 +1,1 @@
+CREATE ARCHIVE /etc/blabla { PGHOST 127.0.0.1 } ;
