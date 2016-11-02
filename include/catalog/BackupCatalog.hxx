@@ -28,6 +28,7 @@ namespace credativ {
     ~CatalogDescr() {};
 
     int id = -1;
+    string archive_name = "";
     string label;
     bool compression = false;
     string directory;

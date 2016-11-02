@@ -17,12 +17,12 @@ PGBackupCtlCommand::~PGBackupCtlCommand() {
 
 }
 
-PGBackupCtlParser::PGBackupCtlParser(std::stringstream& in) {
-
+bool PGBackupCtlCommand::propertyMissing(std::string key) {
+  return (this->properties.find(key) == this->properties.end());
 }
 
-PGBackupCtlParser::PGBackupCtlParser(std::string in) {
-
+PGBackupCtlParser::PGBackupCtlParser() {
+  this->command = make_shared<PGBackupCtlCommand>(EMPTY_CMD);
 }
 
 PGBackupCtlParser::PGBackupCtlParser(path sourceFile) {
@@ -36,8 +36,9 @@ PGBackupCtlParser::~PGBackupCtlParser() {
 
 }
 
-void PGBackupCtlParser::parseArchiveCommand(boost::tokenizer<boost::char_separator<char>> tokens) {
+void PGBackupCtlParser::saveCommandProperty(std::string key, std::string value) {
 
+  this->command->properties.insert(make_pair(key, value));
 
 }
 
@@ -59,10 +60,16 @@ void PGBackupCtlParser::parseLine(std::string line) {
 
       if (boost::iequals(t, "CREATE")) {
         this->command->tag = CREATE_CMD;
+
       } else if (boost::iequals(t, "DROP")) {
         this->command->tag = DROP_CMD;
+
       } else if (boost::iequals(t, "LIST")) {
         this->command->tag = LIST_CMD;
+
+      } else if (boost::iequals(t, "ALTER")) {
+        this->command->tag = ALTER_CMD;
+
       } else if (boost::iequals(t, "ARCHIVE")
                  && (this->command->tag != EMPTY_CMD)) {
 
@@ -76,6 +83,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
       else if (boost::iequals(t, "BASEBACKUP")
                && (this->command->tag != EMPTY_CMD)) {
         this->command->propTag = PROPERTY_BASEBACKUP_START;
+
       } else {
         ostringstream oss;
         oss << "unexpected token: \"" << t << "\"";
@@ -168,6 +176,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
 
       /* we want a directory name */
       std::cout << "NAME property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("NAME", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
 
     }
@@ -176,6 +185,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
                  || (this->command->propTag == PROPERTY_BASEBACKUP_ARCHIVE_NAME)) {
       /* we want a directory name */
       std::cout << "NAME property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("NAME", t);
       this->command->propTag = PROPERTY_BASEBACKUP_START;
     }
 
@@ -183,6 +193,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
              && (this->command->propTag == PROPERTY_ARCHIVE_DIRECTORY)) {
       /* we want a directory name */
       std::cout << "DIRECTORY property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("DIRECTORY", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
@@ -190,6 +201,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
              && (this->command->propTag == PROPERTY_ARCHIVE_PGUSER)) {
       /* we want a directory name */
       std::cout << "PGUSER property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("PGUSER", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
@@ -197,6 +209,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
              && (this->command->propTag == PROPERTY_ARCHIVE_PGDATABASE)) {
       /* we want a directory name */
       std::cout << "PGDATABASE property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("PGDATABASE", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
@@ -204,8 +217,40 @@ void PGBackupCtlParser::parseLine(std::string line) {
              && (this->command->propTag == PROPERTY_ARCHIVE_PGHOST)) {
       /* we want a directory name */
       std::cout << "PGHOST property: \"" << t << "\"" << std::endl;
+      this->saveCommandProperty("PGHOST", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
+  } /* for */
+
+  /*
+   * Check mandatory properties
+   */
+  this->checkMandatoryProperties();
+}
+
+void PGBackupCtlParser::checkMandatoryProperties()
+  throw(CParserIssue) {
+
+  switch (this->command->propTag) {
+
+  case PROPERTY_ARCHIVE_START: {
+    switch (this->command->tag) {
+    case CREATE_CMD: {
+      /* CREATE ARCHIVE command ... */
+      if (this->command->propertyMissing("NAME"))
+         throw CParserIssue("missing command property \"NAME\"");
+      break;
+    }
+    case LIST_CMD:
+    case DROP_CMD:
+    case ALTER_CMD:
+    default:
+      throw CParserIssue("unexpected parser command");
+    }
+    break;
+  }
+  default:
+    throw CParserIssue("unexpected parser command");
   }
 }
 

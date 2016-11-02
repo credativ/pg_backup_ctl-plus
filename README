@@ -19,6 +19,7 @@ pg_backup_ctl++ currently depends on the following packages:
 (yes, you don't have a nightmare, its true, we rely on boost)
 
 - libpopt
+- libreadline
 
 If everything is present, type
 

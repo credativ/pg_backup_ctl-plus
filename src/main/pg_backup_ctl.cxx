@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <popt.h>
+#include <readline/readline.h>
 
 #include <pg_backup_ctl.hxx>
 #include <common.hxx>
@@ -24,6 +25,7 @@ typedef struct PGBackupCtlArgs {
   char *password;
   char *port;
   char *archiveDir; /* mandatory */
+  char *archive_name; /* mandatory for importing/creating archives */
   char *restoreDir;
   char *relocatedTblspcDir;
   char *action;
@@ -65,6 +67,8 @@ static void processCmdLineArgs(int argc,
       &handle->archiveDir, 0, "Backup archive directory"},
     { "action", 'a', POPT_ARG_STRING,
       &handle->action, 0, "Backup action command"},
+    { "archive-name", 'N', POPT_ARG_STRING,
+      &handle->archive_name, 0, "Name of the archive" },
     { "catalog", 'C', POPT_ARG_STRING,
       &handle->catalogDir, 0, PG_BACKUP_CTL_SQLITE},
     { "action-file", 'F', POPT_ARG_STRING,
@@ -96,6 +100,12 @@ static void processCmdLineArgs(int argc,
   }
 }
 
+static void handle_interactive(std::string in) {
+  PGBackupCtlParser parser;
+
+  parser.parseLine(in);
+}
+
 static void executeCommand(PGBackupCtlArgs *args) {
 
   /*
@@ -115,6 +125,12 @@ static void executeCommand(PGBackupCtlArgs *args) {
      */
     if (args->archiveDir == NULL)
       throw CArchiveIssue("no archive directory specified");
+
+    /*
+     * init-old-archive requires a name.
+     */
+    if (args->archive_name == NULL)
+      throw CArchiveIssue("--archive-name is mandatory for --init-old-archive");
 
     /*
      * Open the sqlite3 database
@@ -151,6 +167,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
        * Set properties
        */
       descr->directory = args->archiveDir;
+      descr->archive_name = args->archive_name;
       
     }
 
@@ -222,6 +239,7 @@ int main(int argc, const char **argv) {
 
   shared_ptr<CPGBackupCtlBase> backup = make_shared<CPGBackupCtlBase>();
   PGBackupCtlArgs args;
+  char            *cmd_str;
 
   try {
     /*
@@ -239,12 +257,6 @@ int main(int argc, const char **argv) {
     }
 
     /*
-     * Either --action or --action-file is required
-     */
-    if ((args.action == NULL) && (args.actionFile == NULL))
-      throw CArchiveIssue("either --action or --action-file command line option is required");
-
-    /*
      * All required command line arguments read, proceed ...
      * This is also the main entry point into
      * the backup machinery.
@@ -253,14 +265,24 @@ int main(int argc, const char **argv) {
      * the program and a small grammar automating certain
      * tasks. It doesn't make sense to parse them equally,
      * so check them separately...
+     * 
+     * NOTE: --action has precedence over all others.
+     *       Then --action-file and interactive command
+     *       line processing via readline.
      */
-    if (args.action != NULL)
+    if (args.action != NULL) {
       executeCommand(&args);
+      exit(0);
+    }
 
     if (args.actionFile != NULL) {
       PGBackupCtlParser parser(path(args.actionFile));
       parser.parseFile();
+      exit(0);
     }
+
+    cmd_str = readline("pg_backup_ctl++> ");
+    handle_interactive(string(cmd_str));
   }
   catch (exception& e) {
     cerr << e.what() << "\n";

@@ -319,13 +319,6 @@ void BackupHistoryFile::read() throw(CArchiveIssue) {
       }
     }
 
-    /*
-     * If the file was opened directly (e.g.
-     * it doesn't need to be decompressed), we don't
-     * want to leak it...
-     */
-    //hfile->close();
-
   } catch(exception &e) {
     /* rethrow as CArchiveIssue */
     throw CArchiveIssue(e.what());

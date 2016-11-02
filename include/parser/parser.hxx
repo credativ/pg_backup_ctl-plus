@@ -6,6 +6,7 @@
 #include <parser.hxx>
 
 #include <iostream>
+#include <unordered_map>
 #include <boost/heap/binomial_heap.hpp>
 #include <boost/filesystem.hpp>
 
@@ -18,6 +19,7 @@ namespace credativ {
     CREATE_CMD,
     DROP_CMD,
     LIST_CMD,
+    ALTER_CMD,
     CLEANUP_CMD } CmdToken;
 
   typedef enum {
@@ -54,9 +56,12 @@ namespace credativ {
   public:
     CmdToken tag;
     CmdPropertyToken propTag;
+    std::unordered_map<std::string, std::string> properties;
 
     PGBackupCtlCommand(CmdToken tag);
     virtual ~PGBackupCtlCommand();
+
+    virtual bool propertyMissing(std::string key);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {
@@ -64,15 +69,15 @@ namespace credativ {
     boost::filesystem::path sourceFile;
     std::shared_ptr<PGBackupCtlCommand> command;
 
-    void parseArchiveCommand(boost::tokenizer<boost::char_separator<char>> tokens);
+    virtual void saveCommandProperty(std::string key, std::string value);
+    virtual void checkMandatoryProperties() throw(CParserIssue);
+
   public:
 
     /*
-     * Public c'tor. Reads in the specified file into
-     * a private string stream.
+     * Public c'tors.
      */
-    PGBackupCtlParser(std::stringstream& in);
-    PGBackupCtlParser(std::string in);
+    PGBackupCtlParser();
     PGBackupCtlParser(boost::filesystem::path sourceFile);
     virtual ~PGBackupCtlParser();
 

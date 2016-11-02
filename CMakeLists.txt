@@ -51,6 +51,17 @@ add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archiv
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
 ##
+## We need readline
+##
+find_package (readline REQUIRED)
+if (readline_FOUND)
+  include_directories(${readline_INCLUDE_DIRS})
+  message("linking libreadline ${readline_LIBRARIES}")
+  target_link_libraries (pg_backup_ctl++ ${readline_LIBRARIES})
+endif (readline_FOUND)
+
+
+##
 ## We need popt
 ##
 find_package (popt REQUIRED)

@@ -148,6 +148,8 @@ shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
     if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO) != SQLITE_NULL)
       result->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
 
+    if (sqlite3_column_type(stmt, SQL_ARCHIVE_NAME_ATTNO) != SQLITE_NULL)
+      result->archive_name = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_NAME_ATTNO);
 
     rc = sqlite3_step(stmt);
   }
@@ -169,7 +171,7 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
     throw CCatalogIssue("catalog database not opened");
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO archive(directory, compression, pghost, pgport, pguser) VALUES (?1, ?2, ?3, ?4, ?5);",
+                          "INSERT INTO archive(name, directory, compression, pghost, pgport, pguser) VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
                           -1,
                           &stmt,
                           NULL);
@@ -185,6 +187,8 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
                     descr->pguser.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO,
                     descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, SQL_ARCHIVE_NAME_ATTNO,
+                    descr->archive_name.c_str(), -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
 
