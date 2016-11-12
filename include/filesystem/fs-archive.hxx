@@ -29,6 +29,7 @@ namespace credativ {
   class CArchiveIssue : public CPGBackupCtlFailure {
   public:
     CArchiveIssue(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
+    CArchiveIssue(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
 
   /*

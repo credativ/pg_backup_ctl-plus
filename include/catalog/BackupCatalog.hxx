@@ -4,9 +4,21 @@
 #include <sqlite3.h>
 
 #include <common.hxx>
+
 using namespace std;
 
 namespace credativ {
+
+  /*
+   * Defines flags to characterize the
+   * action defined by a catalog descriptor.
+   */
+  typedef enum {
+    EMPTY_DESCR = -1,
+    CREATE_ARCHIVE,
+    DROP_ARCHIVE,
+    LIST_ARCHIVE
+  } CatalogTag;
 
   /*
    * Base catalog exception.
@@ -24,9 +36,10 @@ namespace credativ {
    */
   class CatalogDescr : protected CPGBackupCtlBase {
   public:
-    CatalogDescr() {};
+    CatalogDescr() { tag = EMPTY_DESCR; };
     ~CatalogDescr() {};
 
+    CatalogTag tag;
     int id = -1;
     string archive_name = "";
     string label;
@@ -36,6 +49,8 @@ namespace credativ {
     int    pgport = -1;
     string pguser = "";
     string pgdatabase = "";
+
+    CatalogDescr& operator=(CatalogDescr source);
   };
 
   class BackupCatalog : protected CPGBackupCtlBase {
@@ -49,6 +64,42 @@ namespace credativ {
     BackupCatalog();
     BackupCatalog(string sqliteDB, string archiveDir) throw(CCatalogIssue);
     virtual ~BackupCatalog();
+
+    /*
+     * Map col id to string.
+     */
+
+    /*
+     * Keep indexes in sync with macros from include/catalog/catalog.hxx !!
+     */
+
+    /* archive table */
+    static std::vector<std::string> archiveCatalogCols;
+
+    /* backup table */
+    static std::vector<std::string> backupCatalogCols;
+
+    /*
+     * This method maps col IDs from the specified
+     * catalog entity to its string name.
+     */
+    static string mapAttributeId(int catalogEntity,
+                                 int colId);
+
+    /*
+     * Returns a col=? string suitable to be used
+     * in an dynamically generated UPDATE SQL command.
+     */
+    static string SQLgetUpdateColumnTarget(int catalogEntity, int colId);
+
+    /*
+     * Bind affected archive attribute values to the given SQLite3
+     * stmt handle.
+     */
+    int SQLbindArchiveAttributes(std::shared_ptr<CatalogDescr> descr,
+                                 std::vector<int> affectedAttributes,
+                                 sqlite3_stmt *stmt)
+      throw(CCatalogIssue);
 
     /*
      * Rollback an existing catalog transaction.
@@ -98,6 +149,13 @@ namespace credativ {
      * in the catalog database.
      */
     virtual bool tableExists(string tableName) throw(CCatalogIssue);
+
+    /*
+     * Update archive attributes.
+     */
+    virtual void updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
+                                         std::vector<int> affectedAttributes)
+      throw (CCatalogIssue);
 
     /*
      * Creates a new archive entry in the catalog database.

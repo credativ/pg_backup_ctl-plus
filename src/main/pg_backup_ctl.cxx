@@ -100,21 +100,45 @@ static void processCmdLineArgs(int argc,
   }
 }
 
-static void handle_interactive(std::string in) {
+/*
+ * Entry point for interactive commands.
+ */
+static void handle_interactive(std::string in,
+                               PGBackupCtlArgs *args) {
   PGBackupCtlParser parser;
+  shared_ptr<PGBackupCtlCommand> command;
 
   parser.parseLine(in);
+
+  /*
+   * Parser should have created a valid
+   * command handle, suitable to be executed within
+   * the current catalog.
+   */
+  command = parser.getCommand();
+  command->execute(string(args->catalogDir));
+}
+
+static void handle_inputfile(PGBackupCtlArgs *args) {
+
+  PGBackupCtlParser parser(path(string(args->actionFile)));
+  shared_ptr<PGBackupCtlCommand> command;
+
+  /*
+   * Read in the file.
+   */
+  parser.parseFile();  
+
+  /*
+   * Parser should have created a valid
+   * command handle, suitable to be executed within
+   * the current catalog.
+   */
+  command = parser.getCommand();
+  command->execute(string(args->catalogDir));
 }
 
 static void executeCommand(PGBackupCtlArgs *args) {
-
-  /*
-   * Catalog required, if not use compiled in default.
-   */
-  if (args->catalogDir == NULL) {
-    cerr << "--catalog not specified, using " << PG_BACKUP_CTL_SQLITE << endl;
-    args->catalogDir = (char *)string(PG_BACKUP_CTL_SQLITE).c_str();
-  }
 
   if (strcmp(args->action, "init-old-archive") == 0) {
 
@@ -135,7 +159,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
     /*
      * Open the sqlite3 database
      */
-    BackupCatalog catalog = BackupCatalog(PG_BACKUP_CTL_SQLITE,
+    BackupCatalog catalog = BackupCatalog(string(args->catalogDir),
                                           string(args->archiveDir));
 
     /*
@@ -248,6 +272,19 @@ int main(int argc, const char **argv) {
     processCmdLineArgs(argc, argv, &args);
 
     /*
+     * Catalog required, if not use compiled in default.
+     */
+    if (args.catalogDir == NULL) {
+      /*
+       * We use a dynamically allocated string object here,
+       * since this needs to live through our while
+       * program lifetime.
+       */
+      args.catalogDir = (char *)(new string(PG_BACKUP_CTL_SQLITE))->c_str();
+      cerr << "--catalog not specified, using " << args.catalogDir << endl;
+    }
+
+    /*
      * Iff --action and --action-file are specified concurrently, throw
      * an error.
      */
@@ -276,13 +313,18 @@ int main(int argc, const char **argv) {
     }
 
     if (args.actionFile != NULL) {
-      PGBackupCtlParser parser(path(args.actionFile));
-      parser.parseFile();
+      handle_inputfile(&args);
       exit(0);
     }
 
-    cmd_str = readline("pg_backup_ctl++> ");
-    handle_interactive(string(cmd_str));
+    cerr << "catalog " << args.catalogDir << endl;
+    while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
+      handle_interactive(string(cmd_str), &args);
+      free(cmd_str);
+    }
+
+    exit(0);
+
   }
   catch (exception& e) {
     cerr << e.what() << "\n";

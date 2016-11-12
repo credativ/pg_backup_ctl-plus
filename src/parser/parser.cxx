@@ -1,3 +1,6 @@
+#include <BackupCatalog.hxx>
+#include <catalog.hxx>
+#include <commands.hxx>
 #include <parser.hxx>
 
 #include <iostream>
@@ -21,6 +24,169 @@ bool PGBackupCtlCommand::propertyMissing(std::string key) {
   return (this->properties.find(key) == this->properties.end());
 }
 
+void PGBackupCtlCommand::execute(std::string catalogDir) {
+
+  shared_ptr<CatalogDescr> descr(nullptr);
+
+  /*
+   * We don't execute uninitialized command
+   * handles, but also don't throw an error
+   * (we consider an empty command just as no-op).
+   */
+  if (this->tag == EMPTY_CMD)
+    return;
+
+  /*
+   * First at all we need to create a catalog descriptor
+   * which will then support initializing the backup catalog.
+   */
+  descr = this->getExecutableDescr();
+
+  /*
+   * Now establish the catalog instance.
+   */
+  shared_ptr<BackupCatalog> catalog 
+    = make_shared<BackupCatalog>(catalogDir, descr->directory);
+
+  try {
+
+    BaseCatalogCommand *execCmd;
+
+    /*
+     * Must cast to derived class.
+     */
+    execCmd = dynamic_cast<BaseCatalogCommand*>(descr.get());
+    execCmd->setCatalog(catalog);
+    execCmd->execute(true);
+
+    /*
+     * And we're done...
+     */
+    
+    catalog->close();
+  } catch (exception &e) {
+    /*
+     * Don't suppress any exceptions from here, but
+     * make sure, we close the catalog safely.
+     */
+    if (catalog->available())
+      catalog->close();
+    throw e;
+  }  
+}
+
+shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
+
+  shared_ptr<BaseCatalogCommand> result(nullptr);
+
+  if (this->tag == EMPTY_CMD)
+    return result;
+
+  switch (this->propTag) {
+
+  case PROPERTY_ARCHIVE_START: {
+    switch (this->tag) {
+    case CREATE_CMD: {
+
+      /* CREATE ARCHIVE command ... */
+      result = make_shared<CreateArchiveCatalogCommand>();
+
+      if (this->propertyMissing("NAME"))
+         throw CParserIssue("missing command property \"NAME\"");
+      else {
+        result->archive_name = this->getPropertyString("NAME");
+        result->pushAffectedAttribute(SQL_ARCHIVE_NAME_ATTNO);
+      }
+
+      if (this->propertyMissing("DIRECTORY"))
+        throw CParserIssue("missing command property \"DIRECTORY\"");
+      else {
+        result->directory = this->getPropertyString("DIRECTORY");
+        result->pushAffectedAttribute(SQL_ARCHIVE_DIRECTORY_ATTNO);
+      }
+
+      if (this->propertyMissing("PGHOST"))
+        throw CParserIssue("missing command property \"PGHOST\"");
+      else {
+        result->pghost = this->getPropertyString("PGHOST");
+        result->pushAffectedAttribute(SQL_ARCHIVE_PGHOST_ATTNO);
+      }
+
+      if (this->propertyMissing("PGPORT"))
+        throw CParserIssue("missing command property \"PGPORT\"");
+      else {
+        result->pgport = this->getPropertyInt("PGPORT");
+        result->pushAffectedAttribute(SQL_ARCHIVE_PGPORT_ATTNO);
+      }
+
+      if (this->propertyMissing("PGDATABASE"))
+        throw CParserIssue("missing command property \"PGDATABASE\"");
+      else {
+        result->pgdatabase = this->getPropertyString("PGDATABASE");
+        result->pushAffectedAttribute(SQL_ARCHIVE_PGDATABASE_ATTNO);
+      }
+
+      if (this->propertyMissing("PGUSER"))
+        throw CParserIssue("missing command property \"PGUSER\"");
+      else {
+        result->pguser = this->getPropertyString("PGUSER");
+        result->pushAffectedAttribute(SQL_ARCHIVE_PGUSER_ATTNO);
+      }
+
+      /*
+       * mark the descriptor according to parsed action.
+       */
+      result->tag = CREATE_ARCHIVE;
+      break;
+
+    }
+    case LIST_CMD:
+    case DROP_CMD:
+    case ALTER_CMD:
+    default:
+      ostringstream oss;
+      oss << "unexpected parser command \"" << this->tag << "\"";
+      throw CParserIssue(oss.str());
+    }
+    break;
+  }
+  default:
+    throw CParserIssue("unexpected parser command");
+  }  
+
+  return result;
+}
+
+int PGBackupCtlCommand::getPropertyInt(std::string key) 
+  throw (CParserIssue) {
+
+  int result = 0;
+
+  try {
+    istringstream iss(this->properties[key]);
+    iss >> result;
+  } catch(exception &e) {
+    /* re-throw as parser issue. */
+    throw CParserIssue(e.what());
+  }
+
+  return result;
+}
+
+std::string PGBackupCtlCommand::getPropertyString(std::string key)
+  throw(CParserIssue) {
+  string result = "";
+
+  try {
+    result = this->properties[key];
+  } catch(exception &e) {
+    /* re-throw as parser issue. */
+    throw CParserIssue(e.what());
+  }
+
+  return result;
+}
+
 PGBackupCtlParser::PGBackupCtlParser() {
   this->command = make_shared<PGBackupCtlCommand>(EMPTY_CMD);
 }
@@ -34,6 +200,10 @@ PGBackupCtlParser::PGBackupCtlParser(path sourceFile) {
 
 PGBackupCtlParser::~PGBackupCtlParser() {
 
+}
+
+shared_ptr<PGBackupCtlCommand> PGBackupCtlParser::getCommand() {
+  return this->command;
 }
 
 void PGBackupCtlParser::saveCommandProperty(std::string key, std::string value) {
@@ -163,6 +333,15 @@ void PGBackupCtlParser::parseLine(std::string line) {
         this->command->propTag = PROPERTY_ARCHIVE_PGDATABASE;
       }
 
+      /*
+       * PGPORT is optional
+       */
+      else if (boost::iequals(t, "PGPORT")) {
+
+        /* remember look behind to read a pg role name */
+        this->command->propTag = PROPERTY_ARCHIVE_PGPORT;        
+      }
+
       else {
         ostringstream oss;
         oss << "syntax error near \"" << t << "\"";
@@ -182,7 +361,7 @@ void PGBackupCtlParser::parseLine(std::string line) {
     }
 
     else if ((this->command->tag != EMPTY_CMD)
-                 || (this->command->propTag == PROPERTY_BASEBACKUP_ARCHIVE_NAME)) {
+                 && (this->command->propTag == PROPERTY_BASEBACKUP_ARCHIVE_NAME)) {
       /* we want a directory name */
       std::cout << "NAME property: \"" << t << "\"" << std::endl;
       this->saveCommandProperty("NAME", t);
@@ -192,66 +371,45 @@ void PGBackupCtlParser::parseLine(std::string line) {
     else if ((this->command->tag != EMPTY_CMD)
              && (this->command->propTag == PROPERTY_ARCHIVE_DIRECTORY)) {
       /* we want a directory name */
-      std::cout << "DIRECTORY property: \"" << t << "\"" << std::endl;
       this->saveCommandProperty("DIRECTORY", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
     else if ((this->command->tag != EMPTY_CMD)
              && (this->command->propTag == PROPERTY_ARCHIVE_PGUSER)) {
-      /* we want a directory name */
-      std::cout << "PGUSER property: \"" << t << "\"" << std::endl;
+      /* we want a role name */
       this->saveCommandProperty("PGUSER", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
     else if ((this->command->tag != EMPTY_CMD)
              && (this->command->propTag == PROPERTY_ARCHIVE_PGDATABASE)) {
-      /* we want a directory name */
-      std::cout << "PGDATABASE property: \"" << t << "\"" << std::endl;
+      /* we want a database name */
       this->saveCommandProperty("PGDATABASE", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
     }
 
     else if ((this->command->tag != EMPTY_CMD)
              && (this->command->propTag == PROPERTY_ARCHIVE_PGHOST)) {
-      /* we want a directory name */
-      std::cout << "PGHOST property: \"" << t << "\"" << std::endl;
+      /* we want a host name */
       this->saveCommandProperty("PGHOST", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
+    }
+
+    else if ((this->command->tag != EMPTY_CMD)
+             && (this->command->propTag == PROPERTY_ARCHIVE_PGPORT)) {
+      /* we want a port number */
+      this->saveCommandProperty("PGPORT", t);
+      this->command->propTag = PROPERTY_ARCHIVE_START;      
     }
   } /* for */
 
   /*
-   * Check mandatory properties
+   * NOTE: We don't check for command properties during
+   *       the parsing phase, this is delayed until execution
+   *       of the command (see PGBackupCtlCommand::execute() 
+   *       and PGBackupCtlCommand::getExecutableDescr() for details).
    */
-  this->checkMandatoryProperties();
-}
-
-void PGBackupCtlParser::checkMandatoryProperties()
-  throw(CParserIssue) {
-
-  switch (this->command->propTag) {
-
-  case PROPERTY_ARCHIVE_START: {
-    switch (this->command->tag) {
-    case CREATE_CMD: {
-      /* CREATE ARCHIVE command ... */
-      if (this->command->propertyMissing("NAME"))
-         throw CParserIssue("missing command property \"NAME\"");
-      break;
-    }
-    case LIST_CMD:
-    case DROP_CMD:
-    case ALTER_CMD:
-    default:
-      throw CParserIssue("unexpected parser command");
-    }
-    break;
-  }
-  default:
-    throw CParserIssue("unexpected parser command");
-  }
 }
 
 void PGBackupCtlParser::parseFile() {

@@ -5,6 +5,53 @@
 
 using namespace credativ;
 
+/*
+ * Map col id to string.
+ */
+
+/*
+ * Keep indexes in sync with macros from include/catalog/catalog.hxx !!
+ */
+
+std::vector<std::string> BackupCatalog::archiveCatalogCols = 
+  {
+    "id",
+    "name",
+    "directory",
+    "compression",
+    "pghost",
+    "pgport",
+    "pguser",
+    "pgdatabase"
+  };
+
+
+std::vector<std::string> BackupCatalog::backupCatalogCols =
+  {
+    "id",
+    "archive_id",
+    "history_filename",
+    "label",
+    "started",
+    "stopped",
+    "pinned"
+  };
+
+CatalogDescr& CatalogDescr::operator=(CatalogDescr source) {
+
+  this->tag = source.tag;
+  this->id = source.id;
+  this->archive_name = source.archive_name;
+  this->label = source.label;
+  this->compression = source.compression;
+  this->directory = source.directory;
+  this->pghost = source.pghost;
+  this->pgport = source.pgport;
+  this->pguser = source.pguser;
+  this->pgdatabase = source.pgdatabase;
+
+}
+
 BackupCatalog::BackupCatalog() {
   this->isOpen = false;
   this->db_handle = NULL;
@@ -161,6 +208,113 @@ shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
 
 }
 
+void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
+                                            std::vector<int> affectedAttributes)
+  throw (CCatalogIssue) {
+
+  sqlite3_stmt *stmt;
+  ostringstream updateSQL;
+  int rc;
+  int boundCols;
+
+  if(!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  /*
+   * In case affectedAttributes is empty (or NULL), we throw an
+   * error.
+   */
+  if (affectedAttributes.size() <= 0)
+    throw CCatalogIssue("cannot update archive attributes with empty attribute list");
+
+  /*
+   * Loop through the affected columns list and build
+   * a comma separated list of col=? pairs.
+   */
+  updateSQL << "UPDATE archive SET ";
+
+  /*
+   * Use an ordinary indexed loop ...
+   */
+  for(boundCols = 0; boundCols < affectedAttributes.size(); boundCols++) {
+
+    /* boundCol must start at index 1 !! */
+    updateSQL << BackupCatalog::SQLgetUpdateColumnTarget(SQL_ARCHIVE_ENTITY,
+                                                         affectedAttributes[boundCols]) 
+              << (boundCols + 1);
+
+    if (boundCols < affectedAttributes.size() - 1) {
+      updateSQL << ", ";
+    }
+  }
+
+  /*
+   * ...and attach the where clause
+   */
+  updateSQL << " WHERE id = ?" << (++boundCols) << ";";
+
+#ifdef __DEBUG__
+  cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          updateSQL.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  /*
+   * Assign bind variables. Please note that we rely
+   * on the order of affectedAttributes to match the
+   * previously formatted UPDATE SQL string.
+   */
+  this->SQLbindArchiveAttributes(descr, affectedAttributes, stmt);
+
+  sqlite3_bind_int(stmt, boundCols + 1,
+                   descr->id);
+
+  /*
+   * Execute the statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "error updating archive in catalog database: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
+}
+
+std::string BackupCatalog::mapAttributeId(int catalogEntity,
+                                          int colId) {
+
+  std::string result = "";
+
+  switch(catalogEntity) {
+
+  case SQL_ARCHIVE_ENTITY:
+    result = BackupCatalog::archiveCatalogCols[colId];
+    break;
+  case SQL_BACKUP_ENTITY:
+    result = BackupCatalog::backupCatalogCols[colId];
+    break;
+  default:
+    break; /* no op */
+  }
+
+  return result;
+}
+
+string BackupCatalog::SQLgetUpdateColumnTarget(int catalogEntity,
+                                               int colId) {
+  ostringstream oss;
+
+  oss << BackupCatalog::mapAttributeId(catalogEntity, colId) << "=?";
+  return oss.str();
+}
+
 void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
   throw (CCatalogIssue) {
 
@@ -201,6 +355,80 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
   sqlite3_finalize(stmt);
 
 }
+
+int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
+                                            std::vector<int> affectedAttributes,
+                                            sqlite3_stmt *stmt) 
+  throw (CCatalogIssue) {
+
+  int result = 0;
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind updated attributes: invalid statement handle");
+
+  for (auto& colId : affectedAttributes) {
+
+    switch(colId) {
+
+    case SQL_ARCHIVE_ID_ATTNO:
+      sqlite3_bind_int(stmt, SQL_ARCHIVE_ID_ATTNO,
+                      descr->id);
+      break;
+
+    case SQL_ARCHIVE_NAME_ATTNO:
+      sqlite3_bind_text(stmt, SQL_ARCHIVE_NAME_ATTNO,
+                        descr->archive_name.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_ARCHIVE_DIRECTORY_ATTNO:
+      sqlite3_bind_text(stmt, SQL_ARCHIVE_DIRECTORY_ATTNO,
+                        descr->directory.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_ARCHIVE_COMPRESSION_ATTNO:
+      sqlite3_bind_int(stmt, SQL_ARCHIVE_COMPRESSION_ATTNO,
+                       descr->compression);
+      break;
+
+    case SQL_ARCHIVE_PGHOST_ATTNO:
+      sqlite3_bind_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO,
+                        descr->pghost.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_ARCHIVE_PGPORT_ATTNO:
+      sqlite3_bind_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO,
+                       descr->pgport);
+      break;
+
+    case SQL_ARCHIVE_PGUSER_ATTNO:
+      sqlite3_bind_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO,
+                        descr->pguser.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+      
+    case SQL_ARCHIVE_PGDATABASE_ATTNO:
+      sqlite3_bind_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO,
+                        descr->pgdatabase.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    default: 
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+  }
+
+  return result;
+}
+                                             
 
 void BackupCatalog::close() throw(CCatalogIssue){
   if (available()) {

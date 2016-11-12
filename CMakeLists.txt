@@ -47,7 +47,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/catalog")
 include_directories ("${PROJECT_SOURCE_DIR}/include/parser")
 add_executable (pg_backup_ctl++ src/main/pg_backup_ctl.cxx)
 add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archive.cxx src/catalog/catalog.cxx
-  src/parser/parser.cxx)
+  src/parser/parser.cxx src/parser/commands.cxx)
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
 ##

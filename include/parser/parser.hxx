@@ -30,9 +30,9 @@ namespace credativ {
     PROPERTY_ARCHIVE_PGHOST,
     PROPERTY_ARCHIVE_PGDATABASE,
     PROPERTY_ARCHIVE_PGUSER,
+    PROPERTY_ARCHIVE_PGPORT,
     PROPERTY_BASEBACKUP_START,
-    PROPERTY_BASEBACKUP_ARCHIVE_NAME} CmdPropertyToken;
-    
+    PROPERTY_BASEBACKUP_ARCHIVE_NAME} CmdPropertyToken;    
 
   /*
    * Base archive exception.
@@ -62,6 +62,22 @@ namespace credativ {
     virtual ~PGBackupCtlCommand();
 
     virtual bool propertyMissing(std::string key);
+    virtual int getPropertyInt(std::string key)
+      throw(CParserIssue);
+    virtual std::string getPropertyString(std::string key)
+      throw(CParserIssue);
+
+    /*
+     * Create an executable catalog descr based on the current
+     * state of command properties.
+     */
+
+    virtual shared_ptr<CatalogDescr> getExecutableDescr();
+
+    /*
+     * executes the command handle.
+     */
+    virtual void execute(std::string catalogDir);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {
@@ -70,7 +86,6 @@ namespace credativ {
     std::shared_ptr<PGBackupCtlCommand> command;
 
     virtual void saveCommandProperty(std::string key, std::string value);
-    virtual void checkMandatoryProperties() throw(CParserIssue);
 
   public:
 
@@ -86,6 +101,8 @@ namespace credativ {
      */
     virtual void parseFile();
     virtual void parseLine(std::string line);
+
+    virtual shared_ptr<PGBackupCtlCommand> getCommand();
 
   };
 
