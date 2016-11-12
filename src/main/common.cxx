@@ -31,25 +31,6 @@ string CPGBackupCtlBase::getVersionString() {
                 + intToStr(PG_BACKUP_CTL_MINOR));
 }
 
-void CPGBackupCtlBase::test() {
-
-  //Read from the first command line argument, assume it's gzipped
-  std::ifstream file("abc", std::ios_base::in | std::ios_base::binary);
-  boost::iostreams::filtering_streambuf<boost::iostreams::input> inbuf;
-  inbuf.push(boost::iostreams::gzip_decompressor());
-  inbuf.push(file);
-  //Convert streambuf to istream
-  std::istream instream(&inbuf);
-  //Iterate lines
-  std::string line;
-  while(std::getline(instream, line)) {
-    std::cout << line << std::endl;
-  }
-  //Cleanup
-  file.close();
-
-}
-
 void CPGBackupCtlBase::openFile(std::ifstream& file,
                                 std::stringstream& out,
                                 boost::filesystem::path pathHandle,
