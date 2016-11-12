@@ -17,7 +17,8 @@ DropArchiveCatalogCommand::DropArchiveCatalogCommand(std::shared_ptr<BackupCatal
 
 DropArchiveCatalogCommand::DropArchiveCatalogCommand() {}
 
-void DropArchiveCatalogCommand::execute(bool existsOk) {
+void DropArchiveCatalogCommand::execute(bool existsOk)
+  throw(CPGBackupCtlFailure) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -57,7 +58,7 @@ CreateArchiveCatalogCommand::CreateArchiveCatalogCommand(shared_ptr<BackupCatalo
 }
 
 void CreateArchiveCatalogCommand::execute(bool existsOk) 
-  throw(CArchiveIssue) {
+  throw(CPGBackupCtlFailure) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -81,6 +82,7 @@ void CreateArchiveCatalogCommand::execute(bool existsOk)
    * death...
    */
   temp_descr =this->catalog->exists(this->directory);
+
   if (temp_descr->id < 0) {
 
     this->catalog->startTransaction();

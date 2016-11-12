@@ -24,7 +24,8 @@ bool PGBackupCtlCommand::propertyMissing(std::string key) {
   return (this->properties.find(key) == this->properties.end());
 }
 
-void PGBackupCtlCommand::execute(std::string catalogDir) {
+void PGBackupCtlCommand::execute(std::string catalogDir)
+  throw (CPGBackupCtlFailure) {
 
   shared_ptr<CatalogDescr> descr(nullptr);
 
@@ -57,7 +58,7 @@ void PGBackupCtlCommand::execute(std::string catalogDir) {
      */
     execCmd = dynamic_cast<BaseCatalogCommand*>(descr.get());
     execCmd->setCatalog(catalog);
-    execCmd->execute(true);
+    execCmd->execute(false);
 
     /*
      * And we're done...
@@ -71,7 +72,7 @@ void PGBackupCtlCommand::execute(std::string catalogDir) {
      */
     if (catalog->available())
       catalog->close();
-    throw e;
+    throw CCatalogIssue(e.what());
   }  
 }
 
@@ -354,7 +355,6 @@ void PGBackupCtlParser::parseLine(std::string line) {
              && (this->command->propTag == PROPERTY_ARCHIVE_NAME)) {
 
       /* we want a directory name */
-      std::cout << "NAME property: \"" << t << "\"" << std::endl;
       this->saveCommandProperty("NAME", t);
       this->command->propTag = PROPERTY_ARCHIVE_START;
 
@@ -363,7 +363,6 @@ void PGBackupCtlParser::parseLine(std::string line) {
     else if ((this->command->tag != EMPTY_CMD)
                  && (this->command->propTag == PROPERTY_BASEBACKUP_ARCHIVE_NAME)) {
       /* we want a directory name */
-      std::cout << "NAME property: \"" << t << "\"" << std::endl;
       this->saveCommandProperty("NAME", t);
       this->command->propTag = PROPERTY_BASEBACKUP_START;
     }
@@ -418,8 +417,6 @@ void PGBackupCtlParser::parseFile() {
   std::stringstream fs;
   bool compressed = false;
   std::string line;
-
-  std::cout << "parsing file " << this->sourceFile.string() << std::endl;
 
   /*
    * Check state of the source file. Throws

@@ -16,7 +16,8 @@ namespace credativ {
     std::vector<int> affectedAttributes;
     std::shared_ptr<BackupCatalog> catalog = NULL;
   public:
-    virtual void execute(bool existsOk) = 0;
+    virtual void execute(bool existsOk)
+      throw(CPGBackupCtlFailure) = 0;
 
     virtual void pushAffectedAttribute(int colId)
       throw(CArchiveIssue);
@@ -34,7 +35,8 @@ namespace credativ {
     CreateArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     CreateArchiveCatalogCommand();
 
-    virtual void execute(bool existsOk) throw(CArchiveIssue);
+    virtual void execute(bool existsOk)
+      throw(CPGBackupCtlFailure);
   };
 
   class DropArchiveCatalogCommand : public BaseCatalogCommand {
@@ -46,7 +48,8 @@ namespace credativ {
     DropArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     DropArchiveCatalogCommand();
 
-    virtual void execute(bool existsOk);
+    virtual void execute(bool existsOk)
+      throw(CPGBackupCtlFailure);
 
   };
 

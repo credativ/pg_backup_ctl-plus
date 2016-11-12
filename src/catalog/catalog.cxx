@@ -346,13 +346,13 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
 
   rc = sqlite3_step(stmt);
 
+  sqlite3_finalize(stmt);
+  
   if (rc != SQLITE_DONE) {
     ostringstream oss;
     oss << "error creating archive in catalog database: " << sqlite3_errmsg(this->db_handle);
     throw CCatalogIssue(oss.str());
   }
-
-  sqlite3_finalize(stmt);
 
 }
 

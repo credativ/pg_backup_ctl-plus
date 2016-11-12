@@ -77,7 +77,8 @@ namespace credativ {
     /*
      * executes the command handle.
      */
-    virtual void execute(std::string catalogDir);
+    virtual void execute(std::string catalogDir)
+      throw(CPGBackupCtlFailure);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

@@ -17,6 +17,12 @@
 using namespace credativ;
 using namespace std;
 
+#define PG_BACKUP_CTL_SUCCESS 0
+#define PG_BACKUP_CTL_CATALOG_ERROR 1
+#define PG_BACKUP_CTL_ARCHIVE_ERROR 2
+#define PG_BACKUP_CTL_PARSER_ERROR 3
+#define PG_BACKUP_CTL_GENERIC_ERROR 255
+
 /*
  * Handle for command line arguments
  */
@@ -107,7 +113,7 @@ static void handle_interactive(std::string in,
                                PGBackupCtlArgs *args) {
   PGBackupCtlParser parser;
   shared_ptr<PGBackupCtlCommand> command;
-
+  
   parser.parseLine(in);
 
   /*
@@ -119,23 +125,43 @@ static void handle_interactive(std::string in,
   command->execute(string(args->catalogDir));
 }
 
-static void handle_inputfile(PGBackupCtlArgs *args) {
+static int handle_inputfile(PGBackupCtlArgs *args) {
 
   PGBackupCtlParser parser(path(string(args->actionFile)));
   shared_ptr<PGBackupCtlCommand> command;
 
-  /*
-   * Read in the file.
-   */
-  parser.parseFile();  
+  try {
+
+    /*
+     * Read in the file.
+     */
+    parser.parseFile();
+    command = parser.getCommand();
+
+  } catch (CPGBackupCtlFailure& e) {
+
+    /*
+     * Parsing exception catched will force return code
+     * PG_BACKUP_CTL_PARSER_ERROR.
+     */
+    cerr << "parser error: " << e.what() << endl;
+    return PG_BACKUP_CTL_PARSER_ERROR;    
+
+  }
 
   /*
    * Parser should have created a valid
    * command handle, suitable to be executed within
    * the current catalog.
    */
-  command = parser.getCommand();
-  command->execute(string(args->catalogDir));
+  try {
+    command->execute(string(args->catalogDir));    
+  } catch(CPGBackupCtlFailure& e) {
+
+    cerr << "command execution failure: " << e.what() << endl;
+    return PG_BACKUP_CTL_CATALOG_ERROR;
+
+  }
 }
 
 static void executeCommand(PGBackupCtlArgs *args) {
@@ -313,8 +339,8 @@ int main(int argc, const char **argv) {
     }
 
     if (args.actionFile != NULL) {
-      handle_inputfile(&args);
-      exit(0);
+      int rc = handle_inputfile(&args);
+      return rc;
     }
 
     cerr << "catalog " << args.catalogDir << endl;
