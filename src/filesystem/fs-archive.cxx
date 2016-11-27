@@ -15,6 +15,51 @@ using namespace boost::filesystem;
 using namespace boost::iostreams;
 using boost::regex;
 
+BackupDirectory::BackupDirectory(path handle) {
+  this->handle = handle;
+  this->base = handle / "base";
+  this->log  = handle / "log";
+}
+
+BackupDirectory::~BackupDirectory() {}
+
+void BackupDirectory::verify() throw(CArchiveIssue) {
+
+  /*
+   * Check the archive directory itself.
+   * It makes no sense to proceed for base/ and log/
+   * subdirectories as long this is not present.
+   */
+
+  if (!exists(this->handle)) {
+    ostringstream oss;
+    oss << "archive directory " << this->handle.string() << " does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Okay, looks like its there, but don't get fooled by a file.
+   */
+  if (!is_directory(this->handle)) {
+    ostringstream oss;
+    oss << "\"" << this->handle.string() << "\" is not a directory";
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Looks like this archive directory is okay. Place an updated PG_BACKUP_CTL_INFO
+   * file there.
+   */
+  path magicFile = path(this->handle / PG_BACKUP_CTL_INFO_FILE);
+  CPGBackupCtlBase::writeFileReplace(magicFile.string(),
+                                     BackupCatalog::magicNumber());
+
+}
+
+shared_ptr<BackupDirectory> CPGBackupCtlFS::getArchiveDirectoryDescr(string directory) {
+  return make_shared<BackupDirectory>(path(directory));
+}
+
 CPGBackupCtlFS::CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue) {
 
   /* initialization */

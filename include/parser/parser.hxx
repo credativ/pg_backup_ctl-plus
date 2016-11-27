@@ -14,12 +14,13 @@ using namespace credativ;
 
 namespace credativ {
 
-  typedef enum { 
+  typedef enum {
     EMPTY_CMD,
     CREATE_CMD,
     DROP_CMD,
     LIST_CMD,
     ALTER_CMD,
+    VERIFY_CMD,
     CLEANUP_CMD } CmdToken;
 
   typedef enum {
@@ -31,8 +32,11 @@ namespace credativ {
     PROPERTY_ARCHIVE_PGDATABASE,
     PROPERTY_ARCHIVE_PGUSER,
     PROPERTY_ARCHIVE_PGPORT,
+    PROPERTY_VERIFY_START,
+    PROPERTY_VERIFY_ARCHIVE_NAME,
     PROPERTY_BASEBACKUP_START,
-    PROPERTY_BASEBACKUP_ARCHIVE_NAME} CmdPropertyToken;    
+    PROPERTY_BASEBACKUP_ARCHIVE_NAME,
+  } CmdPropertyToken;
 
   /*
    * Base archive exception.
@@ -56,6 +60,7 @@ namespace credativ {
   public:
     CmdToken tag;
     CmdPropertyToken propTag;
+
     std::unordered_map<std::string, std::string> properties;
 
     PGBackupCtlCommand(CmdToken tag);
@@ -100,8 +105,8 @@ namespace credativ {
     /*
      * Public access methods
      */
-    virtual void parseFile();
-    virtual void parseLine(std::string line);
+    virtual void parseFile() throw (CParserIssue);
+    virtual void parseLine(std::string line) throw (CParserIssue);
 
     virtual shared_ptr<PGBackupCtlCommand> getCommand();
 

@@ -2,10 +2,10 @@
 #define __BACKUP_CATALOG__
 
 #include <sqlite3.h>
+#include <list>
 
 #include <common.hxx>
-
-using namespace std;
+#include <catalog.hxx>
 
 namespace credativ {
 
@@ -17,6 +17,8 @@ namespace credativ {
     EMPTY_DESCR = -1,
     CREATE_ARCHIVE,
     DROP_ARCHIVE,
+    ALTER_ARCHIVE,
+    VERIFY_ARCHIVE,
     LIST_ARCHIVE
   } CatalogTag;
 
@@ -26,7 +28,7 @@ namespace credativ {
   class CCatalogIssue : public CPGBackupCtlFailure {
   public:
     CCatalogIssue(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
-    CCatalogIssue(string errstr) throw() : CPGBackupCtlFailure(errstr) {};
+    CCatalogIssue(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
 
   /*
@@ -41,14 +43,14 @@ namespace credativ {
 
     CatalogTag tag;
     int id = -1;
-    string archive_name = "";
-    string label;
+    std::string archive_name = "";
+    std::string label;
     bool compression = false;
-    string directory;
-    string pghost = "";
+    std::string directory;
+    std::string pghost = "";
     int    pgport = -1;
-    string pguser = "";
-    string pgdatabase = "";
+    std::string pguser = "";
+    std::string pgdatabase = "";
 
     CatalogDescr& operator=(CatalogDescr source);
   };
@@ -56,13 +58,20 @@ namespace credativ {
   class BackupCatalog : protected CPGBackupCtlBase {
   private:
     sqlite3 *db_handle;
+
+    virtual std::shared_ptr<CatalogDescr> fetchArchiveDataIntoDescr(sqlite3_stmt *stmt,
+                                                                    std::shared_ptr<CatalogDescr> descr)
+      throw (CCatalogIssue);
+
+    virtual std::string affectedColumnsToString(std::vector<int> affectedAttributes);
+
   protected:
-    string sqliteDB;
-    string archiveDir;
+    std::string sqliteDB;
+    std::string archiveDir;
     bool   isOpen;
   public:
     BackupCatalog();
-    BackupCatalog(string sqliteDB, string archiveDir) throw(CCatalogIssue);
+    BackupCatalog(std::string sqliteDB, std::string archiveDir) throw(CCatalogIssue);
     virtual ~BackupCatalog();
 
     /*
@@ -83,14 +92,21 @@ namespace credativ {
      * This method maps col IDs from the specified
      * catalog entity to its string name.
      */
-    static string mapAttributeId(int catalogEntity,
-                                 int colId);
+    static std::string mapAttributeId(int catalogEntity,
+                                      int colId);
 
     /*
      * Returns a col=? string suitable to be used
      * in an dynamically generated UPDATE SQL command.
      */
-    static string SQLgetUpdateColumnTarget(int catalogEntity, int colId);
+    static std::string SQLgetUpdateColumnTarget(int catalogEntity, int colId);
+
+    /*
+     * Returns the internal catalog magic number
+     */
+    static std::string magicNumber() {
+      return CPGBackupCtlBase::intToStr(CATALOG_MAGIC);
+    }
 
     /*
      * Bind affected archive attribute values to the given SQLite3
@@ -98,7 +114,8 @@ namespace credativ {
      */
     int SQLbindArchiveAttributes(std::shared_ptr<CatalogDescr> descr,
                                  std::vector<int> affectedAttributes,
-                                 sqlite3_stmt *stmt)
+                                 sqlite3_stmt *stmt,
+                                 Range range)
       throw(CCatalogIssue);
 
     /*
@@ -107,9 +124,13 @@ namespace credativ {
     virtual void rollbackTransaction() throw(CCatalogIssue);
 
     /*
-     * Checks and locks an existing archive entry.
+     * Checks if the specified archive directory is already registered
+     * somewhere in the archive.
      */
-    virtual shared_ptr<CatalogDescr> exists(std::string directory)
+    virtual std::shared_ptr<CatalogDescr> exists(std::string directory)
+      throw (CCatalogIssue);
+
+    virtual std::shared_ptr<CatalogDescr> existsByName(std::string name)
       throw (CCatalogIssue);
 
     /*
@@ -127,12 +148,12 @@ namespace credativ {
     /*
      * Set sqlite database filename.
      */
-    virtual void setCatalogDB(string sqliteDB);
+    virtual void setCatalogDB(std::string sqliteDB);
 
     /*
      * Set the archive directory.
      */
-    virtual void setArchiveDir(string archiveDir);
+    virtual void setArchiveDir(std::string archiveDir);
 
     /*
      * Returns true wether the catalog is available.
@@ -148,19 +169,48 @@ namespace credativ {
      * Checks wether the specified table exists
      * in the catalog database.
      */
-    virtual bool tableExists(string tableName) throw(CCatalogIssue);
+    virtual bool tableExists(std::string tableName) throw(CCatalogIssue);
 
     /*
      * Update archive attributes.
      */
-    virtual void updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
+    virtual void updateArchiveAttributes(std::shared_ptr<CatalogDescr> descr,
                                          std::vector<int> affectedAttributes)
       throw (CCatalogIssue);
 
     /*
      * Creates a new archive entry in the catalog database.
      */
-    virtual void createArchive(shared_ptr<CatalogDescr> descr) throw (CCatalogIssue);
+    virtual void createArchive(std::shared_ptr<CatalogDescr> descr) throw (CCatalogIssue);
+
+    /*
+     * Delete the specified archive by name from the catalog.
+     */
+    virtual void dropArchive(std::string name)
+      throw(CCatalogIssue);
+
+    /*
+     * Returns a SQL formatted WHERE condition with the
+     * specified attributes attached.
+     */
+    std::string SQLgetFilterForArchive(std::shared_ptr<CatalogDescr> descr,
+                                       std::vector<int> affectedAttributes,
+                                       Range range,
+                                       std::string op);
+
+    /*
+     * Returns a list of all registered archives in the catalog.
+     */
+    std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList()
+      throw(CCatalogIssue);
+
+    /*
+     * Returns a filtered list according the specified attributes
+     * defined by the CatalogDescr.affectedAttributes list.
+     */
+    std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList(std::shared_ptr<CatalogDescr> descr,
+                                                                             std::vector<int> affectedAffected)
+    throw (CCatalogIssue);
 
     /*
      * Open the sqlite database for read/write.

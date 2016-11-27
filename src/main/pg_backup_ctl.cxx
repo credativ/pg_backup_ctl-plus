@@ -8,6 +8,7 @@
 #include <string>
 #include <popt.h>
 #include <readline/readline.h>
+#include <signal.h>
 
 #include <pg_backup_ctl.hxx>
 #include <common.hxx>
@@ -22,6 +23,12 @@ using namespace std;
 #define PG_BACKUP_CTL_ARCHIVE_ERROR 2
 #define PG_BACKUP_CTL_PARSER_ERROR 3
 #define PG_BACKUP_CTL_GENERIC_ERROR 255
+
+/*
+ * Readline loop wants to exit?
+ * Set by handle_signal.
+ */
+bool wants_exit = false;
 
 /*
  * Handle for command line arguments
@@ -39,6 +46,12 @@ typedef struct PGBackupCtlArgs {
   char *catalogDir; /* mandatory or compiled in default */
   bool useCompression;
 } PGBackupCtlArgs;
+
+void handle_signal_on_input(int sig) {
+  if ( (sig == SIGQUIT) || (sig == SIGINT) ) {
+    wants_exit = true;
+  }
+}
 
 static void printActionHelp() {
 
@@ -113,16 +126,21 @@ static void handle_interactive(std::string in,
                                PGBackupCtlArgs *args) {
   PGBackupCtlParser parser;
   shared_ptr<PGBackupCtlCommand> command;
-  
-  parser.parseLine(in);
 
-  /*
-   * Parser should have created a valid
-   * command handle, suitable to be executed within
-   * the current catalog.
-   */
-  command = parser.getCommand();
-  command->execute(string(args->catalogDir));
+  try {
+    parser.parseLine(in);
+
+    /*
+     * Parser should have created a valid
+     * command handle, suitable to be executed within
+     * the current catalog.
+     */
+    command = parser.getCommand();
+    command->execute(string(args->catalogDir));
+  } catch (exception& e) {
+    cerr << "command execution failure: " << e.what() << endl;
+  }
+
 }
 
 static int handle_inputfile(PGBackupCtlArgs *args) {
@@ -343,9 +361,63 @@ int main(int argc, const char **argv) {
       return rc;
     }
 
-    cerr << "catalog " << args.catalogDir << endl;
-    while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
-      handle_interactive(string(cmd_str), &args);
+    /*
+     * Before entering interactive input mode, setup the proper
+     * signal handling...
+     */
+    if (signal(SIGQUIT, handle_signal_on_input) == SIG_ERR) {
+      cerr << "error setting up input signal handler" << endl;
+      exit(PG_BACKUP_CTL_GENERIC_ERROR);
+    }
+
+    if (signal(SIGINT, handle_signal_on_input) == SIG_ERR) {
+      cerr << "error setting up input signal handler" << endl;
+      exit(PG_BACKUP_CTL_GENERIC_ERROR);
+    }
+
+    while(!wants_exit) {
+      string input = "";
+
+      while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
+        
+        if (strcmp(cmd_str, "quit") == 0) {
+          wants_exit = true;
+          break;
+        }
+
+        /*
+         * End of the command is indicated by ';'.
+         * Currently, this is not handled by our current
+         * handwritten parser itself.
+         */
+        if (cmd_str[strlen(cmd_str) - 1] == ';') {
+          input += string(cmd_str, strlen(cmd_str) - 1);
+          break;
+        } else {
+          input += string(cmd_str);
+        }
+      }
+
+      /*
+       * On EOF, readline() returns NULL, so check that which
+       * means we should also exit outer loop
+       */
+      if (cmd_str == NULL) {
+        wants_exit=true;
+        continue;
+      }
+
+      /*
+       * inner loop reports exit attempt, so give it priority
+       * and discard any previous input.
+       * It's okay to just break out here, since wants_exit
+       * is already set by signal.
+       */
+
+      if (wants_exit)
+        break;
+
+      handle_interactive(input, &args);
       free(cmd_str);
     }
 

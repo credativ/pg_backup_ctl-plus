@@ -3,6 +3,8 @@
 #include <sstream>
 #include <string>
 
+#include <boost/format.hpp>
+#include <boost/filesystem/fstream.hpp>
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/bzip2.hpp>
@@ -15,6 +17,20 @@ using namespace credativ;
 using namespace std;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
+
+Range::Range(int start, int end) {
+
+  if (start > end)
+    throw CPGBackupCtlFailure("integer range end is larger than start");
+
+  this->startval = start;
+  this->endval = end;
+}
+
+Range::~Range() {};
+
+int Range::start() { return this->startval; }
+int Range::end() { return this->endval; }
 
 CPGBackupCtlBase::CPGBackupCtlBase() {
   /* currently empty */
@@ -29,6 +45,15 @@ string CPGBackupCtlBase::getVersionString() {
                 + intToStr(PG_BACKUP_CTL_MAJOR)
                 + "."
                 + intToStr(PG_BACKUP_CTL_MINOR));
+}
+
+void CPGBackupCtlBase::writeFileReplace(std::string filePath,
+                                        std::string msg) {
+
+  boost::filesystem::path file(filePath);
+  boost::filesystem::ofstream out(file);
+  out << msg;
+
 }
 
 void CPGBackupCtlBase::openFile(std::ifstream& file,
@@ -99,4 +124,39 @@ string CPGBackupCtlBase::intToStr(int in) {
 
   ss << in;
   return ss.str();
+}
+
+std::string CPGBackupCtlBase::makeLine(int width) {
+
+  ostringstream line;
+
+  for (int i = 0; i < width; i++) {
+    line << '-';
+  }
+
+  return line.str();
+
+}
+
+std::string CPGBackupCtlBase::makeLine(boost::format& formatted) {
+
+  std::ostringstream line;
+
+  line << formatted << endl;
+  return line.str();
+
+}
+
+std::string CPGBackupCtlBase::makeHeader(std::string caption,
+                                         boost::format& format,
+                                         int width) {
+
+  std::ostringstream header;
+
+  header << caption << endl;
+  header << CPGBackupCtlBase::makeLine(width) << endl;
+  header << format << endl;
+  header << CPGBackupCtlBase::makeLine(width) << endl;
+
+  return header.str();
 }

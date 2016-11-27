@@ -59,6 +59,34 @@ namespace credativ {
   };
 
   /*
+   * Base class for archive directories. Also encapsulates
+   * the complete archive directory tree with the following layout:
+   *
+   * this->handle
+   *            `- path(log/)
+   *            `- path(base/)
+   */
+  class BackupDirectory : public CPGBackupCtlBase {
+  protected:
+    path handle;
+
+    /*
+     * Subdirectory handles.
+     */
+    path base;
+    path log;
+  public:
+
+    BackupDirectory(path handle);
+    ~BackupDirectory();
+
+    /*
+     * Check if this is an existing directory.
+     */
+    virtual void verify() throw(CArchiveIssue);
+  };
+
+  /*
    * Class which represents a backup history file.
    */
   class BackupHistoryFile : public BackupFile {
@@ -112,6 +140,11 @@ namespace credativ {
     void readArchiveDirectory();
 
   public:
+    /*
+     * Static factory class for archive directory handles.
+     */
+    static std::shared_ptr<BackupDirectory> getArchiveDirectoryDescr(std::string directory);
+
     /*
      * Holds BackupHistoryFile objects read in
      * read by readBackupHistory().

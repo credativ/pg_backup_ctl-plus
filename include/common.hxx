@@ -7,6 +7,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/format.hpp>
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -25,7 +26,24 @@
  */
 #define MAXPGPATH 1024
 
+#define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
+
 namespace credativ {
+
+  /*
+   * Range of integer values
+   */
+  class Range {
+  private:
+    int startval;
+    int endval;
+  public:
+    Range(int start, int end);
+    virtual ~Range();
+
+    virtual int start();
+    virtual int end();
+  };
 
   /*
    * Base exception class
@@ -77,7 +95,18 @@ namespace credativ {
                          std::stringstream& out,
                          boost::filesystem::path pathHandle,
                          bool *compressed);
-    static void test();
+    static std::string makeLine(int width);
+    static std::string makeLine(boost::format& formatted);
+    static std::string makeHeader(std::string caption,
+                                  boost::format& format,
+                                  int width);
+
+    /*
+     * Writes the specified msg into the specified file, while
+     * replacing its whole content!
+     */
+    static void writeFileReplace(std::string filePath,
+                                 std::string msg);
   };
 
 }
