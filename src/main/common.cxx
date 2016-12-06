@@ -48,12 +48,22 @@ string CPGBackupCtlBase::getVersionString() {
 }
 
 void CPGBackupCtlBase::writeFileReplace(std::string filePath,
-                                        std::string msg) {
+                                        std::string msg)
+  throw(CPGBackupCtlFailure) {
 
   boost::filesystem::path file(filePath);
   boost::filesystem::ofstream out(file);
-  out << msg;
 
+  /*
+   * Check if file is ready
+   */
+  if (out.is_open())
+    out << msg;
+  else {
+    ostringstream oss;
+    oss << "cannot write info file " << filePath << " ";
+    throw CPGBackupCtlFailure(oss.str());
+  }
 }
 
 void CPGBackupCtlBase::openFile(std::ifstream& file,
@@ -108,6 +118,22 @@ ptime CPGBackupCtlBase::ISO8601_strTo_ptime(string input) {
   return result;
 }
 
+string CPGBackupCtlBase::current_timestamp() {
+
+  std::time_t t  = std::time(NULL);
+  char res[100];
+  std::string result;
+
+  memset(res, 0, sizeof(res));
+
+  if (std::strftime(res, sizeof(res), "%Y-%m-%d %H:%M:%S", std::localtime((&t))))
+    result = string(res);
+  else
+    result = "";
+
+  return result;
+}
+
 string CPGBackupCtlBase::ptime_to_str(ptime input) {
   ostringstream oss;
 
@@ -117,6 +143,14 @@ string CPGBackupCtlBase::ptime_to_str(ptime input) {
   oss.imbue(loc);
   oss << input;
   return oss.str();
+}
+
+int CPGBackupCtlBase::strToInt(std::string in) {
+  std::istringstream iss(in);
+  int result;
+  iss >> result;
+
+  return result;
 }
 
 string CPGBackupCtlBase::intToStr(int in) {

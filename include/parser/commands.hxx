@@ -12,14 +12,11 @@ namespace credativ {
 
   class BaseCatalogCommand : public CatalogDescr {
   protected:
-    std::vector<int> affectedAttributes;
     std::shared_ptr<BackupCatalog> catalog = NULL;
+    virtual void copy(CatalogDescr& source);
   public:
     virtual void execute(bool existsOk)
       throw(CPGBackupCtlFailure) = 0;
-
-    virtual void pushAffectedAttribute(int colId)
-      throw(CArchiveIssue);
 
     virtual ~BaseCatalogCommand();
 
@@ -29,6 +26,7 @@ namespace credativ {
   class VerifyArchiveCatalogCommand : public BaseCatalogCommand {
   public:
 
+    VerifyArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     VerifyArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     VerifyArchiveCatalogCommand();
 
@@ -41,6 +39,7 @@ namespace credativ {
     /*
      * Default c'tor needs BackupCatalog handle.
      */
+    CreateArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     CreateArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     CreateArchiveCatalogCommand();
 
@@ -57,6 +56,7 @@ namespace credativ {
     /*
      * Default c'tor needs BackupCatalog handle.
      */
+    DropArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     DropArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     DropArchiveCatalogCommand();
 
@@ -73,7 +73,7 @@ namespace credativ {
     /*
      * Default c'tor needs BackupCatalog handle
      */
-
+    AlterArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     AlterArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     AlterArchiveCatalogCommand();
 
@@ -101,6 +101,7 @@ namespace credativ {
     /*
      * Default c'tor
      */
+    ListArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     ListArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     ListArchiveCatalogCommand();
 

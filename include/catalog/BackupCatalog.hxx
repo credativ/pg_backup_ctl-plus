@@ -19,6 +19,7 @@ namespace credativ {
     DROP_ARCHIVE,
     ALTER_ARCHIVE,
     VERIFY_ARCHIVE,
+    START_BASEBACKUP,
     LIST_ARCHIVE
   } CatalogTag;
 
@@ -37,6 +38,10 @@ namespace credativ {
    * between CPGBackupCtlFS and BackupCatalog objects.
    */
   class CatalogDescr : protected CPGBackupCtlBase {
+  protected:
+    std::vector<int> affectedAttributes;
+
+    virtual void pushAffectedAttribute(int colId);
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
     ~CatalogDescr() {};
@@ -52,7 +57,24 @@ namespace credativ {
     std::string pguser = "";
     std::string pgdatabase = "";
 
-    CatalogDescr& operator=(CatalogDescr source);
+    void setDbName(std::string const& db_name);
+
+    void setCommandTag(credativ::CatalogTag const& tag);
+
+    void setIdent(std::string const& ident);
+
+    void setHostname(std::string const& hostname);
+
+    void setUsername(std::string const& username);
+
+    void setPort(std::string const& portNumber);
+
+    void setDirectory(std::string const& directory);
+
+    void setAffectedAttributes(std::vector<int> affectedAttributes);
+    std::vector<int> getAffectedAttributes();
+
+    CatalogDescr& operator=(const CatalogDescr& source);
   };
 
   class BackupCatalog : protected CPGBackupCtlBase {

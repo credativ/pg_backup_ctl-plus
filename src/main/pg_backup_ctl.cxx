@@ -8,6 +8,7 @@
 #include <string>
 #include <popt.h>
 #include <readline/readline.h>
+#include <readline/history.h>
 #include <signal.h>
 
 #include <pg_backup_ctl.hxx>
@@ -128,6 +129,12 @@ static void handle_interactive(std::string in,
   shared_ptr<PGBackupCtlCommand> command;
 
   try {
+
+    /*
+     * Push the requested command into history
+     */
+    add_history(in.c_str());
+
     parser.parseLine(in);
 
     /*
@@ -137,6 +144,7 @@ static void handle_interactive(std::string in,
      */
     command = parser.getCommand();
     command->execute(string(args->catalogDir));
+
   } catch (exception& e) {
     cerr << "command execution failure: " << e.what() << endl;
   }

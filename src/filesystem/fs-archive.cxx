@@ -50,9 +50,20 @@ void BackupDirectory::verify() throw(CArchiveIssue) {
    * Looks like this archive directory is okay. Place an updated PG_BACKUP_CTL_INFO
    * file there.
    */
-  path magicFile = path(this->handle / PG_BACKUP_CTL_INFO_FILE);
-  CPGBackupCtlBase::writeFileReplace(magicFile.string(),
-                                     BackupCatalog::magicNumber());
+  try {
+    path magicFile = path(this->handle / PG_BACKUP_CTL_INFO_FILE);
+    CPGBackupCtlBase::writeFileReplace(magicFile.string(),
+                                       BackupCatalog::magicNumber()
+                                       + " | "
+                                       + CPGBackupCtlBase::current_timestamp());
+  } catch(CPGBackupCtlFailure& e) {
+    /*
+     * re-throw as CArchiveIssue
+     */
+    ostringstream oss;
+    oss << "verify command failed: " << e.what();
+    throw CArchiveIssue(oss.str());
+  }
 
 }
 

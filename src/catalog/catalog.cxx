@@ -38,7 +38,7 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "pinned"
   };
 
-CatalogDescr& CatalogDescr::operator=(CatalogDescr source) {
+CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
   this->tag = source.tag;
   this->id = source.id;
@@ -51,6 +51,53 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr source) {
   this->pguser = source.pguser;
   this->pgdatabase = source.pgdatabase;
 
+}
+
+std::vector<int> CatalogDescr::getAffectedAttributes() {
+  return this->affectedAttributes;
+}
+
+void CatalogDescr::setAffectedAttributes(std::vector<int> affectedAttributes) {
+  this->affectedAttributes = affectedAttributes;
+}
+
+void CatalogDescr::pushAffectedAttribute(int colId) {
+
+  this->affectedAttributes.push_back(colId);
+
+}
+
+void CatalogDescr::setDbName(std::string const& db_name) {
+  this->pgdatabase = db_name;
+  this->pushAffectedAttribute(SQL_ARCHIVE_PGDATABASE_ATTNO);
+}
+
+void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
+  this->tag = tag;
+}
+
+void CatalogDescr::setIdent(std::string const& ident) {
+  this->archive_name = ident;
+  this->pushAffectedAttribute(SQL_ARCHIVE_NAME_ATTNO);
+}
+
+void CatalogDescr::setHostname(std::string const& hostname) {
+  this->pghost = hostname;
+  this->pushAffectedAttribute(SQL_ARCHIVE_PGHOST_ATTNO);
+}
+
+void CatalogDescr::setUsername(std::string const& username) {
+  this->pguser = username;
+  this->pushAffectedAttribute(SQL_ARCHIVE_PGUSER_ATTNO);
+}
+
+void CatalogDescr::setPort(std::string const& portNumber) {
+  this->pgport = CPGBackupCtlBase::strToInt(portNumber);
+  this->pushAffectedAttribute(SQL_ARCHIVE_PGPORT_ATTNO);
+}
+
+void CatalogDescr::setDirectory(std::string const& directory) {
+  this->directory = directory;
 }
 
 BackupCatalog::BackupCatalog() {
@@ -526,7 +573,7 @@ int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
                         descr->pguser.c_str(),
                         -1, SQLITE_STATIC);
       break;
-      
+
     case SQL_ARCHIVE_PGDATABASE_ATTNO:
       sqlite3_bind_text(stmt, result,
                         descr->pgdatabase.c_str(),
@@ -546,7 +593,7 @@ int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
 
   return result;
 }
-                                             
+
 
 void BackupCatalog::close() throw(CCatalogIssue){
   if (available()) {
@@ -581,7 +628,7 @@ std::string BackupCatalog::SQLgetFilterForArchive(std::shared_ptr<CatalogDescr> 
                                                   std::vector<int> affectedAttributes,
                                                   Range rangeBindID,
                                                   std::string op) {
-  
+
   ostringstream result;
   int bindId = rangeBindID.start();
 

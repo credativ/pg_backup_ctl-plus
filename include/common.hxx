@@ -88,9 +88,11 @@ namespace credativ {
     virtual ~CPGBackupCtlBase();
 
     static std::string getVersionString();
+    static int strToInt(std::string in);
     static std::string intToStr(int in);
     static boost::posix_time::ptime ISO8601_strTo_ptime(std::string input);
     static std::string ptime_to_str(boost::posix_time::ptime input);
+    static std::string current_timestamp();
     static void openFile(std::ifstream& file,
                          std::stringstream& out,
                          boost::filesystem::path pathHandle,
@@ -106,7 +108,8 @@ namespace credativ {
      * replacing its whole content!
      */
     static void writeFileReplace(std::string filePath,
-                                 std::string msg);
+                                 std::string msg)
+      throw (CPGBackupCtlFailure);
   };
 
 }

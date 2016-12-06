@@ -3,13 +3,30 @@
 
 using namespace credativ;
 
-void BaseCatalogCommand::pushAffectedAttribute(int colId) 
-  throw (CArchiveIssue) {
+BaseCatalogCommand::~BaseCatalogCommand() {}
 
-  this->affectedAttributes.push_back(colId);
+void BaseCatalogCommand::copy(CatalogDescr& source) {
+
+  this->tag = source.tag;
+  this->id  = source.id;
+  this->archive_name = source.archive_name;
+  this->label        = source.label;
+  this->compression  = source.compression;
+  this->directory    = source.directory;
+  this->pghost       = source.pghost;
+  this->pgport       = source.pgport;
+  this->pguser       = source.pguser;
+  this->pgdatabase   = source.pgdatabase;
+
+  this->setAffectedAttributes(source.getAffectedAttributes());
+
 }
 
-BaseCatalogCommand::~BaseCatalogCommand() {}
+VerifyArchiveCatalogCommand::VerifyArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
 
 VerifyArchiveCatalogCommand::VerifyArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = VERIFY_ARCHIVE;
@@ -70,6 +87,12 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK)
 
 }
 
+ListArchiveCatalogCommand::ListArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
 ListArchiveCatalogCommand::ListArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = LIST_ARCHIVE;
   this->catalog = catalog;
@@ -101,6 +124,7 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput)
     catalog->startTransaction();
 
     if (this->mode == ARCHIVE_LIST) {
+
       /*
        * Get a list of current registered archives in the catalog.
        */
@@ -186,7 +210,7 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput)
   }
 
   catalog->close();
-  
+
 }
 
 void ListArchiveCatalogCommand::setOutputMode(ListArchiveOutputMode mode) {
@@ -195,6 +219,11 @@ void ListArchiveCatalogCommand::setOutputMode(ListArchiveOutputMode mode) {
 
 AlterArchiveCatalogCommand::AlterArchiveCatalogCommand() {
   this->tag = ALTER_ARCHIVE;
+}
+
+AlterArchiveCatalogCommand::AlterArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
 }
 
 AlterArchiveCatalogCommand::AlterArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
@@ -237,12 +266,13 @@ void AlterArchiveCatalogCommand::execute(bool ignoreMissing)
                                              this->affectedAttributes);
 
     } else {
+
       if (!ignoreMissing) {
         ostringstream oss;
-        oss << "could not alter archive: archive name \"" << this->archive_name << "\" does not exists";
-        this->catalog->rollbackTransaction();
+        oss << "could not alter archive: archive name \"" << this->archive_name << "\" does not exist";
         throw CArchiveIssue(oss.str());
       }
+
     }
 
     this->catalog->commitTransaction();
@@ -252,6 +282,11 @@ void AlterArchiveCatalogCommand::execute(bool ignoreMissing)
     throw e;
   }
 
+}
+
+DropArchiveCatalogCommand::DropArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
 }
 
 DropArchiveCatalogCommand::DropArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
@@ -320,13 +355,19 @@ void DropArchiveCatalogCommand::execute(bool existsOk)
      */
     catalog->rollbackTransaction();
     throw e;
-       
+
   }
 
 }
 
 CreateArchiveCatalogCommand::CreateArchiveCatalogCommand() {
   this->tag = CREATE_ARCHIVE;
+}
+
+CreateArchiveCatalogCommand::CreateArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
 }
 
 void BaseCatalogCommand::setCatalog(std::shared_ptr<BackupCatalog> catalog) {

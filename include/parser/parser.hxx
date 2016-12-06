@@ -14,30 +14,6 @@ using namespace credativ;
 
 namespace credativ {
 
-  typedef enum {
-    EMPTY_CMD,
-    CREATE_CMD,
-    DROP_CMD,
-    LIST_CMD,
-    ALTER_CMD,
-    VERIFY_CMD,
-    CLEANUP_CMD } CmdToken;
-
-  typedef enum {
-    PROPERTY_EMPTY,
-    PROPERTY_ARCHIVE_START,
-    PROPERTY_ARCHIVE_NAME,
-    PROPERTY_ARCHIVE_DIRECTORY,
-    PROPERTY_ARCHIVE_PGHOST,
-    PROPERTY_ARCHIVE_PGDATABASE,
-    PROPERTY_ARCHIVE_PGUSER,
-    PROPERTY_ARCHIVE_PGPORT,
-    PROPERTY_VERIFY_START,
-    PROPERTY_VERIFY_ARCHIVE_NAME,
-    PROPERTY_BASEBACKUP_START,
-    PROPERTY_BASEBACKUP_ARCHIVE_NAME,
-  } CmdPropertyToken;
-
   /*
    * Base archive exception.
    */
@@ -58,19 +34,10 @@ namespace credativ {
      */
     std::shared_ptr<CatalogDescr> catalogDescr;
   public:
-    CmdToken tag;
-    CmdPropertyToken propTag;
 
-    std::unordered_map<std::string, std::string> properties;
-
-    PGBackupCtlCommand(CmdToken tag);
+    PGBackupCtlCommand(CatalogTag tag);
+    PGBackupCtlCommand(CatalogDescr descr);
     virtual ~PGBackupCtlCommand();
-
-    virtual bool propertyMissing(std::string key);
-    virtual int getPropertyInt(std::string key)
-      throw(CParserIssue);
-    virtual std::string getPropertyString(std::string key)
-      throw(CParserIssue);
 
     /*
      * Create an executable catalog descr based on the current
@@ -88,10 +55,9 @@ namespace credativ {
 
   class PGBackupCtlParser : CPGBackupCtlBase {
   protected:
+
     boost::filesystem::path sourceFile;
     std::shared_ptr<PGBackupCtlCommand> command;
-
-    virtual void saveCommandProperty(std::string key, std::string value);
 
   public:
 
