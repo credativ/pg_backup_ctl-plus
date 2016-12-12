@@ -421,6 +421,7 @@ void PGBackupCtlParser::parseFile() throw(CParserIssue) {
   std::stringstream fs;
   bool compressed = false;
   std::string line;
+  std::ostringstream cmdStr;
 
   /*
    * Check state of the source file. Throws
@@ -437,9 +438,16 @@ void PGBackupCtlParser::parseFile() throw(CParserIssue) {
                  this->sourceFile,
                  &compressed);
 
+  /*
+   * Read input into a single command string:
+   * The parser doesn't handle carriage returns et al.
+   */
   while (std::getline(fs, line)) {
-
-    this->parseLine(line);
-
+    if (cmdStr.tellp() > 0)
+      cmdStr << " ";
+    cmdStr << line;
   }
+
+  cout << cmdStr.str() << endl;
+  this->parseLine(cmdStr.str());
 }

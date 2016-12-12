@@ -45,9 +45,11 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/")
 include_directories ("${PROJECT_SOURCE_DIR}/include/filesystem")
 include_directories ("${PROJECT_SOURCE_DIR}/include/catalog")
 include_directories ("${PROJECT_SOURCE_DIR}/include/parser")
+include_directories ("${PROJECT_SOURCE_DIR}/include/jobs")
+include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 add_executable (pg_backup_ctl++ src/main/pg_backup_ctl.cxx)
 add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archive.cxx src/catalog/catalog.cxx
-  src/parser/parser.cxx src/parser/commands.cxx)
+  src/parser/parser.cxx src/parser/commands.cxx src/jobs/daemon.cxx src/backup/backup.cxx src/backup/stream.cxx)
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
 ##
@@ -59,7 +61,6 @@ if (readline_FOUND)
   message("linking libreadline ${readline_LIBRARIES}")
   target_link_libraries (pg_backup_ctl++ ${readline_LIBRARIES})
 endif (readline_FOUND)
-
 
 ##
 ## We need popt
@@ -90,6 +91,17 @@ if (Boost_FOUND)
    message("linking Boost ${Boost_LIBRARIES}")
    target_link_libraries (pgbckctl-common ${Boost_LIBRARIES})
 endif(Boost_FOUND)
+
+##
+## We need PostgreSQL libpq
+##
+find_package(libpq REQUIRED)
+if (libpq_FOUND)
+   include_directories(${libpq_INCLUDE_DIRS})
+   include_directories(${pgsql_INCLUDE_SERVER})
+   message("linking PostgreSQL libpq ${libpq_LIBRARIES}")
+   target_link_libraries (pgbckctl-common ${libpq_LIBRARIES})
+endif(libpq_FOUND)
 
 ##
 ## Get current git revision.

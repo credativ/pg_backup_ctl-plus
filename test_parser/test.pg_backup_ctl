@@ -1,1 +1,7 @@
-CREATE ARCHIVE /etc/blabla { PGHOST 127.0.0.1 } ;
+CREATE ARCHIVE testarchive
+PARAMS
+DIRECTORY="/tmp/testarchive"
+PGHOST=localhost
+PGDATABASE=test
+PGUSER=test
+PGPORT=5432

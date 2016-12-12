@@ -171,7 +171,7 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
      * PG_BACKUP_CTL_PARSER_ERROR.
      */
     cerr << "parser error: " << e.what() << endl;
-    return PG_BACKUP_CTL_PARSER_ERROR;    
+    return PG_BACKUP_CTL_PARSER_ERROR;
 
   }
 
@@ -181,7 +181,7 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
    * the current catalog.
    */
   try {
-    command->execute(string(args->catalogDir));    
+    command->execute(string(args->catalogDir));
   } catch(CPGBackupCtlFailure& e) {
 
     cerr << "command execution failure: " << e.what() << endl;
@@ -244,7 +244,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
        */
       descr->directory = args->archiveDir;
       descr->archive_name = args->archive_name;
-      
+
     }
 
     try {
@@ -387,7 +387,7 @@ int main(int argc, const char **argv) {
       string input = "";
 
       while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
-        
+
         if (strcmp(cmd_str, "quit") == 0) {
           wants_exit = true;
           break;

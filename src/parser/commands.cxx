@@ -269,7 +269,7 @@ void AlterArchiveCatalogCommand::execute(bool ignoreMissing)
 
       if (!ignoreMissing) {
         ostringstream oss;
-        oss << "could not alter archive: archive name \"" << this->archive_name << "\" does not exist";
+        oss << "could not alter archive: archive name \"" << this->archive_name << "\" does not exists";
         throw CArchiveIssue(oss.str());
       }
 
@@ -357,6 +357,21 @@ void DropArchiveCatalogCommand::execute(bool existsOk)
     throw e;
 
   }
+
+}
+
+StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand() {
+  this->tag = START_BASEBACKUP;
+}
+
+void StartBaseBackupCatalogCommand::execute(bool ignored)
+  throw(CPGBackupCtlFailure) {
 
 }
 
@@ -451,3 +466,4 @@ void CreateArchiveCatalogCommand::execute(bool existsOk)
   }
 
 }
+

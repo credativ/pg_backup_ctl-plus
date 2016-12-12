@@ -111,6 +111,17 @@ namespace credativ {
       throw (CPGBackupCtlFailure);
   };
 
+  /*
+   * Implements the START BASEBACKUP command.
+   */
+  class StartBaseBackupCatalogCommand : public BaseCatalogCommand {
+    StartBaseBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    StartBaseBackupCatalogCommand();
+
+    virtual void execute(bool ignored)
+      throw(CPGBackupCtlFailure);
+  };
+
 }
 
 #endif
