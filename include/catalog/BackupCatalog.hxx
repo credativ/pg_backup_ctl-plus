@@ -6,22 +6,10 @@
 
 #include <common.hxx>
 #include <catalog.hxx>
+#include <descr.hxx>
+#include <stream.hxx>
 
 namespace credativ {
-
-  /*
-   * Defines flags to characterize the
-   * action defined by a catalog descriptor.
-   */
-  typedef enum {
-    EMPTY_DESCR = -1,
-    CREATE_ARCHIVE,
-    DROP_ARCHIVE,
-    ALTER_ARCHIVE,
-    VERIFY_ARCHIVE,
-    START_BASEBACKUP,
-    LIST_ARCHIVE
-  } CatalogTag;
 
   /*
    * Base catalog exception.
@@ -30,51 +18,6 @@ namespace credativ {
   public:
     CCatalogIssue(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     CCatalogIssue(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
-  };
-
-  /*
-   * A catalog descriptor is a reference
-   * into the catalog database, representing an interface
-   * between CPGBackupCtlFS and BackupCatalog objects.
-   */
-  class CatalogDescr : protected CPGBackupCtlBase {
-  protected:
-    std::vector<int> affectedAttributes;
-
-    virtual void pushAffectedAttribute(int colId);
-  public:
-    CatalogDescr() { tag = EMPTY_DESCR; };
-    ~CatalogDescr() {};
-
-    CatalogTag tag;
-    int id = -1;
-    std::string archive_name = "";
-    std::string label;
-    bool compression = false;
-    std::string directory;
-    std::string pghost = "";
-    int    pgport = -1;
-    std::string pguser = "";
-    std::string pgdatabase = "";
-
-    void setDbName(std::string const& db_name);
-
-    void setCommandTag(credativ::CatalogTag const& tag);
-
-    void setIdent(std::string const& ident);
-
-    void setHostname(std::string const& hostname);
-
-    void setUsername(std::string const& username);
-
-    void setPort(std::string const& portNumber);
-
-    void setDirectory(std::string const& directory);
-
-    void setAffectedAttributes(std::vector<int> affectedAttributes);
-    std::vector<int> getAffectedAttributes();
-
-    CatalogDescr& operator=(const CatalogDescr& source);
   };
 
   class BackupCatalog : protected CPGBackupCtlBase {
@@ -101,7 +44,9 @@ namespace credativ {
      */
 
     /*
-     * Keep indexes in sync with macros from include/catalog/catalog.hxx !!
+     * Keep changes to catalog tables
+     * in sync with macros from
+     * include/catalog/catalog.hxx !!
      */
 
     /* archive table */
@@ -109,6 +54,9 @@ namespace credativ {
 
     /* backup table */
     static std::vector<std::string> backupCatalogCols;
+
+    /* stream table */
+    static std::vector<std::string> streamCatalogCols;
 
     /*
      * This method maps col IDs from the specified
@@ -147,11 +95,18 @@ namespace credativ {
 
     /*
      * Checks if the specified archive directory is already registered
-     * somewhere in the archive.
+     * in the catalog. Returns a valid CatalogDescr handle if true, otherwise
+     * the returned CatalogDescr handle is initialized with id = -1.
      */
     virtual std::shared_ptr<CatalogDescr> exists(std::string directory)
       throw (CCatalogIssue);
 
+    /*
+     * Checks if the specified archive name is already
+     * registered in the catalog. Returns a valid CatalogDescr handle if
+     * true, otherwise the returned CatalogDescr handle is initialized
+     * with id = -1
+     */
     virtual std::shared_ptr<CatalogDescr> existsByName(std::string name)
       throw (CCatalogIssue);
 
@@ -243,6 +198,46 @@ namespace credativ {
      * Close the sqlite catalog database.
      */
     virtual void close() throw(CCatalogIssue);
+
+    /*
+     * Register a stream in the catalog.
+     *
+     * The streamident object reference is initialized with the
+     * stream id.
+     */
+    virtual void registerStream(int archive_id,
+                                credativ::streaming::StreamIdentification& streamident)
+      throw (CCatalogIssue);
+
+    /*
+     * Drop the stream from the catalog database.
+     */
+    virtual void dropStream(int streamid)
+      throw(CCatalogIssue);
+
+    /*
+     * Returns a StreamIdentification shared pointer
+     * from a result set based on the stream catalog table.
+     */
+    std::shared_ptr<credativ::streaming::StreamIdentification>
+       fetchStreamData(sqlite3_stmt *stmt,
+                       std::string archive_name,
+                       std::vector<int> affectedRows)
+      throw(CCatalogIssue);
+
+    /*
+     * Get a list of streams for the specified archive.
+     */
+    std::vector<std::shared_ptr<credativ::streaming::StreamIdentification>>
+       getStreams(std::string archive_name)
+    throw(CCatalogIssue);
+
+    /*
+     * Update the status of the specified stream.
+     */
+    virtual void setStreamStatus(int streamid,
+                                 std::string status)
+      throw(CCatalogIssue);
 
   };
 }

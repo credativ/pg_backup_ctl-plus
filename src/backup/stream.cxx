@@ -77,6 +77,15 @@ bool PGStream::connected() {
           && (PQstatus(this->pgconn) == CONNECTION_OK));
 }
 
+bool PGStream::connected(ConnStatusType& cs) {
+
+  if (!this->pgconn)
+    return false;
+
+  cs = PQstatus(this->pgconn);
+  return (cs != CONNECTION_BAD);
+}
+
 PGStream::~PGStream() {}
 
 void PGStream::setPGConnection(PGconn *conn) {
@@ -121,6 +130,18 @@ void PGStream::connect()
     PQfinish(this->pgconn);
     throw StreamingConnectionFailure(oss.str(), cs);
   }
+}
+
+void PGStream::disconnect()
+  throw(StreamingConnectionFailure) {
+  ConnStatusType cs;
+
+  if (!this->connected())
+    throw StreamingConnectionFailure("unable to disconnect stream: not connected",
+                                     CONNECTION_BAD);
+
+  PQfinish(this->pgconn);
+  this->pgconn = NULL; /* to make sure */
 }
 
 void PGStream::identify()

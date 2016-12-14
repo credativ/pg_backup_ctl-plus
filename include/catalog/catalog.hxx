@@ -40,10 +40,32 @@
 #define SQL_BACKUP_STARTED_ATTNO 4
 #define SQL_BACKUP_STOPPED_ATTNO 5
 #define SQL_BACKUP_PINNED_ATTNO 6
+#define SQL_BACKUP_STATUS 7
 
 /*
  * Keep that in sync with above number of cols
  */
-#define SQL_BACKUP_NCOLS 7
+#define SQL_BACKUP_NCOLS 8
+
+/*
+ * Attributes belong to stream tablex
+ */
+#define SQL_STREAM_ENTITY 3
+
+#define SQL_STREAM_ID_ATTNO 0
+#define SQL_STREAM_ARCHIVE_ID_ATTNO 1
+#define SQL_STREAM_STYPE_ATTNO 2
+#define SQL_STREAM_SLOT_NAME_ATTNO 3
+#define SQL_STREAM_SYSTEMID_ATTNO 4
+#define SQL_STREAM_TIMELINE_ATTNO 5
+#define SQL_STREAM_XLOGPOS_ATTNO 6
+#define SQL_STREAM_DBNAME_ATTNO 7
+#define SQL_STREAM_STATUS_ATTNO 8
+#define SQL_STREAM_REGISTER_DATE_ATTNO 9
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_STREAM_NCOLS 10
 
 #endif

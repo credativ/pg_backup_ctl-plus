@@ -1,5 +1,6 @@
 #include <boost/format.hpp>
 #include <commands.hxx>
+#include <stream.hxx>
 
 using namespace credativ;
 
@@ -372,6 +373,82 @@ StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand() {
 
 void StartBaseBackupCatalogCommand::execute(bool ignored)
   throw(CPGBackupCtlFailure) {
+
+  std::shared_ptr<CatalogDescr> temp_descr(nullptr);
+
+  /*
+   * Die hard in case no catalog descriptor available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute archive command: no catalog");
+
+  /*
+   * Open the catalog, if not done yet.
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  this->catalog->startTransaction();
+
+  /*
+   * Check if the specified archive_name is present, get
+   * its descriptor.
+   */
+  temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    /* Requested archive doesn't exist, error out */
+    std::ostringstream oss;
+    oss << "archive " << this->archive_name << " doesn't exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  try {
+
+    /*
+     * Setup PostgreSQL streaming object.
+     */
+    using namespace credativ::streaming;
+
+    PGStream pgstream(temp_descr);
+
+    /*
+     * Get connection to the PostgreSQL instance.
+     */
+    pgstream.connect();
+
+    /*
+     * Identify this replication connection.
+     */
+    pgstream.identify();
+
+    /*
+     * Register information for the current basebackup in the catalog.
+     */
+    this->catalog->registerStream(temp_descr->id, pgstream.streamident);
+
+#ifdef __DEBUG__
+    cerr << "STREAM reg, id " << pgstream.id << " date " << pgstream.streamident.create_date;
+#endif
+
+    /*
+     * ...and finally drop the current stream.
+     */
+    this->catalog->dropStream(pgstream.streamident.id);
+
+    /*
+     * And disconnect
+     */
+    pgstream.disconnect();
+
+  } catch(CPGBackupCtlFailure e) {
+    this->catalog->rollbackTransaction();
+    /* re-throw ... */
+    throw e;
+  }
+
+  this->catalog->commitTransaction();
 
 }
 

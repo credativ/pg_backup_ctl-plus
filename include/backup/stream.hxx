@@ -6,8 +6,8 @@
 #include <libpq-fe.h>
 #include <access/xlog_internal.h>
 
+#include <descr.hxx>
 #include <common.hxx>
-#include <BackupCatalog.hxx>
 
 namespace credativ {
 
@@ -49,10 +49,16 @@ namespace credativ {
     };
 
     struct StreamIdentification {
+      unsigned long long id = -1; /* internal catalog stream id */
+      int archive_id = -1; /* used to reflect assigned archive */
+      std::string stype;
+      std::string slot_name;
       std::string systemid;
       int         timeline;
       std::string xlogpos;
       std::string dbname;
+      std::string status;
+      std::string create_date;
 
       /*
        * Returns the decoded XLogRecPtr from xlogpos
@@ -77,15 +83,15 @@ namespace credativ {
        * Set to TRUE, if successfully identified.
        */
       bool identified = false;
+    public:
+      PGStream(const std::shared_ptr<CatalogDescr>& descr);
+      ~PGStream();
 
       /*
        * If identified, holds information
        * from IDENTIFY SYSTEM
        */
       StreamIdentification streamident;
-    public:
-      PGStream(const std::shared_ptr<CatalogDescr>& descr);
-      ~PGStream();
 
       /*
        * Helper function to decode a XLOG position string.
@@ -106,10 +112,25 @@ namespace credativ {
         throw(StreamingConnectionFailure);
 
       /*
+       * Disconnect from PostgreSQL instance.
+       *
+       * Also resets all internal state of PGStream.
+       */
+      virtual void disconnect()
+        throw(StreamingConnectionFailure);
+
+      /*
        * Returns TRUE if PostgreSQL connection handle
        * is valid.
        */
       virtual bool connected();
+
+      /*
+       * The same as connected(), but also sets the
+       * specified connection status argument to the
+       * current ConnStatusType.
+       */
+      virtual bool connected(ConnStatusType& cs);
 
       /*
        * Override internal PostgreSQL connection handle.
