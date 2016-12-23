@@ -38,8 +38,7 @@ VerifyArchiveCatalogCommand::VerifyArchiveCatalogCommand() {
   this->tag = VERIFY_ARCHIVE;
 }
 
-void VerifyArchiveCatalogCommand::execute(bool missingOK)
-  throw(CPGBackupCtlFailure) {
+void VerifyArchiveCatalogCommand::execute(bool missingOK) {
 
   /*
    * Check if the specified archive really exists.
@@ -103,8 +102,7 @@ ListArchiveCatalogCommand::ListArchiveCatalogCommand() {
   this->tag = LIST_ARCHIVE;
 }
 
-void ListArchiveCatalogCommand::execute(bool extendedOutput)
-  throw(CPGBackupCtlFailure) {
+void ListArchiveCatalogCommand::execute(bool extendedOutput) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -232,8 +230,7 @@ AlterArchiveCatalogCommand::AlterArchiveCatalogCommand(std::shared_ptr<BackupCat
   this->catalog = catalog;
 }
 
-void AlterArchiveCatalogCommand::execute(bool ignoreMissing) 
-  throw(CPGBackupCtlFailure) {
+void AlterArchiveCatalogCommand::execute(bool ignoreMissing) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -299,8 +296,7 @@ DropArchiveCatalogCommand::DropArchiveCatalogCommand() {
   this->tag = DROP_ARCHIVE;
 }
 
-void DropArchiveCatalogCommand::execute(bool existsOk)
-  throw(CPGBackupCtlFailure) {
+void DropArchiveCatalogCommand::execute(bool existsOk) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -371,8 +367,7 @@ StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand() {
   this->tag = START_BASEBACKUP;
 }
 
-void StartBaseBackupCatalogCommand::execute(bool ignored)
-  throw(CPGBackupCtlFailure) {
+void StartBaseBackupCatalogCommand::execute(bool ignored) {
 
   std::shared_ptr<CatalogDescr> temp_descr(nullptr);
 
@@ -428,9 +423,24 @@ void StartBaseBackupCatalogCommand::execute(bool ignored)
      */
     this->catalog->registerStream(temp_descr->id, pgstream.streamident);
 
+    CompressedArchiveFile file(path(temp_descr->directory) / "test.gz");
+    file.setOpenMode("w");
+    file.open();
+    file.write("This is a file with compression", 31);
+    file.fsync();
+    file.close();
+
 #ifdef __DEBUG__
-    cerr << "STREAM reg, id " << pgstream.id << " date " << pgstream.streamident.create_date;
+    std::cerr << "STREAM reg, id "
+              << pgstream.streamident.id
+              << " date "
+              << pgstream.streamident.create_date
+              << std::endl;
 #endif
+
+    /*
+     * Enter basebackup stream.
+     */
 
     /*
      * ...and finally drop the current stream.
@@ -442,10 +452,12 @@ void StartBaseBackupCatalogCommand::execute(bool ignored)
      */
     pgstream.disconnect();
 
-  } catch(CPGBackupCtlFailure e) {
+  } catch(CPGBackupCtlFailure& e) {
+
     this->catalog->rollbackTransaction();
     /* re-throw ... */
     throw e;
+
   }
 
   this->catalog->commitTransaction();
@@ -473,8 +485,7 @@ CreateArchiveCatalogCommand::CreateArchiveCatalogCommand(shared_ptr<BackupCatalo
 
 }
 
-void CreateArchiveCatalogCommand::execute(bool existsOk) 
-  throw(CPGBackupCtlFailure) {
+void CreateArchiveCatalogCommand::execute(bool existsOk) {
 
   shared_ptr<CatalogDescr> temp_descr(nullptr);
 

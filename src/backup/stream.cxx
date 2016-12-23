@@ -4,6 +4,8 @@
 
 using namespace credativ::streaming;
 
+std::string ERRCODE_DUPLICATE_OBJECT("42710");
+
 StreamingFailure::StreamingFailure(std::string errstr,
                                    ConnStatusType connStatus)
   : CPGBackupCtlFailure(errstr) {
@@ -35,13 +37,54 @@ ExecStatusType StreamingFailure::getExecStatus() {
   return this->execStatus;
 }
 
-XLogRecPtr StreamIdentification::getXLOGStartPos()
-  throw (StreamingFailure) {
+std::string StreamingExecutionFailure::getSQLSTATE() {
+  return this->SQLSTATE;
+};
+
+StreamingExecutionFailure::StreamingExecutionFailure(std::string errstring,
+                                                     ExecStatusType execStatus,
+                                                     std::string& SQLSTATE) : StreamingFailure(errstring, execStatus) {
+  this->SQLSTATE = SQLSTATE;
+};
+
+XLogRecPtr StreamIdentification::getXLOGStartPos() {
   return PGStream::decodeXLOGPos(this->xlogpos);
 }
 
-XLogRecPtr PGStream::decodeXLOGPos(std::string pos)
-  throw(StreamingFailure) {
+StreamIdentification::StreamIdentification() {
+
+ this->id = -1;
+  this->archive_id = -1;
+  this->stype = "";
+  this->slot_name = "";
+  this->systemid  = "";
+  this->timeline  = -1;
+  this->xlogpos   = "";
+  this->dbname    = "";
+  this->status    = "";
+  this->create_date = "";
+  this->slot = nullptr;
+}
+
+StreamIdentification::~StreamIdentification() {
+  this->slot = nullptr;
+}
+
+void StreamIdentification::reset() {
+  this->id = -1;
+  this->archive_id = -1;
+  this->stype = "";
+  this->slot_name = "";
+  this->systemid  = "";
+  this->timeline  = -1;
+  this->xlogpos   = "";
+  this->dbname    = "";
+  this->status    = "";
+  this->create_date = "";
+  this->slot = nullptr;
+}
+
+XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 
   XLogRecPtr result;
   uint32     hi, lo;
@@ -55,13 +98,10 @@ XLogRecPtr PGStream::decodeXLOGPos(std::string pos)
   return ((uint64) hi) << 32 | lo;
 }
 
-int PGStream::getServerVersion()
-  throw(StreamingConnectionFailure) {
+int PGStream::getServerVersion() {
 
   if (!this->connected()) {
     throw StreamingConnectionFailure("could not get server version: not connected", CONNECTION_BAD);
-  } else {
-
   }
 
   return PQserverVersion(this->pgconn);
@@ -92,8 +132,7 @@ void PGStream::setPGConnection(PGconn *conn) {
   this->pgconn = conn;
 }
 
-void PGStream::connect()
-  throw(StreamingConnectionFailure) {
+void PGStream::connect() {
 
   ConnStatusType cs;
 
@@ -132,8 +171,7 @@ void PGStream::connect()
   }
 }
 
-void PGStream::disconnect()
-  throw(StreamingConnectionFailure) {
+void PGStream::disconnect() {
   ConnStatusType cs;
 
   if (!this->connected())
@@ -142,14 +180,23 @@ void PGStream::disconnect()
 
   PQfinish(this->pgconn);
   this->pgconn = NULL; /* to make sure */
+  this->identified = false;
+
+  /*
+   * Reset Stream Identification.
+   */
+  this->streamident.reset();
 }
 
-void PGStream::identify()
-  throw(StreamingExecutionFailure) {
+bool PGStream::isIdentified() {
+  return this->identified;
+}
+
+void PGStream::identify() {
 
   ExecStatusType es;
   PGresult      *result;
-  const char *query = "IDENTIFY SYSTEM";
+  const char *query = "IDENTIFY_SYSTEM;";
 
   /*
    * Clear internal state
@@ -167,20 +214,21 @@ void PGStream::identify()
 
   if (es != PGRES_TUPLES_OK) {
     /* whoops, command execution returned no rows... */
+    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
     std::ostringstream oss;
     oss << "IDENTIFY SYSTEM failed: " << PQresultErrorMessage(result);
     PQclear(result);
-    throw StreamingExecutionFailure(oss.str(), es);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
   }
 
   /* sanity check, expected number of rows/cols ? */
   if (PQnfields(result) < 4) {
-    throw StreamingExecutionFailure("unexpected number of system identification columns",
+    throw StreamingExecutionFailure("unexpected number(4) of system identification columns",
                                     es);
   }
 
   if (PQntuples(result) != 1) {
-    throw StreamingExecutionFailure("expected number of rows for system identification",
+    throw StreamingExecutionFailure("unexpected number of rows(1) for system identification",
                                     es);
   }
 
@@ -189,11 +237,124 @@ void PGStream::identify()
    */
   this->streamident.systemid
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "systemid")));
-  this->streamident.timeline = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(result, 0, PQfnumber(result, "timeline"))));
+  this->streamident.timeline
+    = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(result, 0,
+                                                        PQfnumber(result, "timeline"))));
   this->streamident.xlogpos
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "xlogpos")));
   this->streamident.dbname
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "dbname")));
 
+  this->streamident.create_date
+    = CPGBackupCtlBase::current_timestamp();
+
   this->identified = true;
+}
+
+void PGStream::startBasebackup() {
+
+}
+
+std::string PGStream::generateSlotName() {
+
+  if (!this->isIdentified()) {
+    throw StreamingExecutionFailure("could not generate slot name: not identified",
+                                    PGRES_FATAL_ERROR);
+  }
+
+  std::ostringstream slot_name;
+
+  slot_name << "SLOT-pg_backup_ctl_stream_"
+            << this->streamident.id;
+
+  return slot_name.str();
+
+}
+
+std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot(bool reserve_wal,
+                                                                             bool existing_ok,
+                                                                             bool noident_ok) {
+
+  std::ostringstream query;
+  ExecStatusType es;
+  PGresult      *result;
+  std::string slot_name;
+  std::shared_ptr<PhysicalReplicationSlot> slot;
+
+  /*
+   * Connected?
+   */
+  if (!this->connected()) {
+    throw StreamingConnectionFailure("could not create replication slot: not connected",
+                                     CONNECTION_BAD);
+  }
+
+  /*
+   * We need to be IDENTIFIED
+   */
+  if (!this-!isIdentified()
+      && !noident_ok) {
+    throw StreamingExecutionFailure("could not create replication slot: not identified",
+                                    PGRES_FATAL_ERROR);
+  }
+
+  /*
+   * Assign the slot name to current ident
+   */
+  this->streamident.slot_name = this->generateSlotName();
+
+  query << "CREATE_REPLICATION_SLOT "
+        << slot_name
+        << " PHYSICAL";
+
+  if (reserve_wal) {
+    query << " RESERVE_WAL";
+  }
+
+  result = PQexec(this->pgconn, query.str().c_str());
+  std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
+
+  /*
+   * Check state of the returned result. If the slot already exists
+   * and existing_ok is set to TRUE, ignore the duplicate_object SQLSTATE.
+   */
+  if ((es = PQresultStatus(result)) != PGRES_TUPLES_OK) {
+    if (sqlstate.compare(ERRCODE_DUPLICATE_OBJECT) == 0) {
+      if (!existing_ok) {
+        std::ostringstream oss;
+        oss << "replication slot " << slot_name
+            << " already exists";
+        throw StreamingExecutionFailure(oss.str(), es,
+                                        ERRCODE_DUPLICATE_OBJECT);
+      }
+    }
+  }
+
+  /*
+   * If the query returned successfully, we get a single row result
+   * set with 4 cols.
+   */
+  if(PQntuples(result) != 1) {
+    throw StreamingExecutionFailure("cannot create replication slot: unexpected number of rows",
+                                    es,
+                                    sqlstate);
+  }
+
+  if (PQnfields(result) < 3) {
+    throw StreamingExecutionFailure("connect create replication slot: unexpected number of columns",
+                                    es,
+                                    sqlstate);
+  }
+
+  slot = std::make_shared<PhysicalReplicationSlot>();
+  slot->slot_name = std::string(PQgetvalue(result, 0,
+                                           PQfnumber(result,
+                                                     "slot_name")));
+
+  if (this->isIdentified()) {
+    this->streamident.slot = slot;
+  }
+
+  return slot;
+
 }

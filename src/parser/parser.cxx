@@ -241,8 +241,7 @@ PGBackupCtlCommand::PGBackupCtlCommand(CatalogDescr descr) {
 
 PGBackupCtlCommand::~PGBackupCtlCommand() {}
 
-void PGBackupCtlCommand::execute(std::string catalogDir)
-  throw (CPGBackupCtlFailure) {
+void PGBackupCtlCommand::execute(std::string catalogDir) {
 
   shared_ptr<CatalogDescr> descr(nullptr);
 
@@ -329,7 +328,7 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
   }
 
   case START_BASEBACKUP: {
-
+    result = make_shared<StartBaseBackupCatalogCommand>(this->catalogDescr);
     break;
   }
 

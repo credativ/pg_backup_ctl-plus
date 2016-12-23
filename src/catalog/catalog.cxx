@@ -568,24 +568,25 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
     throw CCatalogIssue("catalog database not opened");
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO archive(name, directory, compression, pghost, pgport, pguser, pgdatabase) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                          "INSERT INTO archive(name, directory, compression, pghost, pgport, pguser, pgdatabase) "
+                          "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
                           -1,
                           &stmt,
                           NULL);
   sqlite3_bind_text(stmt, 1,
-                    descr->directory.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 2,
-                   descr->compression);
-  sqlite3_bind_text(stmt, 3,
-                    descr->pghost.c_str(), -1 , SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 4,
-                   descr->pgport);
-  sqlite3_bind_text(stmt, 5,
-                    descr->pguser.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 6,
-                    descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 7,
                     descr->archive_name.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2,
+                    descr->directory.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 3,
+                   descr->compression);
+  sqlite3_bind_text(stmt, 4,
+                    descr->pghost.c_str(), -1 , SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 5,
+                   descr->pgport);
+  sqlite3_bind_text(stmt, 6,
+                    descr->pguser.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 7,
+                    descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
 
@@ -910,7 +911,7 @@ void BackupCatalog::setStreamStatus(int streamid,
 
   rc= sqlite3_step(stmt);
 
-  if (rc != SQLITE_OK) {
+  if (rc != SQLITE_DONE) {
     std::ostringstream oss;
     oss << "failed to update stream status for id " << streamid;
     sqlite3_finalize(stmt);
@@ -948,7 +949,7 @@ void BackupCatalog::dropStream(int streamid)
 
   rc = sqlite3_step(stmt);
 
-  if (rc != SQLITE_OK) {
+  if (rc != SQLITE_DONE) {
     std::ostringstream oss;
     oss << "error dropping stream: " << sqlite3_errmsg(this->db_handle);
     sqlite3_finalize(stmt);
@@ -971,19 +972,20 @@ void BackupCatalog::registerStream(int archive_id,
     throw CCatalogIssue("could not register stream: database not opened");
   }
 
-  query << "INSERT INTO stream(";
-  query << "archive_id, stype, systemid, timeline, xlogpos, dbname, status, create_date)";
-  query << " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);";
-
   rc = sqlite3_prepare_v2(this->db_handle,
-                          query.str().c_str(),
+                          "INSERT INTO stream("
+                          "archive_id, stype, systemid, timeline, xlogpos, dbname, status, create_date)"
+                          " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
                           -1,
                           &stmt,
                           NULL);
 
   if (rc != SQLITE_OK) {
     std::ostringstream oss;
-    oss << "error preparing to register stream: " << sqlite3_errmsg(this->db_handle);
+    oss << "error code "
+        << rc
+        << " when preparing to register stream: "
+        << sqlite3_errmsg(this->db_handle);
     throw CCatalogIssue(oss.str());
   }
 
@@ -1002,7 +1004,7 @@ void BackupCatalog::registerStream(int archive_id,
 
   rc = sqlite3_step(stmt);
 
-  if (rc != SQLITE_OK) {
+  if (rc != SQLITE_DONE) {
     std::ostringstream oss;
     oss << "error preparing to register stream: " << sqlite3_errmsg(this->db_handle);
     sqlite3_finalize(stmt);

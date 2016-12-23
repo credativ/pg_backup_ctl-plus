@@ -66,6 +66,84 @@ void CPGBackupCtlBase::writeFileReplace(std::string filePath,
   }
 }
 
+/*
+ * Prepares a gzipp'ed or plain ostringstring to write to.
+ */
+filtering_ostream* CPGBackupCtlBase::prepareBinaryOutFile(boost::filesystem::path pathHandle,
+                                                          std::ofstream& outstream) {
+
+  filtering_ostream
+    *zipped = new filtering_ostream();
+  outstream.open(pathHandle.string(), std::ios_base::out | std::ios_base::binary);
+
+  /*
+   * The specified path handle should hold a file extension which will
+   * *.gz in case a file compression output is requested.
+   */
+  boost::filesystem::path file_ext = pathHandle.extension();
+  if (file_ext.string() == ".gz") {
+    zipped->push(gzip_compressor());
+  }
+
+  zipped->push(outstream);
+
+  /*
+   * ...and we're done.
+   */
+  return zipped;
+}
+
+void CPGBackupCtlBase::prepareSyncedBinaryOutFile(boost::filesystem::path pathHandle,
+                                                  SyncedBinaryOutFile& handle) {
+
+  handle.fp = fopen(pathHandle.string().c_str(), "w");
+
+  if (handle.fp == NULL) {
+    std::ostringstream oss;
+    oss << "could not open file " << pathHandle.string() << strerror(errno);
+    throw CPGBackupCtlFailure(oss.str());
+  }
+
+  handle.fd = fileno(handle.fp);
+  handle.sink = file_descriptor_sink(handle.fd, never_close_handle);
+
+  handle.out = new filtering_ostream();
+
+  boost::filesystem::path file_ext = pathHandle.extension();
+
+  if (file_ext.string() == ".gz") {
+    handle.out->push(gzip_compressor());
+  }
+
+  handle.out->push(handle.sink);
+}
+
+void CPGBackupCtlBase::syncAndClose(SyncedBinaryOutFile& handle) {
+
+  if (handle.sink.is_open()) {
+    handle.out->flush();
+    fsync(handle.sink.handle());
+    handle.sink.close();
+    delete handle.out;
+  }
+
+}
+
+/*
+ * Write to the specified file referenced by the
+ * ostringstream out.
+ *
+ * NOTE: Since this method assumes out is already opened
+ *       and prepared by prepareBinaryOutFile().
+ */
+void CPGBackupCtlBase::writeChunk(SyncedBinaryOutFile file,
+                                  char *binaryblock,
+                                  size_t size) {
+
+  file.out->write(binaryblock, size);
+
+}
+
 void CPGBackupCtlBase::openFile(std::ifstream& file,
                                 std::stringstream& out,
                                 boost::filesystem::path pathHandle,
@@ -103,7 +181,7 @@ void CPGBackupCtlBase::openFile(std::ifstream& file,
    */
   boost::iostreams::copy(unzipped, out);
   file.close();
-  
+
 }
 
 ptime CPGBackupCtlBase::ISO8601_strTo_ptime(string input) {

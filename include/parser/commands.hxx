@@ -15,8 +15,7 @@ namespace credativ {
     std::shared_ptr<BackupCatalog> catalog = NULL;
     virtual void copy(CatalogDescr& source);
   public:
-    virtual void execute(bool existsOk)
-      throw(CPGBackupCtlFailure) = 0;
+    virtual void execute(bool existsOk) = 0;
 
     virtual ~BaseCatalogCommand();
 
@@ -30,8 +29,7 @@ namespace credativ {
     VerifyArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     VerifyArchiveCatalogCommand();
 
-    virtual void execute(bool missingOk)
-      throw(CPGBackupCtlFailure);
+    virtual void execute(bool missingOk);
   };
 
   class CreateArchiveCatalogCommand : public BaseCatalogCommand {
@@ -43,8 +41,7 @@ namespace credativ {
     CreateArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     CreateArchiveCatalogCommand();
 
-    virtual void execute(bool existsOk)
-      throw(CPGBackupCtlFailure);
+    virtual void execute(bool existsOk);
   };
 
   /*
@@ -60,8 +57,7 @@ namespace credativ {
     DropArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     DropArchiveCatalogCommand();
 
-    virtual void execute(bool existsOk)
-      throw(CPGBackupCtlFailure);
+    virtual void execute(bool existsOk);
 
   };
 
@@ -77,8 +73,7 @@ namespace credativ {
     AlterArchiveCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     AlterArchiveCatalogCommand();
 
-    virtual void execute(bool ignoreMissing)
-      throw (CPGBackupCtlFailure);
+    virtual void execute(bool ignoreMissing);
   };
 
   typedef enum {
@@ -107,19 +102,18 @@ namespace credativ {
 
     virtual void setOutputMode(ListArchiveOutputMode mode);
 
-    virtual void execute (bool extendedOutput)
-      throw (CPGBackupCtlFailure);
+    virtual void execute (bool extendedOutput);
   };
 
   /*
    * Implements the START BASEBACKUP command.
    */
   class StartBaseBackupCatalogCommand : public BaseCatalogCommand {
+  public:
     StartBaseBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     StartBaseBackupCatalogCommand();
 
-    virtual void execute(bool ignored)
-      throw(CPGBackupCtlFailure);
+    virtual void execute(bool ignored);
   };
 
 }

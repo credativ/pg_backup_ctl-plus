@@ -104,6 +104,30 @@ if (libpq_FOUND)
 endif(libpq_FOUND)
 
 ##
+## Force GNU/gettext
+##
+find_package(Gettext)
+if (GETTEXT_FOUND)
+   message("GNU/gettext support available")
+else()
+   message(SEND_ERROR "gettext support required, but no gettext found")
+endif(GETTEXT_FOUND)
+
+##
+## We want to have zlib, ideally
+##
+find_package(ZLIB OPTIONAL_COMPONENTS)
+if(ZLIB_FOUND)
+   message("using zlib support")
+   set(PG_BACKUP_CTL_HAS_ZLIB "#define PG_BACKUP_CTL_HAS_ZLIB 1")
+   include_directories(${ZLIB_INCLUDE_DIRS})
+   target_link_libraries(pgbckctl-common ${ZLIB_LIBRARIES})
+else()
+   message("no zlib found, compression unavailable")
+   set(PG_BACKUP_CTL_HAS_ZLIB "#undef PG_BACKUP_CTL_HAS_ZLIB")
+endif()
+
+##
 ## Get current git revision.
 ##
 execute_process(COMMAND git describe --dirty --tags --always

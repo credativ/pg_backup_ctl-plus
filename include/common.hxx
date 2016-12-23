@@ -2,11 +2,22 @@
 #include "pg_backup_ctl.hxx"
 #define __PGBACKUPCTL_COMMON__
 
+/* PostgreSQL API includes */
+#include <postgres_fe.h>
+#include <access/xlog_internal.h>
+
+/* Required for MAXPGPATH */
+#include <pg_config_manual.h>
+
+/* Required for MAXXLOGFNAMELEN */
+#include <access/xlog_internal.h>
+
 #include <boost/date_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/format.hpp>
 #include <iostream>
 #include <fstream>
@@ -17,14 +28,14 @@
  *
  * src/include/access/xlog_internal.h
  */
-#define MAXXLOGFNAMELEN 25
+// #define MAXXLOGFNAMELEN 25
 
 /*
  * Max length of a backup label
  *
  * src/include/pg_config_manual.h
  */
-#define MAXPGPATH 1024
+//#define MAXPGPATH 1024
 
 #define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
 
@@ -72,6 +83,20 @@ namespace credativ {
   };
 
   /*
+   * SyncedFile - A descriptor struct
+   * which implements a handle for file_descriptor_sink
+   * based file operations.
+   */
+  struct SyncedBinaryOutFile {
+
+    FILE *fp;
+    int fd;
+    boost::iostreams::file_descriptor_sink sink;
+    boost::iostreams::filtering_ostream *out;
+
+  };
+
+  /*
    * Base class for all descendants in the
    * pg_backup_ctl++ class hierarchy.
    */
@@ -110,6 +135,19 @@ namespace credativ {
     static void writeFileReplace(std::string filePath,
                                  std::string msg)
       throw (CPGBackupCtlFailure);
+
+    static boost::iostreams::filtering_ostream *
+       prepareBinaryOutFile(boost::filesystem::path pathHandle,
+                            std::ofstream& outstream);
+
+    void prepareSyncedBinaryOutFile(boost::filesystem::path pathHandle,
+                                    SyncedBinaryOutFile& handle);
+
+    void syncAndClose(SyncedBinaryOutFile& handle);
+
+    static void writeChunk(SyncedBinaryOutFile file,
+                           char *binaryblock,
+                           size_t size);
   };
 
 }

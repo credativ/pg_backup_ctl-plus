@@ -54,5 +54,5 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(PostgreSQL
    DEFAULT_MSG
    libpq_INCLUDE_DIRS
-   pgsql_INCLUDE_SERVER_INCLUDE
+   pgsql_INCLUDE_SERVER
    libpq_LIBRARIES)

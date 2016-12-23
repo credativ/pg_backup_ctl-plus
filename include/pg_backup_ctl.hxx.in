@@ -13,4 +13,9 @@
  */
 #define PG_BACKUP_CTL_SQLITE "@PG_BACKUP_CTL_SQLITE@"
 
+/*
+ * We compile with zlib support
+ */
+@PG_BACKUP_CTL_HAS_ZLIB@
+
 #endif

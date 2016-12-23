@@ -395,8 +395,7 @@ int main(int argc, const char **argv) {
 
         /*
          * End of the command is indicated by ';'.
-         * Currently, this is not handled by our current
-         * handwritten parser itself.
+         * Currently, this is not handled by the parser itself.
          */
         if (cmd_str[strlen(cmd_str) - 1] == ';') {
           input += string(cmd_str, strlen(cmd_str) - 1);
