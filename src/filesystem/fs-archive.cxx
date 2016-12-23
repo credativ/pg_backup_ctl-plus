@@ -752,7 +752,7 @@ size_t CompressedArchiveFile::read(char *buf, size_t len) {
       /* check errno */
       oss << strerror(errno);
     } else {
-      oss < gzerrstr;
+      oss << gzerrstr;
     }
 
     throw CArchiveIssue(oss.str());
