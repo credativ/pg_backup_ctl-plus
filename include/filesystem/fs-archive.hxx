@@ -79,7 +79,7 @@ namespace credativ {
 
   };
 
-  class ArchiveFile : BackupFile {
+  class ArchiveFile : public BackupFile {
   private:
     FILE  *fp = NULL;
 
@@ -130,7 +130,7 @@ namespace credativ {
 
 #ifdef PG_BACKUP_CTL_HAS_ZLIB
 
-  class CompressedArchiveFile : BackupFile {
+  class CompressedArchiveFile : public BackupFile {
   private:
     gzFile zh = NULL;
     FILE  *fp = NULL;
@@ -363,6 +363,17 @@ namespace credativ {
      * Returns the number of backups found.
      */
     virtual int readBackupHistory() throw(CArchiveIssue);
+
+    /*
+     * A static factory method to create a BackupFile instance.
+     *
+     * NOTE: Nothing will be physically created so far until
+     *       the caller starts to call the necessary methods of
+     *       the returned BackupFile instance!
+     */
+    static std::shared_ptr<BackupFile> getBackupFile(path file,
+                                                     bool compressed);
+
   };
 
 }

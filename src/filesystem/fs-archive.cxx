@@ -143,6 +143,21 @@ shared_ptr<CatalogDescr> CPGBackupCtlFS::catalogDescrFromBackupHistoryFile(share
   return result;
 }
 
+std::shared_ptr<BackupFile> getBackupFile(path file,
+                                          bool compressed) {
+
+  /*
+   * Iff compressed is requested, create a CompressedBackupFile
+   * instance. If false, just return a ArchiveFile instance.
+   */
+  if (compressed) {
+    return make_shared<CompressedArchiveFile>(file);
+  } else {
+    return make_shared<ArchiveFile>(file);
+  }
+
+}
+
 int CPGBackupCtlFS::readBackupHistory() throw(CArchiveIssue) {
 
   int countBackups = 0;
