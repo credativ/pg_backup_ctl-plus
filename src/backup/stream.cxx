@@ -84,6 +84,33 @@ void StreamIdentification::reset() {
   this->slot = nullptr;
 }
 
+/******************************************************************************
+ * Implementation of BaseBackupProcess
+ ******************************************************************************/
+
+BaseBackupProcess::BaseBackupProcess(StreamIdentification ident,
+                                     PGconn *prepared_connection) {
+  this->ident = ident;
+  this->pgconn = prepared_connection;
+}
+
+BaseBackupProcess::~BaseBackupProcess() {
+
+  /*
+   * Don't close the associated PostgreSQL
+   * connection handle here!
+   *
+   * We are expected to operate as a sub
+   * on a calling PGStream handle, which does
+   * all the legwork for us.
+   */
+
+}
+
+/******************************************************************************
+ * Implementation of PGStream
+ ******************************************************************************/
+
 XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 
   XLogRecPtr result;
@@ -126,7 +153,13 @@ bool PGStream::connected(ConnStatusType& cs) {
   return (cs != CONNECTION_BAD);
 }
 
-PGStream::~PGStream() {}
+PGStream::~PGStream() {
+
+  if (this->connected()) {
+    PQfinish(this->pgconn);
+  }
+
+}
 
 void PGStream::setPGConnection(PGconn *conn) {
   this->pgconn = conn;

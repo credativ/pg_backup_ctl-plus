@@ -213,6 +213,18 @@ namespace credativ {
     virtual void verify() throw(CArchiveIssue);
 
     /*
+     * Returns a copy of the internal base directory
+     * path handle.
+     */
+    virtual path basedir();
+
+    /*
+     * Returns a copy of the internal log directory
+     * path handle.
+     */
+    virtual path logdir();
+
+    /*
      * Fsync the directory reference by this
      * object instance.
      */

@@ -100,6 +100,67 @@ namespace credativ {
       XLogRecPtr getXLOGStartPos();
     };
 
+    typedef enum {
+
+      BASEBACKUP_STARTED,
+      BASEBACKUP_START_POSITION,
+      BASEBACKUP_TABLESPACE_META,
+      BASEBACKUP_STEP_TABLESPACE,
+      BASEBACKUP_EOF
+
+    } BaseBackupState;
+
+    class BaseBackupProcess : public CPGBackupCtlBase {
+
+    private:
+      BaseBackupState current_state;
+      PGconn *pgconn;
+      StreamIdentification ident;
+    public:
+
+      BaseBackupProcess(StreamIdentification ident,
+                        PGconn *prepared_connection);
+      ~BaseBackupProcess();
+
+      /*
+       * Read the starting position from the initialized
+       * basebackup stream.
+       */
+      virtual void readStartingPosition();
+
+      /*
+       * Request meta information of all tablespaces
+       * to be included in the backup. If the internal state
+       * machine is not properly synched with the streaming
+       * protocol state, this will throw a StreamingExecution
+       * exception.
+       */
+      virtual void readTablespaceInfo();
+
+      /*
+       * Step through the interal tablespace meta info
+       * (initialized by calling readTablespaceInfo()), and
+       * backup 'em into files into the catalog. The method
+       * requires an correctly initialized archive handle
+       * to write the files properly.
+       *
+       * Can be called multiple times as long as
+       * the internal tablespace meta info has OIDs to
+       * backup left and true is returned.
+       * If no more tablespaces are there
+       * to backup, this method returns false.
+       */
+      virtual bool stepTablespace(std::shared_ptr<BackupDirectory>);
+
+      /*
+       * Backup the requested tablespace OID. Throws a
+       * StreamingExecution exception in case the OID
+       * is not in the internal tablespace meta info.
+       */
+      virtual void backupTablespace(int OID);
+
+    };
+
     class PGStream : CPGBackupCtlBase {
     private:
       /*
