@@ -7,7 +7,7 @@
 #include <boost/tokenizer.hpp>
 
 /* required for string case insensitive comparison */
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 /*
  * For the boost builtin parser.
@@ -79,22 +79,10 @@ namespace credativ {
          * Parser rule definitions
          */
         start %= eps > (
-                        /*
-                         * CREATE ARCHIVE <name> command
-                         */
-                        cmd_create_archive > identifier
-                        [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                        > no_case[ lexeme[ lit("PARAMS") ] ]
-                        > directory
-                        [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
-                        > hostname
-                        [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-                        > database
-                        [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-                        > username
-                        [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-                        > portnumber
-                        [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ]
+                        /* CREATE command syntax start */
+                        cmd_create >
+                        (cmd_create_archive
+                         | cmd_create_backup_profile)
 
                         /*
                          * VERIFY ARCHIVE <name> command
@@ -138,11 +126,48 @@ namespace credativ {
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
                         );
 
+        cmd_create = no_case[lexeme[ lit("CREATE") ]] ;
+
         cmd_list_archive = no_case[lexeme[ lit("LIST") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_ARCHIVE) ];
 
-        cmd_create_archive = no_case[lexeme[ lit("CREATE") ]] > no_case[lexeme [ lit("ARCHIVE") ]]
-          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_ARCHIVE) ];
+        /*
+         * CREATE BACKUP PROFILE <name> command
+         */
+        cmd_create_backup_profile = no_case[lexeme [ lit("BACKUP") ]]
+          > no_case[lexeme [ lit("PROFILE") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_BACKUP_PROFILE) ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
+          > backup_profile_opts;
+
+        backup_profile_opts =
+          -(profile_compression_option)
+          > -(profile_max_rate_option
+              [ boost::bind(&CatalogDescr::setProfileMaxRate, &cmd, ::_1) ]);
+
+        /*
+         * CREATE ARCHIVE <name> command
+         */
+        cmd_create_archive = no_case[lexeme [ lit("ARCHIVE") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_ARCHIVE) ]
+
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+
+          > no_case[ lexeme[ lit("PARAMS") ] ]
+
+          > directory
+          [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
+          > hostname
+          [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+          > database
+          [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+          > username
+          [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+          > portnumber
+          [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ];
+
 
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]] > no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
@@ -168,6 +193,23 @@ namespace credativ {
         portnumber = no_case[lexeme[ lit("PGPORT") ]] > "=" > +(char_("0-9"));
 
         /*
+         * Rule to read in COMPRESSION=<BACKUP_COMPRESSION_TYPE>
+         */
+        profile_compression_option = no_case[lexeme[ lit("COMPRESSION") ]]
+          > "="
+          > (no_case[lexeme[ lit("GZIP") ]]
+             [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_GZIP) ]
+             | no_case[lexeme[ lit("NONE") ]]
+             [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_NONE) ]);
+
+        /*
+         * Rule to read in MAX_RATE=<kbps>
+         */
+        profile_max_rate_option = no_case[lexeme[ lit("MAX_RATE") ]]
+          > "="
+          > +(char_("0-9"));
+
+        /*
          * We try to support both, quoted and unquoted identifiers. With quoted
          * identifiers, we disallow any embedded double quotes, too.
          */
@@ -191,7 +233,9 @@ namespace credativ {
                        );
 
         start.name("command start");
+        cmd_create.name("CREATE start");
         cmd_create_archive.name("CREATE ARCHIVE");
+        cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_verify_archive.name("VERIFY ARCHIVE");
         cmd_drop_archive.name("DROP ARCHIVE");
         cmd_alter_archive.name("ALTER ARCHIVE");
@@ -199,29 +243,37 @@ namespace credativ {
         cmd_list_archive.name("LIST ARCHIVE");
         identifier.name("object identifier");
         hostname.name("ip or hostname");
+        profile_compression_option.name("gzip or none");
+        profile_max_rate_option.name("maximum transfer rate in KB/s");
         database.name("database identifier");
         username.name("username identifier");
         portnumber.name("port number");
         directory_string.name("directory path");
         directory.name("directory identifier");
+        backup_profile_opts.name("backup profile parameters");
       }
 
       /*
        * Rule return declarations.
        */
       qi::rule<Iterator, ascii::space_type> start;
+      qi::rule<Iterator, ascii::space_type> cmd_create;
       qi::rule<Iterator, ascii::space_type> cmd_create_archive,
                           cmd_verify_archive,
                           cmd_drop_archive,
                           cmd_alter_archive,
                           cmd_start_basebackup,
-                          cmd_list_archive;
+                          cmd_list_archive,
+                          cmd_create_backup_profile,
+                          backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
                           database,
                           directory,
                           username,
-                          portnumber;
+                          portnumber,
+                          profile_max_rate_option,
+                          profile_compression_option;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string;
 
@@ -347,6 +399,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
     }
 
     result = listCmd;
+    break;
+  }
+
+  case CREATE_BACKUP_PROFILE: {
+    result = make_shared<CreateBackupProfileCatalogCommand>(this->catalogDescr);
     break;
   }
 

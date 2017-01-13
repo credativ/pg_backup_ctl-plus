@@ -1,16 +1,21 @@
 #ifndef __STREAM_HXX__
 #define __STREAM_HXX__
 
-#include <descr.hxx>
 #include <common.hxx>
+#include <descr.hxx>
 
 /* PostgreSQL client API */
 #include <libpq-fe.h>
 
 #define MAXXLOGFNAMELEN MAXFNAMELEN
 
+using namespace credativ;
+
 namespace credativ {
 
+  /* forward declaration */
+  class BackupDirectory;
+  
   namespace streaming {
 
     class StreamingFailure : public CPGBackupCtlFailure {
@@ -57,6 +62,7 @@ namespace credativ {
 
     /*
      * Represents a physical replication slot.
+     * State of base backup stream.
      */
     struct PhysicalReplicationSlot {
       std::string slot_name;
@@ -99,23 +105,39 @@ namespace credativ {
        */
       XLogRecPtr getXLOGStartPos();
     };
-
+    
+    /*
+     * State of base backup stream.
+     */
     typedef enum {
 
       BASEBACKUP_STARTED,
       BASEBACKUP_START_POSITION,
       BASEBACKUP_TABLESPACE_META,
       BASEBACKUP_STEP_TABLESPACE,
-      BASEBACKUP_EOF
+      BASEBACKUP_EOF,
+      BASEBACKUP_INIT
 
     } BaseBackupState;
 
     class BaseBackupProcess : public CPGBackupCtlBase {
 
-    private:
+    protected:
+
       BaseBackupState current_state;
       PGconn *pgconn;
       StreamIdentification ident;
+
+      int         timeline;
+      std::string xlogpos;
+
+      /*
+       * Backup the requested tablespace OID. Throws a
+       * StreamingExecution exception in case the OID
+       * is not in the internal tablespace meta info.
+       */
+      void backupTablespace(int OID);
+
     public:
 
       BaseBackupProcess(StreamIdentification ident,
@@ -123,10 +145,12 @@ namespace credativ {
       ~BaseBackupProcess();
 
       /*
+       * Start a BASE_BACKUP stream.
+       *
        * Read the starting position from the initialized
        * basebackup stream.
        */
-      virtual void readStartingPosition();
+      virtual void start();
 
       /*
        * Request meta information of all tablespaces
@@ -150,15 +174,7 @@ namespace credativ {
        * If no more tablespaces are there
        * to backup, this method returns false.
        */
-      virtual bool stepTablespace(std::shared_ptr<BackupDirectory>);
-
-      /*
-       * Backup the requested tablespace OID. Throws a
-       * StreamingExecution exception in case the OID
-       * is not in the internal tablespace meta info.
-       */
-      virtual void backupTablespace(int OID);
-
+      virtual bool stepTablespace(std::shared_ptr<credativ::BackupDirectory> archivedir);
     };
 
     class PGStream : CPGBackupCtlBase {
@@ -266,8 +282,9 @@ namespace credativ {
       /*
        * Starts streaming a basebackup. Stream should be
        * already connected and identified.
+       * basebackup() 
        */
-      virtual void startBasebackup();
+      virtual std::shared_ptr<BaseBackupProcess> basebackup();
     };
 
   }

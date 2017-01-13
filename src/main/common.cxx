@@ -196,15 +196,22 @@ ptime CPGBackupCtlBase::ISO8601_strTo_ptime(string input) {
   return result;
 }
 
-string CPGBackupCtlBase::current_timestamp() {
+string CPGBackupCtlBase::current_timestamp(bool asFilename) {
 
   std::time_t t  = std::time(NULL);
   char res[100];
   std::string result;
+  std::string format;
+
+  if (asFilename) {
+    format = "%Y%m%d%H%M%S";
+  } else {
+    format = "%Y-%m-%d %H:%M:%S";
+  }
 
   memset(res, 0, sizeof(res));
 
-  if (std::strftime(res, sizeof(res), "%Y-%m-%d %H:%M:%S", std::localtime((&t))))
+  if (std::strftime(res, sizeof(res), format.c_str(), std::localtime((&t))))
     result = string(res);
   else
     result = "";
@@ -271,4 +278,13 @@ std::string CPGBackupCtlBase::makeHeader(std::string caption,
   header << CPGBackupCtlBase::makeLine(width) << endl;
 
   return header.str();
+}
+
+std::string CPGBackupCtlBase::basebackup_filename() {
+
+  std::ostringstream filename;
+  filename << "basebackup-" << current_timestamp(true);
+
+  return filename.str();
+  
 }

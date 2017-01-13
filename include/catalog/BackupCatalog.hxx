@@ -58,6 +58,12 @@ namespace credativ {
     /* stream table */
     static std::vector<std::string> streamCatalogCols;
 
+    /* backup profiles table */
+    static std::vector<std::string> backupProfilesCatalogCols;
+
+    /* backup tablespaces catalog table */
+    static std::vector<std::string> backupTablespacesCatalogCols;
+    
     /*
      * This method maps col IDs from the specified
      * catalog entity to its string name.
@@ -160,6 +166,12 @@ namespace credativ {
      */
     virtual void createArchive(std::shared_ptr<CatalogDescr> descr) throw (CCatalogIssue);
 
+    /*
+     * Creates a new backup profile.
+     */
+    virtual void createBackupProfile(std::string archive_name,
+                                     std::shared_ptr<BackupProfileDescr> profileDescr);
+    
     /*
      * Delete the specified archive by name from the catalog.
      */

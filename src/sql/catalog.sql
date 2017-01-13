@@ -10,7 +10,7 @@ CREATE TABLE archive(
 );
 
 CREATE TABLE backup(
-       id integer primary key,
+       id integer not null primary key,
        archive_id integer not null,
        history_filename text UNIQUE,
        label text,
@@ -18,7 +18,20 @@ CREATE TABLE backup(
        stopped text,
        pinned integer,
        status text,
-       FOREIGN KEY(archive_id) REFERENCES archive(id)
+       FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
+);
+
+CREATE INDEX backup_id_idx ON backup(id);
+CREATE INDEX backup_archive_id_idx ON backup(archive_id);
+
+CREATE TABLE backup_tablespaces(
+       id integer not null,
+       backup_id integer not null,
+       spcoid integer null,
+       spclocation text null,
+       spcsize bigint not null,
+       PRIMARY KEY(id, backup_id),
+       FOREIGN KEY(backup_id) REFERENCES backup(id) ON DELETE CASCADE
 );
 
 CREATE TABLE stream(
@@ -31,10 +44,30 @@ CREATE TABLE stream(
        xlogpos text     not null,
        dbname  text     not null,
        status text      not null,
-       create_date text not null
+       create_date text not null,
+       FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
 );
 
-CREATE INDEX backup_id_idx ON backup(id);
-CREATE INDEX backup_archive_id_idx ON backup(archive_id);
 CREATE INDEX stream_archive_id_idx ON stream(archive_id);
 CREATE UNIQUE INDEX stream_archive_id_stype_idx ON stream(archive_id, stype);
+
+CREATE TABLE version(
+       number integer not null,
+       create_date text not null);
+
+/* NOTE: version number must match CATALOG_MATCH from include/catalog/catalog.hxx */
+INSERT INTO version VALUES(0x1000, datetime('now'));
+
+CREATE TABLE backup_profiles(
+       id integer not null,
+       name text not null,
+       compress_type text not null,
+       max_rate integer not null CHECK(max_rate BETWEEN 32 AND 1048576),
+       label text,
+       fast_checkpoint integer not null default false,
+       include_wal integer not null default false,
+       wait_for_wal integer not null default true,
+       PRIMARY KEY(id)
+);
+
+CREATE UNIQUE INDEX backup_profiles_name_idx ON backup_profiles(name);

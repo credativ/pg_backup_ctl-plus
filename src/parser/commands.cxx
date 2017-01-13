@@ -18,9 +18,43 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->pgport       = source.pgport;
   this->pguser       = source.pguser;
   this->pgdatabase   = source.pgdatabase;
-
+  this->backup_profile = source.getBackupProfileDescr();
+  
   this->setAffectedAttributes(source.getAffectedAttributes());
 
+}
+
+CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+  
+  this->copy(*(descr.get()));
+
+  /*
+   * BaseCatalogCommand::copy() has no idea of submodule objects belongig
+   * to a given catalog descriptor. We need to copy them explicitely.
+   */
+  this->profileDescr = descr->getBackupProfileDescr();
+
+}
+
+CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = CREATE_BACKUP_PROFILE;
+  this->catalog = catalog;
+}
+
+CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand() {
+  this->tag = CREATE_BACKUP_PROFILE;
+}
+
+void CreateBackupProfileCatalogCommand::setProfile(std::shared_ptr<BackupProfileDescr> profileDescr) {
+  this->profileDescr = profileDescr;
+}
+
+void CreateBackupProfileCatalogCommand::execute(bool force_default) {
+
+  cout << "name: " << this->profileDescr->name << endl;
+  cout << "compression: " << this->profileDescr->compress_type << endl;
+  cout << "max rate: " << this->profileDescr->max_rate << endl;
+  
 }
 
 VerifyArchiveCatalogCommand::VerifyArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {

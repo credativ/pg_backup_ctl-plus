@@ -24,7 +24,7 @@ BackupDirectory::BackupDirectory(path handle) {
 
 BackupDirectory::~BackupDirectory() {}
 
-void BackupDirectory::verify() throw(CArchiveIssue) {
+void BackupDirectory::verify() {
 
   /*
    * Check the archive directory itself.
@@ -110,6 +110,14 @@ void BackupDirectory::fsync() {
 
 shared_ptr<BackupDirectory> CPGBackupCtlFS::getArchiveDirectoryDescr(string directory) {
   return make_shared<BackupDirectory>(path(directory));
+}
+
+path BackupDirectory::logdir() {
+  return this->base / this->log;
+}
+
+path BackupDirectory::basedir() {
+  return this->base;
 }
 
 CPGBackupCtlFS::CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue) {

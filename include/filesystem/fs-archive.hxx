@@ -33,7 +33,6 @@ namespace credativ {
     bool segment_avail;
   } XLOGLocation;
 
-
   /*
    * Base archive exception.
    */
@@ -210,7 +209,7 @@ namespace credativ {
     /*
      * Check if this is an existing directory.
      */
-    virtual void verify() throw(CArchiveIssue);
+    virtual void verify();
 
     /*
      * Returns a copy of the internal base directory

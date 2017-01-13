@@ -117,7 +117,6 @@ namespace credativ {
     static std::string intToStr(int in);
     static boost::posix_time::ptime ISO8601_strTo_ptime(std::string input);
     static std::string ptime_to_str(boost::posix_time::ptime input);
-    static std::string current_timestamp();
     static void openFile(std::ifstream& file,
                          std::stringstream& out,
                          boost::filesystem::path pathHandle,
@@ -148,6 +147,20 @@ namespace credativ {
     static void writeChunk(SyncedBinaryOutFile file,
                            char *binaryblock,
                            size_t size);
+
+    /*
+     * Creates a string used as a backup label with
+     * the current date/time formatted.
+     */
+    static std::string basebackup_filename();
+
+    /*
+     * Returns the current date/time as an ANSI formatted
+     * string YYYY-MM-DD H24:MIN:SS. If asFilename is set to
+     * true, the string will be formatted to be able to be used
+     * as a filename.
+     */
+    static std::string current_timestamp(bool asFilename = false);
   };
 
 }

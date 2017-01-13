@@ -90,8 +90,21 @@ void StreamIdentification::reset() {
 
 BaseBackupProcess::BaseBackupProcess(StreamIdentification ident,
                                      PGconn *prepared_connection) {
+
+  this->current_state = BASEBACKUP_INIT;
+  
   this->ident = ident;
   this->pgconn = prepared_connection;
+
+  /*
+   * prepared_connection needs to be a connected
+   * libpq connection, otherwise we have to error out.
+   */
+  if (!((this->pgconn != NULL)
+        && (PQstatus(this->pgconn) == CONNECTION_OK)))
+    throw StreamingFailure("basebackup stream not connected");
+
+  this->current_state = BASEBACKUP_STARTED;
 }
 
 BaseBackupProcess::~BaseBackupProcess() {
@@ -104,6 +117,35 @@ BaseBackupProcess::~BaseBackupProcess() {
    * on a calling PGStream handle, which does
    * all the legwork for us.
    */
+
+}
+
+void BaseBackupProcess::start() {
+
+  PGresult *result;
+  std::ostringstream query;
+  
+  this->current_state = BASEBACKUP_START_POSITION;
+
+  /*
+   * First result set is the starting position of
+   * the basebackup stream, with two columns:
+   * 1 - XLogRecPtr
+   * 2 - TimelineID
+   */
+  query << "BASE_BACKUP";
+  
+}
+
+void BaseBackupProcess::readTablespaceInfo() {
+
+}
+
+bool BaseBackupProcess::stepTablespace(std::shared_ptr<credativ::BackupDirectory> archivedir) {
+
+}
+
+void BaseBackupProcess::backupTablespace(int OID) {
 
 }
 
@@ -284,7 +326,7 @@ void PGStream::identify() {
   this->identified = true;
 }
 
-void PGStream::startBasebackup() {
+std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
 
 }
 

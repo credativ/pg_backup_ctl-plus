@@ -1,4 +1,6 @@
 #include <sstream>
+/* required for string case insensitive comparison */
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <catalog.hxx>
 #include <BackupCatalog.hxx>
@@ -54,8 +56,43 @@ std::vector<std::string> BackupCatalog::streamCatalogCols =
     "create_date"
   };
 
+std::vector<std::string>BackupCatalog::backupProfilesCatalogCols =
+  {
+    "id",
+    "name",
+    "compress_type",
+    "max_rate",
+    "label",
+    "fast_checkpoint",
+    "include_wal",
+    "wait_for_wal"
+  };
+
+std::vector<std::string>BackupCatalog::backupTablespacesCatalogCols =
+  {
+    "id",
+    "backup_id",
+    "spcoid",
+    "spclocation",
+    "spcsize"
+  };
+
 const char * STREAM_BASEBACKUP = "BASEBACKUP";
 const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
+
+void PushableCols::pushAffectedAttribute(int colId) {
+
+  this->affectedAttributes.push_back(colId);
+
+}
+
+std::vector<int> PushableCols::getAffectedAttributes() {
+  return affectedAttributes;
+}
+
+void PushableCols::setAffectedAttributes(std::vector<int> affectedAttributes) {
+  this->affectedAttributes = affectedAttributes;
+}
 
 CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
@@ -69,21 +106,26 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   this->pgport = source.pgport;
   this->pguser = source.pguser;
   this->pgdatabase = source.pgdatabase;
-
+  
 }
 
-std::vector<int> CatalogDescr::getAffectedAttributes() {
-  return this->affectedAttributes;
+void CatalogDescr::setProfileMaxRate(std::string const& max_rate) {
+  this->backup_profile->max_rate = CPGBackupCtlBase::strToInt(max_rate);
+  this->pushAffectedAttribute(SQL_BCK_PROF_MAX_RATE_ATTNO);
 }
 
-void CatalogDescr::setAffectedAttributes(std::vector<int> affectedAttributes) {
-  this->affectedAttributes = affectedAttributes;
+void CatalogDescr::setProfileCompressType(BackupProfileCompressType const& type) {
+  this->backup_profile->compress_type = type;
+  this->pushAffectedAttribute(SQL_BCK_PROF_COMPRESS_TYPE_ATTNO);
 }
 
-void CatalogDescr::pushAffectedAttribute(int colId) {
+std::shared_ptr<BackupProfileDescr> CatalogDescr::getBackupProfileDescr() {
+  return this->backup_profile;
+}
 
-  this->affectedAttributes.push_back(colId);
-
+void CatalogDescr::setProfileName(std::string const& profile_name) {
+  this->backup_profile->name = profile_name;
+  this->pushAffectedAttribute(SQL_BCK_PROF_NAME_ATTNO);
 }
 
 void CatalogDescr::setDbName(std::string const& db_name) {
@@ -543,6 +585,12 @@ std::string BackupCatalog::mapAttributeId(int catalogEntity,
   case SQL_STREAM_ENTITY:
     result = BackupCatalog::streamCatalogCols[colId];
     break;
+  case SQL_BACKUP_PROFILES_ENTITY:
+    result = BackupCatalog::backupProfilesCatalogCols[colId];
+    break;
+  case SQL_BACKUP_TBLSPC_ENTITY:
+    result = BackupCatalog::backupTablespacesCatalogCols[colId];
+    break;
   default:
     break; /* no op */
   }
@@ -556,6 +604,36 @@ string BackupCatalog::SQLgetUpdateColumnTarget(int catalogEntity,
 
   oss << BackupCatalog::mapAttributeId(catalogEntity, colId) << "=?";
   return oss.str();
+}
+
+void BackupCatalog::createBackupProfile(std::string archive_name,
+                                        std::shared_ptr<BackupProfileDescr> profileDescr) {
+
+  sqlite3_stmt *stmt;
+  std::ostringstream insert;
+  int rc;
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  /*
+   * The specified archive should exist.
+   */
+  std::shared_ptr<CatalogDescr> descr = this->existsByName(archive_name);
+
+  if (descr->id < 0) {
+    std::ostringstream oss;
+
+    oss << "archive \"" << archive_name << " does not exist";
+    throw CCatalogIssue(oss.str());
+  }
+
+  insert << "INSERT INTO backup_profiles("
+         << "archive_id, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal)";
+
+  //  rc = sqlite3_prepare_v2(this->db_handle,
+  //                      );
+
 }
 
 void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
@@ -750,7 +828,7 @@ std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArch
   Range range(1, affectedAttributes.size());
 
   query << "SELECT id, name, directory, compression, pghost, pgport, pguser, pgdatabase "
-        << " FROM archive WHERE " 
+        << " FROM archive WHERE "
         << this->SQLgetFilterForArchive(descr,
                                         affectedAttributes,
                                         range,

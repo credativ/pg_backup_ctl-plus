@@ -116,6 +116,21 @@ namespace credativ {
     virtual void execute(bool ignored);
   };
 
+  /*
+   * Implements the CREATE BACKUP PROFILE command.
+   */
+  class CreateBackupProfileCatalogCommand : public BaseCatalogCommand {
+  private:
+    std::shared_ptr<BackupProfileDescr> profileDescr;
+  public:
+    CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    CreateBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    CreateBackupProfileCatalogCommand();
+
+    virtual void execute(bool force_default);
+    virtual void setProfile(std::shared_ptr<BackupProfileDescr> profileDescr);
+  };
+  
 }
 
 #endif

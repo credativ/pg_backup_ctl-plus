@@ -68,4 +68,39 @@
  */
 #define SQL_STREAM_NCOLS 10
 
+/*
+ * Attributes belonging to backup_profiles catalog table.
+ */
+#define SQL_BACKUP_PROFILES_ENTITY 4
+
+#define SQL_BCK_PROF_ID_ATTNO 0
+#define SQL_BCK_PROF_NAME_ATTNO 1
+#define SQL_BCK_PROF_COMPRESS_TYPE_ATTNO 2
+#define SQL_BCK_PROF_MAX_RATE_ATTNO 3
+#define SQL_BCK_PROF_LABEL_ATTNO 4
+#define SQL_BCK_PROF_FAST_CHKPT_ATTNO 5
+#define SQL_BCK_PROF_INCL_WAL_ATTNO 6
+#define SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO 7
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_BACKUP_PROFILES_NCOLS 8
+
+/*
+ * Attributes belonging to backup_tablespaces catalog table.
+ */
+#define SQL_BACKUP_TBLSPC_ENTITY 5
+
+#define SQL_BCK_TBLSPC_ID_ATTNO 0
+#define SQL_BCK_TBLSPC_BCK_ID_ATTNO 1
+#define SQL_BCK_TBLSPC_SPCOID_ATTNO 2
+#define SQL_BCK_TBLSPC_SPCLOC_ATTNO 3
+#define SQL_BCK_TBLSPC_SPCSZ_ATTNO 4
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_BCK_TBLSPC_NCOLS 5
+
 #endif
