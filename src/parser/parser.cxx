@@ -66,6 +66,7 @@ namespace credativ {
         using qi::eps;
         using qi::graph;
         using qi::no_case;
+        using qi::no_skip;
 
         /*
          * Basic error handling requires this.
@@ -80,20 +81,36 @@ namespace credativ {
          */
         start %= eps > (
                         /* CREATE command syntax start */
-                        cmd_create >
-                        (cmd_create_archive
-                         | cmd_create_backup_profile)
+                        cmd_create > (
+                                      cmd_create_archive
+                                      | cmd_create_backup_profile
+                                      )
+
+                        /* LIST command syntax start */
+                        | cmd_list > (
+                                      cmd_list_archive
+                                      | cmd_list_backup_profile
+                                      )
+
+                        /*
+                         * DROP command syntax start
+                         */
+                        | cmd_drop > (
+                                      /*
+                                       * DROP ARCHIVE <name> command
+                                       */
+                                      cmd_drop_archive > identifier
+                                      [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+
+                                      /*
+                                       * DROP BACKUP PROFILE
+                                       */
+                                      | cmd_drop_backup_profile)
 
                         /*
                          * VERIFY ARCHIVE <name> command
                          */
                         | cmd_verify_archive > identifier
-                        [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-
-                        /*
-                         * DROP ARCHIVE <name> command
-                         */
-                        | cmd_drop_archive > identifier
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
 
                         /*
@@ -119,18 +136,35 @@ namespace credativ {
                         | cmd_start_basebackup > identifier
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
 
-                        /*
-                         * LIST ARCHIVE [<name>] command
-                         */
-                        | cmd_list_archive > -(identifier)
-                        [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                        );
+                        ); /* start rule end */
 
+        /*
+         * CREATE, DROP and LIST tokens...
+         */
         cmd_create = no_case[lexeme[ lit("CREATE") ]] ;
 
-        cmd_list_archive = no_case[lexeme[ lit("LIST") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
-          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_ARCHIVE) ];
+        cmd_drop = no_case[lexeme[ lit("DROP") ]];
 
+        cmd_list = no_case[lexeme[ lit("LIST") ]];
+
+        /*
+         * LIST ARCHIVE [<name>] command
+         */
+        cmd_list_archive = no_case[ lexeme[ lit("ARCHIVE") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_ARCHIVE) ]
+          > -(identifier)
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+
+        /*
+         * LIST BACKUP PROFILE [name] command
+         */
+        cmd_list_backup_profile = no_case[ lexeme[ lit("BACKUP") ] ]
+          > no_case[lexeme [ lit("PROFILE") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE) ]
+          > -(identifier)
+          [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
+          [  boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE_DETAIL) ];
+        
         /*
          * CREATE BACKUP PROFILE <name> command
          */
@@ -144,7 +178,11 @@ namespace credativ {
         backup_profile_opts =
           -(profile_compression_option)
           > -(profile_max_rate_option
-              [ boost::bind(&CatalogDescr::setProfileMaxRate, &cmd, ::_1) ]);
+              [ boost::bind(&CatalogDescr::setProfileMaxRate, &cmd, ::_1) ])
+          > -(profile_backup_label_option)
+          > -(profile_wal_option)
+          > -(profile_checkpoint_option)
+          > -(profile_wait_for_wal_option);
 
         /*
          * CREATE ARCHIVE <name> command
@@ -172,7 +210,13 @@ namespace credativ {
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]] > no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
 
-        cmd_drop_archive = no_case[lexeme[ lit("DROP") ]] > no_case[lexeme[ lit("ARCHIVE") ]]
+        cmd_drop_backup_profile = no_case[lexeme[ lit("BACKUP") ]]
+          > no_case[lexeme[ lit("PROFILE") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_BACKUP_PROFILE) ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
+
+        cmd_drop_archive = no_case[lexeme[ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_ARCHIVE) ];
 
         cmd_alter_archive = no_case[lexeme[ lit("ALTER") ]] > no_case[lexeme[ lit("ARCHIVE") ]]
@@ -195,7 +239,8 @@ namespace credativ {
         /*
          * Rule to read in COMPRESSION=<BACKUP_COMPRESSION_TYPE>
          */
-        profile_compression_option = no_case[lexeme[ lit("COMPRESSION") ]]
+        profile_compression_option =
+          no_case[lexeme[ lit("COMPRESSION") ]]
           > "="
           > (no_case[lexeme[ lit("GZIP") ]]
              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_GZIP) ]
@@ -203,11 +248,56 @@ namespace credativ {
              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_NONE) ]);
 
         /*
-         * Rule to read in MAX_RATE=<kbps>
+         * CREATE BACKUP PROFILE ...  MAX_RATE=<kbps>
          */
         profile_max_rate_option = no_case[lexeme[ lit("MAX_RATE") ]]
           > "="
           > +(char_("0-9"));
+
+        /*
+         * CREATE BACKUP PROFILE ... LABEL="<label>"
+         *
+         * We want to allow file and directory names as a
+         * label.
+         */
+        profile_backup_label_option = no_case[lexeme[ lit("LABEL") ]]
+          > "="
+          > directory_string
+          [boost::bind(&CatalogDescr::setProfileBackupLabel, &cmd, ::_1)];
+
+        /*
+         * CREATE BACKUP PROFILE ... WAL=<INCLUDED|EXCLUDED>
+         */
+        profile_wal_option = no_case[lexeme[ lit("WAL") ]]
+          > "="
+          > (no_case[lexeme[ lit("INCLUDED") ]]
+             [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, true) ]
+             |
+             no_case[lexeme[ lit("EXCLUDED") ]]
+             [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, false) ]
+             );
+
+        /*
+         * CREATE BACKUP PROFILE ... CHECKPOINT=FAST|DELAYED
+         */
+        profile_checkpoint_option = no_case[lexeme[ lit("CHECKPOINT") ]]
+          > "="
+          > (no_case[lexeme[ lit("FAST") ]]
+             [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, true) ]
+             | no_case[lexeme[ lit("DELAYED") ]]
+             [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, false) ]
+             );
+
+        /*
+         * CREATE BACKUP PROFILE ... WAIT_FOR_WAL=TRUE|FALSE
+         */
+        profile_wait_for_wal_option = no_case[lexeme[ lit("WAIT_FOR_WAL") ]]
+          > "="
+          > (no_case[lexeme[ lit("TRUE") ]]
+             [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, true) ]
+             | no_case[lexeme[ lit("FALSE") ]]
+             [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, false) ]
+             );
 
         /*
          * We try to support both, quoted and unquoted identifiers. With quoted
@@ -217,7 +307,7 @@ namespace credativ {
                        | lexeme [ +(char_("a-zA-Z0-9")) ] );
 
         /* We enforce quoting for path strings */
-        directory_string = '"' >> +(char_ - ('"') ) >> '"';
+        directory_string = no_skip[ '"' >> +(char_ - ('"') ) >> '"' ];
 
         /*
          * error handling
@@ -228,28 +318,36 @@ namespace credativ {
                        << qi::_4
                        << val(" here: \"")
                        << construct<std::string>(qi::_3, qi::_2)
-                       << val("\"")
+                       << val("\" ")
                        << std::endl
                        );
 
         start.name("command start");
         cmd_create.name("CREATE start");
+        cmd_drop.name("DROP start");
+        cmd_list.name("LIST start");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_verify_archive.name("VERIFY ARCHIVE");
         cmd_drop_archive.name("DROP ARCHIVE");
+        cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
         cmd_alter_archive.name("ALTER ARCHIVE");
         cmd_start_basebackup.name("START BASEBACKUP");
         cmd_list_archive.name("LIST ARCHIVE");
+        cmd_list_backup_profile.name("LIST BACKUP PROFILE");
         identifier.name("object identifier");
         hostname.name("ip or hostname");
-        profile_compression_option.name("gzip or none");
-        profile_max_rate_option.name("maximum transfer rate in KB/s");
+        profile_compression_option.name("COMPRESSION=GZIP|NONE");
+        profile_max_rate_option.name("MAX_RATE=maximum transfer rate in KB/s");
+        profile_wal_option.name("WAL=INCLUDED|EXCLUDED");
+        profile_backup_label_option.name("LABEL=label string");
+        profile_checkpoint_option.name("CHECKPOINT=FAST|DELAYED");
+        profile_wait_for_wal_option.name("WAIT_FOR_WAL=TRUE|FALSE");
         database.name("database identifier");
         username.name("username identifier");
         portnumber.name("port number");
         directory_string.name("directory path");
-        directory.name("directory identifier");
+        directory.name("DIRECTORY=path");
         backup_profile_opts.name("backup profile parameters");
       }
 
@@ -257,7 +355,7 @@ namespace credativ {
        * Rule return declarations.
        */
       qi::rule<Iterator, ascii::space_type> start;
-      qi::rule<Iterator, ascii::space_type> cmd_create;
+      qi::rule<Iterator, ascii::space_type> cmd_create, cmd_drop, cmd_list;
       qi::rule<Iterator, ascii::space_type> cmd_create_archive,
                           cmd_verify_archive,
                           cmd_drop_archive,
@@ -265,6 +363,8 @@ namespace credativ {
                           cmd_start_basebackup,
                           cmd_list_archive,
                           cmd_create_backup_profile,
+                          cmd_list_backup_profile,
+                          cmd_drop_backup_profile,
                           backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
@@ -272,8 +372,12 @@ namespace credativ {
                           directory,
                           username,
                           portnumber,
+                          profile_wal_option,
+                          profile_wait_for_wal_option,
+                          profile_checkpoint_option,
                           profile_max_rate_option,
-                          profile_compression_option;
+                          profile_compression_option,
+                          profile_backup_label_option;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string;
 
@@ -407,6 +511,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
     break;
   }
 
+  case LIST_BACKUP_PROFILE:
+  case LIST_BACKUP_PROFILE_DETAIL:
+    result = make_shared<ListBackupProfileCatalogCommand>(this->catalogDescr);
+    break;
   default:
     /* no-op, but we return nullptr ! */
     break;

@@ -19,13 +19,178 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->pguser       = source.pguser;
   this->pgdatabase   = source.pgdatabase;
   this->backup_profile = source.getBackupProfileDescr();
-  
+
   this->setAffectedAttributes(source.getAffectedAttributes());
 
 }
 
-CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = LIST_BACKUP_PROFILE;
+  this->catalog = catalog;
+}
+
+DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
   
+}
+
+void DropBackupProfileCatalogCommand::execute(bool extended) {
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute archive command: no catalog");
+
+  /*
+   * Open the catalog, if not yet done.
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  try {
+
+    catalog->startTransaction();
+
+    /*
+     * Check if the specified backup profile exists. Error
+     * out with an exception if not found.
+     */
+    std::shared_ptr<BackupProfileDescr> profileDescr = this->getBackupProfileDescr();
+    std::shared_ptr<BackupProfileDescr> temp_descr = catalog->getBackupProfile(profileDescr->name);
+    
+    /*
+     * NOTE: BackupCatalog::getBackupProfile() always returns an
+     *       BackupProfileDescr, but in case the specified
+     *       name doesn't exists it is initialized with profile_id = -1
+     */
+    if (temp_descr->profile_id < 0) {
+      std::ostringstream oss;
+      oss << "backup profile \"" << profileDescr->name << "\"" << endl;
+      throw CCatalogIssue(oss.str());
+    }
+
+    catalog->commitTransaction();
+    
+  } catch(exception& e) {
+    catalog->rollbackTransaction();
+    /* re-throw exception */
+    throw e;
+  }  
+}
+
+ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = LIST_BACKUP_PROFILE;
+  this->catalog = catalog;
+}
+
+ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+  
+}
+
+void ListBackupProfileCatalogCommand::execute(bool extended) {
+
+  shared_ptr<CatalogDescr> temp_descr(nullptr);
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute archive command: no catalog");
+
+  /*
+   * Open the catalog, if not yet done.
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  try {
+
+    catalog->startTransaction();
+
+    /*
+     * Get a list of current backup profiles. If the name is requested,
+     * show the details only.
+     */
+    if (this->tag == LIST_BACKUP_PROFILE) {
+
+      auto profileList = catalog->getBackupProfiles();
+
+      /*
+       * Print headline
+       */
+      cout << CPGBackupCtlBase::makeHeader("List of backup profiles",
+                                           boost::format("%-25s\t%-15s")
+                                           % "Name" % "Backup Label", 80);
+      
+      /*
+       * Print name and label
+       */
+      for (auto& descr : *profileList) {
+        cout << boost::format("%-25s\t%-15s") % descr->name % descr->label
+             << endl;
+      }
+
+    } else if (this->tag == LIST_BACKUP_PROFILE_DETAIL) {
+
+      std::shared_ptr<BackupProfileDescr> profile
+        = this->catalog->getBackupProfile(this->getBackupProfileDescr()->name);
+
+      cout << CPGBackupCtlBase::makeHeader("Details for backup profile " + profile->name,
+                                           boost::format("%-25s\t%-40s") % "Property" % "Setting", 80);
+
+      /* Profile Name */
+      cout << boost::format("%-25s\t%-30s") % "NAME" % profile->name << endl;
+
+      /* Profile compression type */
+      switch(profile->compress_type) {
+      case BACKUP_COMPRESS_TYPE_NONE:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "NONE" << endl;
+        break;
+      case BACKUP_COMPRESS_TYPE_GZIP:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "GZIP" << endl;
+        break;
+      default:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "UNKNOWN or N/A" << endl;
+        break;
+      }
+
+      /* Profile max rate */
+      if (profile->max_rate > 0) {
+        cout << boost::format("%-25s\t%-30s") % "MAX RATE" % "NOT RATED" << endl;
+      } else {
+        cout << boost::format("%-25s\t%-30s") % "MAX RATE(kbps)" % profile->max_rate << endl;
+      }
+
+      /* Profile backup label */
+      cout << boost::format("%-25s\t%-30s") % "LABEL" % profile->label << endl;
+
+      /* Profile fast checkpoint mode */
+      cout << boost::format("%-25s\t%-30s") % "FAST CHECKPOINT" % profile->fast_checkpoint << endl;
+
+      /* Profile WAL included */
+      cout << boost::format("%-25s\t%-30s") % "WAL INCLUDED" % profile->include_wal << endl;
+
+      /* Profile WAIT FOR WAL */
+      cout << boost::format("%-25s\t%-30s") % "WAIT FOR WAL" % profile->wait_for_wal << endl;
+    }
+
+    catalog->commitTransaction();
+
+  } catch (exception& e) {
+    this->catalog->rollbackTransaction();
+    throw e;    
+  }
+
+}
+
+CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
   this->copy(*(descr.get()));
 
   /*
@@ -49,12 +214,81 @@ void CreateBackupProfileCatalogCommand::setProfile(std::shared_ptr<BackupProfile
   this->profileDescr = profileDescr;
 }
 
-void CreateBackupProfileCatalogCommand::execute(bool force_default) {
+void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
 
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute archive command: no catalog");
+
+#ifdef __DEBUG__
   cout << "name: " << this->profileDescr->name << endl;
   cout << "compression: " << this->profileDescr->compress_type << endl;
   cout << "max rate: " << this->profileDescr->max_rate << endl;
-  
+  cout << "label: " << this->profileDescr->label << endl;
+  cout << "wal included: " << this->profileDescr->include_wal << endl;
+  cout << "wait for wal: " << this->profileDescr->wait_for_wal << endl;
+#endif
+
+  /*
+   * Open the catalog, if necessary.
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  try {
+
+    /*
+     * Start catalog transaction.
+     */
+    this->catalog->startTransaction();
+
+    /*
+     * Check if the specified backup profile already exists
+     */
+    std::shared_ptr<BackupProfileDescr> temp_descr = catalog->getBackupProfile(this->profileDescr->name);
+
+    if (temp_descr->profile_id < 0) {
+
+      /*
+       * Create the new profile.
+       *
+       * NOTE: we can't bindly use the new BackupProfileDescr passed down
+       *       from the parser, since it might not have seen all
+       *       the attributes, the user might decided not to overwrite its default.
+       *       Hence, pass down all attributes which are required to create
+       *       a new entry.
+       */
+
+      std::vector<int> attr;
+      attr.push_back(SQL_BCK_PROF_NAME_ATTNO);
+      attr.push_back(SQL_BCK_PROF_COMPRESS_TYPE_ATTNO);
+      attr.push_back(SQL_BCK_PROF_MAX_RATE_ATTNO);
+      attr.push_back(SQL_BCK_PROF_LABEL_ATTNO);
+      attr.push_back(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
+      attr.push_back(SQL_BCK_PROF_INCL_WAL_ATTNO);
+      attr.push_back(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+
+      this->profileDescr->setAffectedAttributes(attr);
+      this->catalog->createBackupProfile(this->profileDescr);
+
+    } else {
+
+      /* profile already exists! */
+      if (!existsOk) {
+        ostringstream oss;
+        oss << "backup profile " << this->profileDescr->name << " already exists";
+        throw CCatalogIssue(oss.str());
+      }
+
+    }
+
+    this->catalog->commitTransaction();
+
+  } catch(CPGBackupCtlFailure& e) {
+    this->catalog->rollbackTransaction();
+    throw e;
+  }
+
 }
 
 VerifyArchiveCatalogCommand::VerifyArchiveCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
@@ -111,6 +345,8 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
      */
     shared_ptr<BackupDirectory> archivedir = CPGBackupCtlFS::getArchiveDirectoryDescr(temp_descr->directory);
     archivedir->verify();
+
+    this->catalog->commitTransaction();
 
   } catch(CPGBackupCtlFailure& e) {
 

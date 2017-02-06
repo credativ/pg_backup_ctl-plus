@@ -130,7 +130,30 @@ namespace credativ {
     virtual void execute(bool force_default);
     virtual void setProfile(std::shared_ptr<BackupProfileDescr> profileDescr);
   };
-  
+
+  /*
+   * Implements the LIST BACKUP PROFILE command
+   */
+  class ListBackupProfileCatalogCommand : public BaseCatalogCommand {
+  public:
+    ListBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    ListBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    ListBackupProfileCatalogCommand();
+
+    virtual void execute(bool extended);
+  };
+
+  /*
+   * Implements the DROP BACKUP PROFILE command
+   */
+  class DropBackupProfileCatalogCommand : public BaseCatalogCommand {
+  public:
+    DropBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    DropBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    DropBackupProfileCatalogCommand();
+
+    void execute(bool noop);
+  };
 }
 
 #endif

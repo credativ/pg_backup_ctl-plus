@@ -20,10 +20,13 @@ namespace credativ {
     CREATE_ARCHIVE,
     CREATE_BACKUP_PROFILE,
     DROP_ARCHIVE,
+    DROP_BACKUP_PROFILE,
     ALTER_ARCHIVE,
     VERIFY_ARCHIVE,
     START_BASEBACKUP,
-    LIST_ARCHIVE
+    LIST_ARCHIVE,
+    LIST_BACKUP_PROFILE,
+    LIST_BACKUP_PROFILE_DETAIL
   } CatalogTag;
 
   /*
@@ -43,10 +46,11 @@ namespace credativ {
   class PushableCols {
   protected:
     std::vector<int> affectedAttributes;
-    virtual void pushAffectedAttribute(int colId);
   public:
+    virtual void pushAffectedAttribute(int colId);
     virtual std::vector<int> getAffectedAttributes();
     virtual void setAffectedAttributes(std::vector<int> affectedAttributes);
+    virtual void clearAffectedAttributes();
   };
 
   /*
@@ -99,6 +103,16 @@ namespace credativ {
     void setProfileMaxRate(std::string const& max_rate);
 
     std::shared_ptr<BackupProfileDescr> getBackupProfileDescr();
+
+    void setProfileBackupLabel(std::string const& label);
+
+    void setProfileWALIncluded(bool const& included);
+
+    void setProfileCheckpointMode(bool const& fastmode);
+
+    void setProfileWaitForWAL(bool const& wait);
+
+    void setProfileAffectedAttribute(int const& colId);
 
     CatalogDescr& operator=(const CatalogDescr& source);
   };

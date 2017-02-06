@@ -24,9 +24,11 @@ namespace credativ {
   private:
     sqlite3 *db_handle;
 
+    virtual std::shared_ptr<BackupProfileDescr> fetchBackupProfileIntoDescr(sqlite3_stmt *stmt,
+                                                                            std::shared_ptr<BackupProfileDescr> descr,
+                                                                            Range colIdRange);
     virtual std::shared_ptr<CatalogDescr> fetchArchiveDataIntoDescr(sqlite3_stmt *stmt,
-                                                                    std::shared_ptr<CatalogDescr> descr)
-      throw (CCatalogIssue);
+                                                                    std::shared_ptr<CatalogDescr> descr);
 
     virtual std::string affectedColumnsToString(std::vector<int> affectedAttributes);
 
@@ -63,7 +65,7 @@ namespace credativ {
 
     /* backup tablespaces catalog table */
     static std::vector<std::string> backupTablespacesCatalogCols;
-    
+
     /*
      * This method maps col IDs from the specified
      * catalog entity to its string name.
@@ -85,14 +87,22 @@ namespace credativ {
     }
 
     /*
+     * Bind affected backup profile attributes values
+     * to the given SQLite3 statment handle.
+     */
+    int SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
+                                       std::vector<int> affectedAttributes,
+                                       sqlite3_stmt *stmt,
+                                       Range range);
+
+    /*
      * Bind affected archive attribute values to the given SQLite3
      * stmt handle.
      */
     int SQLbindArchiveAttributes(std::shared_ptr<CatalogDescr> descr,
                                  std::vector<int> affectedAttributes,
                                  sqlite3_stmt *stmt,
-                                 Range range)
-      throw(CCatalogIssue);
+                                 Range range);
 
     /*
      * Rollback an existing catalog transaction.
@@ -167,11 +177,29 @@ namespace credativ {
     virtual void createArchive(std::shared_ptr<CatalogDescr> descr) throw (CCatalogIssue);
 
     /*
+     * Drop the specified backup profile.
+     */
+    virtual void dropBackupProfile(std::string profileName);
+    
+    /*
      * Creates a new backup profile.
      */
-    virtual void createBackupProfile(std::string archive_name,
-                                     std::shared_ptr<BackupProfileDescr> profileDescr);
-    
+    virtual void createBackupProfile(std::shared_ptr<BackupProfileDescr> profileDescr);
+
+    /*
+     * Get a list of all registered backup profiles.
+     */
+    virtual std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> getBackupProfiles();
+
+    /*
+     * Returns the specified backup profile.
+     *
+     * NOTE: the catalog descr will aways be initialized, but a
+     *       non existing backup profile name will return a descriptor
+     *       handle which id is set to -1!
+     */
+    virtual std::shared_ptr<BackupProfileDescr> getBackupProfile(std::string name);
+
     /*
      * Delete the specified archive by name from the catalog.
      */

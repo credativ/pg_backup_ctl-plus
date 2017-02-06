@@ -61,8 +61,8 @@ INSERT INTO version VALUES(0x1000, datetime('now'));
 CREATE TABLE backup_profiles(
        id integer not null,
        name text not null,
-       compress_type text not null,
-       max_rate integer not null CHECK(max_rate BETWEEN 32 AND 1048576),
+       compress_type int not null,
+       max_rate integer not null CHECK((max_rate BETWEEN 32 AND 1048576) OR (max_rate = 0)),
        label text,
        fast_checkpoint integer not null default false,
        include_wal integer not null default false,
@@ -71,3 +71,22 @@ CREATE TABLE backup_profiles(
 );
 
 CREATE UNIQUE INDEX backup_profiles_name_idx ON backup_profiles(name);
+
+/* Default backup profile */
+INSERT INTO backup_profiles
+       (name,
+        compress_type,
+        max_rate,
+        label,
+        fast_checkpoint,
+        include_wal,
+        wait_for_wal)
+VALUES
+        ('default',
+         0,
+         0,
+         'PG_BACKUP_CTL BASEBACKUP',
+         0,
+         0,
+         1);
+

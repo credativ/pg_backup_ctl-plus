@@ -18,7 +18,7 @@ using namespace std;
  * Keep indexes in sync with macros from include/catalog/catalog.hxx !!
  */
 
-std::vector<std::string> BackupCatalog::archiveCatalogCols = 
+std::vector<std::string> BackupCatalog::archiveCatalogCols =
   {
     "id",
     "name",
@@ -90,6 +90,10 @@ std::vector<int> PushableCols::getAffectedAttributes() {
   return affectedAttributes;
 }
 
+void PushableCols::clearAffectedAttributes() {
+  this->affectedAttributes.clear();
+}
+
 void PushableCols::setAffectedAttributes(std::vector<int> affectedAttributes) {
   this->affectedAttributes = affectedAttributes;
 }
@@ -106,7 +110,31 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   this->pgport = source.pgport;
   this->pguser = source.pguser;
   this->pgdatabase = source.pgdatabase;
-  
+
+}
+
+void CatalogDescr::setProfileAffectedAttribute(int const& colId) {
+  this->backup_profile->pushAffectedAttribute(colId);
+}
+
+void CatalogDescr::setProfileWaitForWAL(bool const& wait) {
+  this->backup_profile->wait_for_wal = wait;
+  this->backup_profile->pushAffectedAttribute(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+}
+
+void CatalogDescr::setProfileCheckpointMode(bool const& fastmode) {
+  this->backup_profile->fast_checkpoint = fastmode;
+  this->backup_profile->pushAffectedAttribute(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
+}
+
+void CatalogDescr::setProfileWALIncluded(bool const& included) {
+  this->backup_profile->include_wal = included;
+  this->backup_profile->pushAffectedAttribute(SQL_BCK_PROF_INCL_WAL_ATTNO);
+}
+
+void CatalogDescr::setProfileBackupLabel(std::string const& label) {
+  this->backup_profile->label = label;
+  this->backup_profile->pushAffectedAttribute(SQL_BCK_PROF_LABEL_ATTNO);
 }
 
 void CatalogDescr::setProfileMaxRate(std::string const& max_rate) {
@@ -208,7 +236,7 @@ void BackupCatalog::startTransaction()
   }
 }
 
-void BackupCatalog::commitTransaction() 
+void BackupCatalog::commitTransaction()
   throw (CCatalogIssue) {
 
   int rc;
@@ -312,9 +340,90 @@ std::shared_ptr<StreamIdentification> BackupCatalog::fetchStreamData(sqlite3_stm
 
 }
 
+std::shared_ptr<BackupProfileDescr> BackupCatalog::fetchBackupProfileIntoDescr(sqlite3_stmt *stmt,
+                                                                               std::shared_ptr<BackupProfileDescr> descr,
+                                                                               Range colIdRange) {
+  if (stmt == NULL)
+    throw("cannot fetch archive data: uninitialized statement handle");
+
+  if (descr == nullptr)
+    throw("cannot fetch archive data: invalid descriptor handle");
+
+  std::vector<int> attr = descr->getAffectedAttributes();
+  int current_stmt_col = colIdRange.start();
+
+  for (int current = 0; current < attr.size(); current++) {
+
+    /*
+     * Sanity check, stop if range end is reached.
+     */
+    if (current_stmt_col > colIdRange.end())
+      break;
+
+    switch (attr[current]) {
+
+    case SQL_BCK_PROF_ID_ATTNO:
+
+      descr->profile_id = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_NAME_ATTNO:
+
+      /*
+       * name cannot be NULL, so no NULL check required.
+       */
+      descr->name = (char *)sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_COMPRESS_TYPE_ATTNO:
+
+      /*
+       * BackupProfileCompressType is just stored as an integer in the catalog,
+       * so we need to explicitely typecast.
+       */
+      descr->compress_type = (BackupProfileCompressType) sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_MAX_RATE_ATTNO:
+      descr->max_rate = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_LABEL_ATTNO:
+
+      /*
+       * label cannot be NULL, so no NULL check required.
+       */
+      descr->label = (char *)sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_FAST_CHKPT_ATTNO:
+
+      descr->fast_checkpoint = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_INCL_WAL_ATTNO:
+
+      descr->include_wal = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO:
+
+      descr->wait_for_wal = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    default:
+      break;
+    }
+
+    current_stmt_col++;
+  }
+
+  return descr;
+
+}
+
 shared_ptr<CatalogDescr> BackupCatalog::fetchArchiveDataIntoDescr(sqlite3_stmt *stmt,
-                                                                  shared_ptr<CatalogDescr> descr) 
-  throw (CCatalogIssue) {
+                                                                  shared_ptr<CatalogDescr> descr) {
 
   if (stmt == NULL)
     throw("cannot fetch archive data: uninitialized statement handle");
@@ -448,6 +557,43 @@ shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
 
 }
 
+void BackupCatalog::dropBackupProfile(std::string name) {
+
+  sqlite3_stmt *stmt;
+  int rc;
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not openend");
+  }
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "DELETE FROM backup_profiles WHERE name = ?1;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << " cannot prepare query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* Bind WHERE condition */
+  sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+
+  /* ... and execute ... */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    
+    oss << "error dropping backup profile: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
+}
+
 void BackupCatalog::dropArchive(std::string name)
   throw(CCatalogIssue) {
 
@@ -519,7 +665,7 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
 
     /* boundCol must start at index 1 !! */
     updateSQL << BackupCatalog::SQLgetUpdateColumnTarget(SQL_ARCHIVE_ENTITY,
-                                                         affectedAttributes[boundCols]) 
+                                                         affectedAttributes[boundCols])
               << (boundCols + 1);
 
     if (boundCols < affectedAttributes.size() - 1) {
@@ -606,8 +752,162 @@ string BackupCatalog::SQLgetUpdateColumnTarget(int catalogEntity,
   return oss.str();
 }
 
-void BackupCatalog::createBackupProfile(std::string archive_name,
-                                        std::shared_ptr<BackupProfileDescr> profileDescr) {
+std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>>
+BackupCatalog::getBackupProfiles() {
+
+  sqlite3_stmt *stmt;
+  auto result = make_shared<std::list<std::shared_ptr<BackupProfileDescr>>>();
+
+  /*
+   * Build the query.
+   */
+  ostringstream query;
+  Range range(0, 7);
+
+  query << "SELECT id, name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal "
+        << "FROM backup_profiles ORDER BY name;";
+
+#ifdef __DEBUG__
+  cerr << "QUERY: " << query.str() << endl;
+#endif
+
+  std::vector<int> attr;
+  attr.push_back(SQL_BCK_PROF_ID_ATTNO);
+  attr.push_back(SQL_BCK_PROF_NAME_ATTNO);
+  attr.push_back(SQL_BCK_PROF_COMPRESS_TYPE_ATTNO);
+  attr.push_back(SQL_BCK_PROF_MAX_RATE_ATTNO);
+  attr.push_back(SQL_BCK_PROF_LABEL_ATTNO);
+  attr.push_back(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
+  attr.push_back(SQL_BCK_PROF_INCL_WAL_ATTNO);
+  attr.push_back(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+
+  int rc = sqlite3_prepare_v2(this->db_handle,
+                              query.str().c_str(),
+                              -1,
+                              &stmt,
+                              NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Execute the prepared statement
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc!= SQLITE_DONE) {
+    ostringstream oss;
+    sqlite3_finalize(stmt);
+    oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  try {
+
+    while(rc == SQLITE_ROW) {
+      auto item = make_shared<BackupProfileDescr>();
+      item->setAffectedAttributes(attr);
+      this->fetchBackupProfileIntoDescr(stmt, item, range);
+      result->push_back(item);
+
+      rc = sqlite3_step(stmt);
+    }
+
+  } catch(exception& e) {
+    /* re-throw exception, but don't leak the sqlite statement handle */
+    sqlite3_finalize(stmt);
+    throw e;
+  }
+
+  sqlite3_finalize(stmt);
+  return result;
+}
+
+std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string name) {
+
+  std::shared_ptr<BackupProfileDescr> descr = std::make_shared<BackupProfileDescr>();
+
+  sqlite3_stmt *stmt;
+  int rc;
+  std::ostringstream query;
+  Range range(0, 7);
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Build the query
+   */
+  query << "SELECT id, name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal "
+        << "FROM backup_profiles WHERE name = ?1;";
+
+#ifdef __DEBUG__
+  cout << "QUERY : " << query.str() << endl;
+#endif
+
+  /*
+   * Prepare the query
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  /* Should match column order of query */
+  descr->pushAffectedAttribute(SQL_BCK_PROF_ID_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_NAME_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_COMPRESS_TYPE_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_MAX_RATE_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_LABEL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_INCL_WAL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind the values.
+   */
+  sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+
+  /* ...and execute ... */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  try {
+    /*
+     * At this point only a single tuple expected...
+     */
+    if (rc == SQLITE_ROW) {
+      this->fetchBackupProfileIntoDescr(stmt, descr, range);
+    }
+
+  } catch (exception &e) {
+    /* don't leak sqlite3 statement handle */
+    sqlite3_finalize(stmt);
+    /* re-throw exception for caller */
+    throw e;
+  }
+
+  sqlite3_finalize(stmt);
+  return descr;
+}
+
+void BackupCatalog::createBackupProfile(std::shared_ptr<BackupProfileDescr> profileDescr) {
 
   sqlite3_stmt *stmt;
   std::ostringstream insert;
@@ -616,24 +916,41 @@ void BackupCatalog::createBackupProfile(std::string archive_name,
   if (!this->available())
     throw CCatalogIssue("catalog database not opened");
 
+  insert << "INSERT INTO backup_profiles("
+         << "name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal) "
+         << "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7);";
+
+#ifdef __DEBUG__
+  cerr << "createBackupProfile query: " << insert.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          insert.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
   /*
-   * The specified archive should exist.
+   * Bind new backup profile data.
    */
-  std::shared_ptr<CatalogDescr> descr = this->existsByName(archive_name);
+  Range range(1, 7);
+  this->SQLbindBackupProfileAttributes(profileDescr,
+                                       profileDescr->getAffectedAttributes(),
+                                       stmt,
+                                       range);
+  rc = sqlite3_step(stmt);
 
-  if (descr->id < 0) {
-    std::ostringstream oss;
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
 
-    oss << "archive \"" << archive_name << " does not exist";
+    oss << "error creating backup profile in catalog database: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+
     throw CCatalogIssue(oss.str());
   }
 
-  insert << "INSERT INTO backup_profiles("
-         << "archive_id, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal)";
-
-  //  rc = sqlite3_prepare_v2(this->db_handle,
-  //                      );
-
+  sqlite3_finalize(stmt);
 }
 
 void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
@@ -670,18 +987,87 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
 
   if (rc != SQLITE_DONE) {
     ostringstream oss;
+
     oss << "error creating archive in catalog database: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+
     throw CCatalogIssue(oss.str());
   }
 
   sqlite3_finalize(stmt);
 }
 
+int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
+                                                  std::vector<int> affectedAttributes,
+                                                  sqlite3_stmt *stmt,
+                                                  Range range) {
+
+
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind updated attributes: invalid statement handle");
+
+  for (auto& colId : affectedAttributes) {
+
+    /*
+     * Stop, if result has reached end of range.
+     */
+    if (result > range.end())
+      break;
+
+    switch(colId) {
+
+    case SQL_BCK_PROF_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->profile_id);
+      break;
+
+    case SQL_BCK_PROF_NAME_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        profileDescr->name.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BCK_PROF_COMPRESS_TYPE_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->compress_type);
+      break;
+
+    case SQL_BCK_PROF_MAX_RATE_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->max_rate);
+      break;
+
+    case SQL_BCK_PROF_LABEL_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        profileDescr->label.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BCK_PROF_FAST_CHKPT_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->fast_checkpoint);
+      break;
+
+    case SQL_BCK_PROF_INCL_WAL_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->include_wal);
+      break;
+
+    case SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->wait_for_wal);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+  }
+}
+
 int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
                                             std::vector<int> affectedAttributes,
                                             sqlite3_stmt *stmt,
-                                            Range range) 
-  throw (CCatalogIssue) {
+                                            Range range) {
 
   int result = range.start();
 
@@ -743,7 +1129,7 @@ int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
                         -1, SQLITE_STATIC);
       break;
 
-    default: 
+    default:
       {
         ostringstream oss;
         oss << "invalid column index: \"" << colId << "\"";
@@ -836,7 +1222,7 @@ std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArch
         << " ORDER BY name;";
 
 #ifdef __DEBUG__
-  cout << "QUERY: " << query.str() << endl;
+  cerr << "QUERY: " << query.str() << endl;
 #endif
 
   /*
@@ -937,7 +1323,7 @@ shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveLi
 
   try {
 
-    /* 
+    /*
      * loop through the result, make a catalog descr
      * and push it into the result list;
      */
