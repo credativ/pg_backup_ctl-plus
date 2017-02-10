@@ -194,6 +194,9 @@ namespace credativ {
    */
   class BackupDirectory : public CPGBackupCtlBase {
   protected:
+    /*
+     * Internal boost::filesystem handle
+     */
     path handle;
 
     /*
@@ -228,6 +231,15 @@ namespace credativ {
      * object instance.
      */
     virtual void fsync();
+
+    /*
+     * Factory method returns a new basebackup file handle.
+     *
+     * NOTE: Nothing will be physically created so far until
+     *       the caller starts to call the necessary methods of
+     *       the returned BackupFile instance!
+     */
+    virtual std::shared_ptr<BackupFile> basebackup(BackupProfileCompressType compression);
   };
 
   /*
@@ -347,7 +359,7 @@ namespace credativ {
     virtual bool XLOGSegmentExists(string xlogFile);
 
     /*
-     * Returns the configure archive directory
+     * Returns the configured archive directory
      */
     string getArchiveDirectory();
 
@@ -374,16 +386,6 @@ namespace credativ {
      * Returns the number of backups found.
      */
     virtual int readBackupHistory() throw(CArchiveIssue);
-
-    /*
-     * A static factory method to create a BackupFile instance.
-     *
-     * NOTE: Nothing will be physically created so far until
-     *       the caller starts to call the necessary methods of
-     *       the returned BackupFile instance!
-     */
-    static std::shared_ptr<BackupFile> getBackupFile(path file,
-                                                     bool compressed);
 
   };
 

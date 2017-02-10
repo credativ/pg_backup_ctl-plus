@@ -68,6 +68,28 @@ void BackupDirectory::verify() {
 
 }
 
+std::shared_ptr<BackupFile> BackupDirectory::basebackup(BackupProfileCompressType compression) {
+
+  switch(compression) {
+
+  case BACKUP_COMPRESS_TYPE_NONE:
+
+    return std::make_shared<ArchiveFile>(this->basedir() / basebackup_filename());
+    break;
+
+  case BACKUP_COMPRESS_TYPE_GZIP:
+    return std::make_shared<CompressedArchiveFile>(this->basedir() / basebackup_filename());
+    break;
+
+  default:
+    std::ostringstream oss;
+    oss << "could not create archive file: invalid compression type: " << compression;
+    throw CArchiveIssue(oss.str());
+
+  }
+
+}
+
 void BackupDirectory::fsync() {
 
   int dh; /* directory descriptor handle */
@@ -149,21 +171,6 @@ shared_ptr<CatalogDescr> CPGBackupCtlFS::catalogDescrFromBackupHistoryFile(share
   result->compression = false;
 
   return result;
-}
-
-std::shared_ptr<BackupFile> getBackupFile(path file,
-                                          bool compressed) {
-
-  /*
-   * Iff compressed is requested, create a CompressedBackupFile
-   * instance. If false, just return a ArchiveFile instance.
-   */
-  if (compressed) {
-    return make_shared<CompressedArchiveFile>(file);
-  } else {
-    return make_shared<ArchiveFile>(file);
-  }
-
 }
 
 int CPGBackupCtlFS::readBackupHistory() throw(CArchiveIssue) {

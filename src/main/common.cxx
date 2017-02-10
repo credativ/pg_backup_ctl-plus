@@ -286,5 +286,5 @@ std::string CPGBackupCtlBase::basebackup_filename() {
   filename << "basebackup-" << current_timestamp(true);
 
   return filename.str();
-  
+
 }

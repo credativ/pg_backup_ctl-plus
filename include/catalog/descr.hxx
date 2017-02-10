@@ -10,6 +10,7 @@ namespace credativ {
    */
   class BackupProfileDescr;
   class BackupTableSpaceDescr;
+  class BaseBackupDescr;
 
   /*
    * Defines flags to characterize the
@@ -144,6 +145,26 @@ namespace credativ {
   public:
     int id = -1;
     int archive;
+  };
+
+  /*
+   * BaseBackupDescr represents a
+   * catalog entry for either a running
+   * or finalized basebackup.
+   */
+  class BaseBackupDescr : public PushableCols {
+  public:
+    int id = -1;
+    int archive_id = -1;
+
+    std::string xlogpos;
+    int timeline;
+    std::string label;
+    std::string fsentry;
+    std::string started;
+    std::string stopped;
+    int pinned = 0;
+    std::string status = "in progress";
   };
 }
 

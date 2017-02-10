@@ -15,7 +15,7 @@ namespace credativ {
 
   /* forward declaration */
   class BackupDirectory;
-  
+
   namespace streaming {
 
     class StreamingFailure : public CPGBackupCtlFailure {
@@ -105,7 +105,7 @@ namespace credativ {
        */
       XLogRecPtr getXLOGStartPos();
     };
-    
+
     /*
      * State of base backup stream.
      */
@@ -141,7 +141,8 @@ namespace credativ {
     public:
 
       BaseBackupProcess(StreamIdentification ident,
-                        PGconn *prepared_connection);
+                        PGconn *prepared_connection,
+                        std::shared_ptr<BackupProfileDescr> profile);
       ~BaseBackupProcess();
 
       /*
@@ -282,9 +283,10 @@ namespace credativ {
       /*
        * Starts streaming a basebackup. Stream should be
        * already connected and identified.
-       * basebackup() 
+       * basebackup()
        */
       virtual std::shared_ptr<BaseBackupProcess> basebackup();
+      virtual std::shared_ptr<BaseBackupProcess> basebackup(std::shared_ptr<BackupProfileDescr> profile);
     };
 
   }

@@ -89,10 +89,11 @@ void StreamIdentification::reset() {
  ******************************************************************************/
 
 BaseBackupProcess::BaseBackupProcess(StreamIdentification ident,
-                                     PGconn *prepared_connection) {
+                                     PGconn *prepared_connection,
+                                     std::shared_ptr<BackupProfileDescr> profile) {
 
   this->current_state = BASEBACKUP_INIT;
-  
+
   this->ident = ident;
   this->pgconn = prepared_connection;
 
@@ -124,7 +125,7 @@ void BaseBackupProcess::start() {
 
   PGresult *result;
   std::ostringstream query;
-  
+
   this->current_state = BASEBACKUP_START_POSITION;
 
   /*
@@ -134,7 +135,7 @@ void BaseBackupProcess::start() {
    * 2 - TimelineID
    */
   query << "BASE_BACKUP";
-  
+
 }
 
 void BaseBackupProcess::readTablespaceInfo() {
@@ -327,6 +328,16 @@ void PGStream::identify() {
 }
 
 std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
+
+  /*
+   * Instantiate a new backup profile object with
+   * its default values.
+   */
+  std::shared_ptr<BackupProfileDescr> profile = std::make_shared<BackupProfileDescr>();
+  return this->basebackup(profile);
+}
+
+std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupProfileDescr> profile) {
 
 }
 

@@ -180,7 +180,7 @@ namespace credativ {
      * Drop the specified backup profile.
      */
     virtual void dropBackupProfile(std::string profileName);
-    
+
     /*
      * Creates a new backup profile.
      */
@@ -279,6 +279,18 @@ namespace credativ {
                                  std::string status)
       throw(CCatalogIssue);
 
+    /*
+     * Register a started basebackup. This will create
+     * a new entry in the backup table indicating a basebackup
+     * was currently started. The basebackup is marked "in progress"
+     * as long as basebackup_finalize() was called for the basebackup
+     * handle.
+     */
+    virtual void registerBasebackup(int archive_id,
+                                    std::shared_ptr<BaseBackupDescr> backupDescr);
+
+    virtual void finalizeBasebackup(int archive_id,
+                                    std::shared_ptr<BaseBackupDescr> backupDescr);
   };
 }
 

@@ -12,12 +12,14 @@ CREATE TABLE archive(
 CREATE TABLE backup(
        id integer not null primary key,
        archive_id integer not null,
-       history_filename text UNIQUE,
-       label text,
+       xlogpos text not null,
+       timeline integer not null,
+       label text not null,
+       fsentry text not null,
        started text,
        stopped text,
-       pinned integer,
-       status text,
+       pinned integer default 0,
+       status text default 'in progress',
        FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
 );
 
@@ -55,7 +57,7 @@ CREATE TABLE version(
        number integer not null,
        create_date text not null);
 
-/* NOTE: version number must match CATALOG_MATCH from include/catalog/catalog.hxx */
+/* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
 INSERT INTO version VALUES(0x1000, datetime('now'));
 
 CREATE TABLE backup_profiles(

@@ -35,11 +35,14 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
   {
     "id",
     "archive_id",
-    "history_filename",
+    "xlogpos",
+    "timeline",
     "label",
+    "fsentry",
     "started",
     "stopped",
-    "pinned"
+    "pinned",
+    "status"
   };
 
 std::vector<std::string> BackupCatalog::streamCatalogCols =
@@ -585,7 +588,7 @@ void BackupCatalog::dropBackupProfile(std::string name) {
 
   if (rc != SQLITE_DONE) {
     std::ostringstream oss;
-    
+
     oss << "error dropping backup profile: " << sqlite3_errmsg(this->db_handle);
     sqlite3_finalize(stmt);
     throw CCatalogIssue(oss.str());
@@ -1424,6 +1427,45 @@ void BackupCatalog::dropStream(int streamid)
 
 }
 
+void BackupCatalog::registerBasebackup(int archive_id,
+                                       std::shared_ptr<BaseBackupDescr> backupDescr) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+
+  if (!this->available()) {
+    throw CCatalogIssue("could not register basebackup: database not opened");
+  }
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started) "
+                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6);",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    std::ostringstream oss;
+    oss << "error code "
+        << rc
+        << " when preparing to register basebackup: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_bind_int(stmt, 1, archive_id);
+  sqlite3_bind_text(stmt, 2, backupDescr->xlogpos.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 3, backupDescr->timeline);
+  sqlite3_bind_text(stmt, 4, backupDescr->label.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 6, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
+}
+
+void BackupCatalog::finalizeBasebackup(int archive_id,
+                                       std::shared_ptr<BaseBackupDescr> backupDescr) {
+
+}
+
 void BackupCatalog::registerStream(int archive_id,
                                    streaming::StreamIdentification& streamident)
   throw(CCatalogIssue) {
@@ -1632,3 +1674,4 @@ void BackupCatalog::setCatalogDB(string sqliteDB) {
 bool BackupCatalog::available() {
   return ((this->isOpen) && (this->db_handle != NULL));
 }
+
