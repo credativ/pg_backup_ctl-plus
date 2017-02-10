@@ -1,10 +1,11 @@
-ALTER ARCHIVE <name> comman (opts)
+ALTER ARCHIVE <name> (opts)
 	opts are:
 		directory
 		hostname
 		database
 		username
 		portnumber
+
 CREATE [ ARCHIVE | BACKUP PROFILE ] <name> command
 
 CREATE ARCHIVE <name> (options)
@@ -12,18 +13,18 @@ CREATE ARCHIVE <name> (options)
 
 	Options are:
 		TODO - mandatory
-		TODÖ
+		TODO
 
 CREATE BACKUP PROFILE <name>
-	TODO
 
-DROP [ ARCHIVE | BACKUP PROFILE ]
+DROP [ ARCHIVE | BACKUP PROFILE ] <name>
 
 DROP ARCHIVE
 	TODO
 
 DROP BACKUP PROFILE
 	TODO
+
 LIST [ ARCHIVE | BACKUP PROFILE ]
 
 LIST ARCHIVE
@@ -31,8 +32,10 @@ LIST ARCHIVE
 
 LIST BACKUP PROFILE
 	TODO
-START BASEBACKUJP FOR ARCHIVE <name> command
+
+START BASEBACKUP FOR ARCHIVE <name> [ USING PROFILE <profile> ] [ BACKGROUND ]
 	Main Backuproutine.
+
 VERIFY ARCHIVE <name> command
 	Performs a number of sanity- and accesschecks on an archive.
 
