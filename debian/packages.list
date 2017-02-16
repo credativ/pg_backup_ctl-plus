@@ -1,0 +1,10 @@
+g++-4.9
+cmake
+libpopt-dev
+libsqlite3-dev
+postgresql-server-dev-9.4
+libboost-system-dev
+libboost-regex-dev
+libboost-filesystem-dev
+libboost-date-time-dev
+libboost-iostreams-dev
