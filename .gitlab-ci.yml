@@ -5,9 +5,9 @@ before_script:
               boost-filesystem
               boost-system
               boost-regex
-              boost-date_time
+              boost-date-time
               boost-iostreams
-              libpopt-dev
+              popt-devel
               zlib-devel
               readline-devel
               postgresql-devel
