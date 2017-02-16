@@ -1,7 +1,7 @@
 image: "fedora:25"
 
 before_script:
-        - dnf -y install gcc-c++ cmake
+        - dnf -y install which gcc-c++ cmake
           boost-filesystem
           boost-system
           boost-regex
