@@ -1,0 +1,22 @@
+image: "fedora:25"
+
+before_script:
+        - dnf -y install gcc-c++ cmake
+          boost-filesystem
+          boost-system
+          boost-regex
+          boost-date_time
+          boost-iostreams
+          libpopt-dev
+          zlib-devel
+          readline-devel
+          postgresql-devel
+          gettext
+          gettext-libs
+
+pg_backup_ctl:
+        script:
+                - mkdir build
+                - cd build
+                - CXXFLAGS="-D __DEBUG__" cmake ..
+                - make
