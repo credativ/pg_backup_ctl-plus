@@ -2,6 +2,7 @@ image: "fedora:25"
 
 before_script:
         - dnf -y install which gcc-c++ make cmake
+              boost-devel
               boost-filesystem
               boost-system
               boost-regex
