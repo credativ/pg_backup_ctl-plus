@@ -38,7 +38,7 @@ endif()
 find_path(libpq_INCLUDE_DIRS libpq-fe.h
    ${PG_CONFIG_INCLUDEDIR})
 
-find_path(pgsql_INCLUDE_SERVER pg_config.h
+find_path(pgsql_INCLUDE_SERVER postgres_fe.h
    ${PG_CONFIG_INCLUDEDIR_SERVER})
 
 find_library(libpq_LIBRARIES NAMES pq libpq
