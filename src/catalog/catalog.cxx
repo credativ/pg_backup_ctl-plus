@@ -1459,11 +1459,74 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 4, backupDescr->label.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
+
+  /*
+   * Execute the statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    oss << "error registering basebackup: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Assign the generated ROW ID to this new basebackup entry.
+   */
+  backupDescr->id = sqlite3_last_insert_rowid(this->db_handle);
+
+  /*
+   * ... and we're done
+   */
+  sqlite3_finalize(stmt);
 }
 
-void BackupCatalog::finalizeBasebackup(int archive_id,
-                                       std::shared_ptr<BaseBackupDescr> backupDescr) {
+void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr) {
 
+  int rc;
+  sqlite3_stmt *stmt;
+
+  if (!this->available()) {
+    throw CCatalogIssue("could not finalize basebackup: database not opened");
+  }
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "UPDATE backup SET status = 'ready', stopped = ?1 "
+                          "WHERE id = ?2 AND archive_id = ?3;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    std::ostringstream oss;
+    oss << "error finalizing basebackup: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  backupDescr->stopped = CPGBackupCtlBase::current_timestamp();
+  /*
+   * Bind values
+   */
+  sqlite3_bind_text(stmt, 1, backupDescr->stopped.c_str(),
+                    -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, backupDescr->id);
+  sqlite3_bind_int(stmt, 3, backupDescr->archive_id);
+
+  /*
+   * Execute the statement
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    oss << "error finalizing basebackup: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
 }
 
 void BackupCatalog::registerStream(int archive_id,
@@ -1512,7 +1575,7 @@ void BackupCatalog::registerStream(int archive_id,
 
   if (rc != SQLITE_DONE) {
     std::ostringstream oss;
-    oss << "error preparing to register stream: " << sqlite3_errmsg(this->db_handle);
+    oss << "error registering stream: " << sqlite3_errmsg(this->db_handle);
     sqlite3_finalize(stmt);
     throw CCatalogIssue(oss.str());
   }

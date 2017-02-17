@@ -289,8 +289,7 @@ namespace credativ {
     virtual void registerBasebackup(int archive_id,
                                     std::shared_ptr<BaseBackupDescr> backupDescr);
 
-    virtual void finalizeBasebackup(int archive_id,
-                                    std::shared_ptr<BaseBackupDescr> backupDescr);
+    virtual void finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr);
   };
 }
 

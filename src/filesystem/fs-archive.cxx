@@ -68,17 +68,18 @@ void BackupDirectory::verify() {
 
 }
 
-std::shared_ptr<BackupFile> BackupDirectory::basebackup(BackupProfileCompressType compression) {
+std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
+                                                        BackupProfileCompressType compression) {
 
   switch(compression) {
 
   case BACKUP_COMPRESS_TYPE_NONE:
 
-    return std::make_shared<ArchiveFile>(this->basedir() / basebackup_filename());
+    return std::make_shared<ArchiveFile>(this->basedir() / name);
     break;
 
   case BACKUP_COMPRESS_TYPE_GZIP:
-    return std::make_shared<CompressedArchiveFile>(this->basedir() / basebackup_filename());
+    return std::make_shared<CompressedArchiveFile>(this->basedir() / (name + ".gz"));
     break;
 
   default:

@@ -144,7 +144,10 @@ namespace credativ {
   class BackupTablespaceDescr : public PushableCols {
   public:
     int id = -1;
-    int archive;
+    int backup_id = -1;
+    int spcoid;
+    std::string spclocation;
+    unsigned long long spcsize;
   };
 
   /*

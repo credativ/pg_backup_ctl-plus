@@ -24,12 +24,45 @@ BackupProfileCompressType StreamBaseBackup::getCompression() {
 
 StreamBaseBackup::~StreamBaseBackup() {
 
+  this->finalize();
   delete this->directory;
 
 };
 
-void StreamBaseBackup::create() {
+void StreamBaseBackup::finalize() {
 
-  this->file = this->directory->basebackup(this->compression);
+  /*
+   * Sync file handles and their contents.
+   */
+  for(auto& item : this->fileList) {
+    item->fsync();
+    item->close();
+  }
+
+  /*
+   * Sync directory handle
+   */
+  this->directory->fsync();
+
+  /*
+   * Clear internal handles.
+   */
+  this->file = nullptr;
+  this->fileList.clear();
+
+}
+
+void StreamBaseBackup::create(std::string name) {
+
+  /*
+   * Allocate a new basebackup file. This will overwrite
+   * the last used file reference.
+   */
+  this->file = this->directory->basebackup(name, this->compression);
+
+  /*
+   * Stack this reference into the private file stack.
+   */
+  this->fileList.push_back(this->file);
 
 }

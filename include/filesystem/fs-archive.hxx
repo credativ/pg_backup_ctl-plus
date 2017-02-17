@@ -239,7 +239,8 @@ namespace credativ {
      *       the caller starts to call the necessary methods of
      *       the returned BackupFile instance!
      */
-    virtual std::shared_ptr<BackupFile> basebackup(BackupProfileCompressType compression);
+    virtual std::shared_ptr<BackupFile> basebackup(std::string name,
+                                                   BackupProfileCompressType compression);
   };
 
   /*
