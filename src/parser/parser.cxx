@@ -484,7 +484,7 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
   }
 
   case START_BASEBACKUP: {
-    result = make_shared<StartBaseBackupCatalogCommand>(this->catalogDescr);
+    result = make_shared<StartBasebackupCatalogCommand>(this->catalogDescr);
     break;
   }
 

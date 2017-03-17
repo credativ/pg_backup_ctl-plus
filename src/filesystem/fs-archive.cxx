@@ -16,6 +16,129 @@ using namespace boost::filesystem;
 using namespace boost::iostreams;
 using boost::regex;
 
+/******************************************************************************
+ * StreamingBaseBackupDirectory Implementation
+ ******************************************************************************/
+
+StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
+                                                           path archiveDir)  : BackupDirectory(archiveDir) {
+  this->streaming_subdir = this->basedir() / streaming_dirname;
+}
+
+StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
+                                                           std::shared_ptr<BackupDirectory> parent)
+  : BackupDirectory(parent->getArchiveDir()) {
+  this->handle = parent->getArchiveDir();
+  this->base   = parent->basedir();
+  this->log    = parent->logdir();
+
+  this->streaming_subdir = this->basedir() / streaming_dirname;
+}
+
+StreamingBaseBackupDirectory::~StreamingBaseBackupDirectory() {}
+
+void StreamingBaseBackupDirectory::create() {
+  if (!exists(this->streaming_subdir)) {
+#ifdef __DEBUG__
+    cerr << "DEBUG: creating streaming basebackup directory" << endl;
+#endif
+    create_directories(this->streaming_subdir);
+  } else {
+    std::ostringstream oss;
+    oss << "directory " << this->streaming_subdir.string() << "already exists";
+    throw CArchiveIssue(oss.str());
+  }
+}
+
+void StreamingBaseBackupDirectory::fsync() {
+
+  /*
+   * If not a directory, error out.
+   */
+  if (!exists(this->streaming_subdir)) {
+    ostringstream oss;
+    oss << "archive directory " << this->handle.string() << " does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  BackupDirectory::fsync(this->streaming_subdir);
+}
+
+void StreamingBaseBackupDirectory::remove() {
+
+  if (!exists(this->streaming_subdir)) {
+    ostringstream oss;
+    oss << "archive directory " << this->handle.string() << " does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  remove_all(this->streaming_subdir);
+}
+
+std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string name,
+                                                                     BackupProfileCompressType compression) {
+
+  switch(compression) {
+
+  case BACKUP_COMPRESS_TYPE_NONE:
+
+    return std::make_shared<ArchiveFile>(this->streaming_subdir / name);
+    break;
+
+  case BACKUP_COMPRESS_TYPE_GZIP:
+    return std::make_shared<CompressedArchiveFile>(this->streaming_subdir / (name + ".gz"));
+    break;
+
+  default:
+    std::ostringstream oss;
+    oss << "could not create archive file: invalid compression type: " << compression;
+    throw CArchiveIssue(oss.str());
+
+  }
+
+}
+
+path StreamingBaseBackupDirectory::getPath() {
+  return this->streaming_subdir;
+}
+
+/******************************************************************************
+ * BackupDirectory Implementation
+ ******************************************************************************/
+
+void BackupDirectory::create() {
+  if (!exists(this->handle)) {
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: creating backup directory structure" << endl;
+#endif
+
+    create_directories(this->basedir());
+    create_directories(this->logdir());
+
+  } else {
+
+    if (!exists(this->basedir())) {
+#ifdef __DEBUG__
+      cerr << "DEBUG: creating basedir directory" << endl;
+#endif
+      create_directory(this->basedir());
+    }
+
+    if (!exists(this->logdir())) {
+#ifdef __DEBUG__
+      cerr << "DEBUG: creating logdir directory" << endl;
+#endif
+      create_directory(this->logdir());
+    }
+  }
+
+}
+
+path BackupDirectory::getArchiveDir() {
+  return this->handle;
+}
+
 BackupDirectory::BackupDirectory(path handle) {
   this->handle = handle;
   this->base = handle / "base";
@@ -104,17 +227,32 @@ void BackupDirectory::fsync() {
     throw CArchiveIssue(oss.str());
   }
 
+  this->fsync(this->handle);
+
+  /*
+   * Don't forget to fsync backup subdirectories belong
+   * to this archive handle.
+   */
+  this->fsync(this->logdir());
+  this->fsync(this->basedir());
+
+}
+
+void BackupDirectory::fsync(path syncPath) {
+
+  int dh; /* directory descriptor handle */
+
   /*
    * Open the directory to get a valid descriptor for
    * syncing.
    */
-  if ((dh = open(this->handle.string().c_str(), O_RDONLY)) < 0) {
+  if ((dh = open(syncPath.string().c_str(), O_RDONLY)) < 0) {
     /* error, check errno for error condition  and
      * throw an exception */
     std::ostringstream oss;
 
     oss << "could not open directory \""
-        << this->handle.string()
+        << syncPath.string()
         << "\" for syncing: "
         << strerror(errno);
     throw CArchiveIssue(oss.str());
@@ -123,7 +261,7 @@ void BackupDirectory::fsync() {
   if (::fsync(dh) != 0) {
     std::ostringstream oss;
     oss << "error fsyncing directory \""
-        << this->handle.string()
+        << syncPath.string()
         << "\": "
         << strerror(errno);
     throw CArchiveIssue(oss.str());
@@ -447,6 +585,29 @@ void ArchiveFile::open() {
 
 }
 
+void ArchiveFile::remove() {
+
+  int rc;
+
+  if (this->fp == NULL)
+    throw CArchiveIssue("cannot reference file descriptor for undefined file stream");
+
+  /*
+   * Filehandle should be closed, so we don't leak 'em
+   */
+  if (this->isOpen())
+    throw CArchiveIssue("cannot remove file still referenced by handle");
+
+  rc = unlink(this->handle.string().c_str());
+
+  if (rc != 0) {
+    std::ostringstream oss;
+    oss << "cannot unlink file \"" << this->handle.string().c_str() << "\""
+        << " (errno) " << errno;
+    throw CArchiveIssue(oss.str());
+  }
+}
+
 void ArchiveFile::setOpenMode(std::string mode) {
 
   this->mode = mode;
@@ -677,6 +838,31 @@ void CompressedArchiveFile::open() {
 
 }
 
+void CompressedArchiveFile::remove() {
+
+  int rc;
+
+  if (this->fp == NULL)
+    throw CArchiveIssue("cannot reference file descriptor for undefined file stream");
+
+  /*
+   * Filehandle should be closed, so we don't leak 'em
+   */
+  if (this->isOpen())
+    throw CArchiveIssue("cannot remove file still referenced by handle");
+
+  rc = unlink(this->handle.string().c_str());
+
+  if (rc != 0) {
+    std::ostringstream oss;
+    oss << "cannot unlink file \"" << this->handle.string().c_str() << "\""
+        << " (errno) " << errno;
+    throw CArchiveIssue(oss.str());
+  }
+
+}
+
+
 bool CompressedArchiveFile::isOpen() {
   return this->opened;
 }
@@ -864,6 +1050,10 @@ size_t BackupHistoryFile::read(char *buf, size_t len) {
 
   throw CArchiveIssue("reading backup history files directly is not supported. Use read() instead.");
 
+}
+
+void BackupHistoryFile::remove() {
+  throw CArchiveIssue("removing a backup history is not yet supported");
 }
 
 void BackupHistoryFile::setOpenMode(std::string mode) {

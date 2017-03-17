@@ -75,6 +75,7 @@ namespace credativ {
     virtual void setOpenMode(std::string mode) = 0;
     virtual size_t write(const char *buf, size_t len) = 0;
     virtual size_t read(char *buf, size_t len) = 0;
+    virtual void remove() = 0;
 
   };
 
@@ -108,6 +109,8 @@ namespace credativ {
     virtual void rename(path& newname);
     virtual void fsync();
     virtual void close();
+
+    virtual void remove();
 
     /*
      * Set open mode for this file. The default is "r"
@@ -164,6 +167,8 @@ namespace credativ {
     virtual void fsync();
     virtual void rename(path& newname);
 
+    virtual void remove();
+
     /*
      * Set open mode for this file. The default is "r"
      */
@@ -204,6 +209,11 @@ namespace credativ {
      */
     path base;
     path log;
+
+    /*
+     * Fsync a specific path.
+     */
+    static void fsync(path syncPath);
   public:
 
     BackupDirectory(path handle);
@@ -213,6 +223,11 @@ namespace credativ {
      * Check if this is an existing directory.
      */
     virtual void verify();
+
+    /*
+     * Instantiate the directory (create physical directories)
+     */
+    virtual void create();
 
     /*
      * Returns a copy of the internal base directory
@@ -227,13 +242,27 @@ namespace credativ {
     virtual path logdir();
 
     /*
-     * Fsync the directory reference by this
+     * Fsync the directory referenced by this
      * object instance.
      */
     virtual void fsync();
 
     /*
+     * Returns the path handle this object instance
+     * points to.
+     */
+    virtual path getArchiveDir();
+
+    /*
      * Factory method returns a new basebackup file handle.
+     *
+     * This will create a file handle pointing into
+     * the base/ subdirectory of the backup archive.
+     *
+     * Specialized backup methods which use alternative
+     * subdirectory location for their backup files,
+     * such as streamed base backups, should be implemented by
+     * their own descendant classes.
      *
      * NOTE: Nothing will be physically created so far until
      *       the caller starts to call the necessary methods of
@@ -241,6 +270,58 @@ namespace credativ {
      */
     virtual std::shared_ptr<BackupFile> basebackup(std::string name,
                                                    BackupProfileCompressType compression);
+  };
+
+  /*
+   * Specialized class which encapsulates access
+   * to streaming basebackup subdirectories.
+   *
+   * This is a specialized descendant class of BackupDirectory,
+   * which extends its ancestor for specific methods for
+   * streaming basebackup filesystem organization.
+   */
+  class StreamingBaseBackupDirectory : public BackupDirectory {
+  protected:
+    path streaming_subdir;
+  public:
+    StreamingBaseBackupDirectory(std::string streaming_dirname,
+                                 path archiveDir);
+    StreamingBaseBackupDirectory(std::string streaming_dirname,
+                                 std::shared_ptr<BackupDirectory> parent);
+
+    virtual ~StreamingBaseBackupDirectory();
+
+    /*
+     * Returns the path to the streaming base backup
+     * directory.
+     */
+    virtual path getPath();
+
+    /*
+     * Returns a file handle representing the new streamed base
+     * backup file content.
+     */
+    virtual std::shared_ptr<BackupFile> basebackup(std::string name,
+                                                   BackupProfileCompressType compression);
+
+    /*
+     * Instantiate the directory.
+     *
+     * This creates a streaming base backup subdirectory in
+     * <ARCHIVEDIR>/base/ if not already existing.
+     */
+    virtual void create();
+
+    /*
+     * Fsync directories.
+     */
+    virtual void fsync();
+
+    /*
+     * Remove streaming base backup, including files and directory
+     * from the filesystem.
+     */
+    virtual void remove();
   };
 
   /*
@@ -305,6 +386,7 @@ namespace credativ {
     virtual size_t read(char *buf, size_t len);
     virtual bool isOpen();
     virtual void rename(path& newname);
+    virtual void remove();
   };
 
   /*
@@ -387,7 +469,6 @@ namespace credativ {
      * Returns the number of backups found.
      */
     virtual int readBackupHistory() throw(CArchiveIssue);
-
   };
 
 }

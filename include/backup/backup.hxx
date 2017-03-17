@@ -7,6 +7,9 @@
 
 namespace credativ {
 
+  class BackupFile;
+  class BackupDirectory;
+
   /*
    * Generic base class to implement backup
    * files.
@@ -19,6 +22,8 @@ namespace credativ {
      */
     std::shared_ptr<CatalogDescr> descr = nullptr;
 
+    bool initialized = false;
+    
     /*
      * File handle object representing a physical
      * backup file
@@ -31,14 +36,17 @@ namespace credativ {
     BackupProfileCompressType compression = BACKUP_COMPRESS_TYPE_NONE;
 
     /*
-     * Backup Directory, instantiated during c'tor
+     * Backup Directory, instantiated during initialize()...
      */
     BackupDirectory *directory = nullptr;
   public:
     Backup(const std::shared_ptr<CatalogDescr>& descr);
     virtual ~Backup();
 
+    virtual bool isInitialized() = 0;
+    virtual void initialize() = 0;
     virtual void create(std::string name) = 0;
+    virtual void finalize() = 0;
   };
 
   /*
@@ -55,6 +63,9 @@ namespace credativ {
    * into the StreamBaseBackup object. The file handles are internally
    * handled and or of type ArchiveFile. Call finalize() afterwards
    * to sync all outstanding filesystem buffers.
+   *
+   * StreamBaseBackup objects are not designed to be reused. For new streamed
+   * base backups create a new object instance instead.
    */
   class StreamBaseBackup: public Backup {
   private:
@@ -73,11 +84,27 @@ namespace credativ {
      *       can have its own dump file).
      */
     std::vector<std::shared_ptr<BackupFile>> fileList;
+
+    /*
+     * Internal stream backup identifier. This is also
+     * the directory name where all files are stored. The identifer
+     * is created during the c'tor via createMyIdentifier().
+     */
+    std::string identifier = "";
+
+    /*
+     * On instantiation, StreamBaseBackup creates an internal
+     * name in the format streambackup-<TIMESTAMP>, which represents
+     * the directory, where all tarballs from the stream are stored.
+     */
+    std::string createMyIdentifier();
   public:
     StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr);
     ~StreamBaseBackup();
 
-    virtual void create(std::string name);
+    virtual bool isInitialized();
+    virtual void initialize();
+    virtual std::shared_ptr<BackupFile> stackFile(std::string name);
     virtual void finalize();
     virtual void setCompression(BackupProfileCompressType compression);
     virtual BackupProfileCompressType getCompression();

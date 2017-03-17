@@ -7,7 +7,6 @@
 #include <stream.hxx>
 
 using namespace credativ;
-using namespace credativ::streaming;
 using namespace std;
 
 /*
@@ -1492,9 +1491,23 @@ void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDe
     throw CCatalogIssue("could not finalize basebackup: database not opened");
   }
 
+  /*
+   * Descriptor should have a valid backup id
+   */
+  if (backupDescr->id < 0) {
+    throw CCatalogIssue("could not finalize basebackup: invalid backup id");
+  }
+  
+  /*
+   * Check if this descriptor has an xlogposend value assigned.
+   */
+  if (backupDescr->xlogposend == "") {
+    throw CCatalogIssue("could not finalize basebackup: expected xlog end position");
+  }
+  
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "UPDATE backup SET status = 'ready', stopped = ?1 "
-                          "WHERE id = ?2 AND archive_id = ?3;",
+                          "UPDATE backup SET status = 'ready', stopped = ?1, xlogposend = ?2 "
+                          "WHERE id = ?3 AND archive_id = ?4;",
                           -1,
                           &stmt,
                           NULL);
@@ -1506,13 +1519,16 @@ void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDe
   }
 
   backupDescr->stopped = CPGBackupCtlBase::current_timestamp();
+
   /*
    * Bind values
    */
   sqlite3_bind_text(stmt, 1, backupDescr->stopped.c_str(),
                     -1, SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 2, backupDescr->id);
-  sqlite3_bind_int(stmt, 3, backupDescr->archive_id);
+  sqlite3_bind_text(stmt, 2, backupDescr->xlogposend.c_str(),
+                    -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 3, backupDescr->id);
+  sqlite3_bind_int(stmt, 4, backupDescr->archive_id);
 
   /*
    * Execute the statement
@@ -1530,7 +1546,7 @@ void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDe
 }
 
 void BackupCatalog::registerStream(int archive_id,
-                                   streaming::StreamIdentification& streamident)
+                                   StreamIdentification& streamident)
   throw(CCatalogIssue) {
 
   int rc;
@@ -1590,10 +1606,10 @@ void BackupCatalog::registerStream(int archive_id,
 }
 
 
-std::vector<std::shared_ptr<streaming::StreamIdentification>> BackupCatalog::getStreams(std::string archive_name)
+std::vector<std::shared_ptr<StreamIdentification>> BackupCatalog::getStreams(std::string archive_name)
 throw (CCatalogIssue) {
 
-  std::vector<std::shared_ptr<streaming::StreamIdentification>> result;
+  std::vector<std::shared_ptr<StreamIdentification>> result;
   std::vector<int> streamRows;
   sqlite3_stmt *stmt;
   int rc;

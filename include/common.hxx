@@ -23,20 +23,6 @@
 #include <fstream>
 #include <stdexcept>
 
-/*
- * Maximum length of XLOG filename
- *
- * src/include/access/xlog_internal.h
- */
-// #define MAXXLOGFNAMELEN 25
-
-/*
- * Max length of a backup label
- *
- * src/include/pg_config_manual.h
- */
-//#define MAXPGPATH 1024
-
 #define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
 
 namespace credativ {

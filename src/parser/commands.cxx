@@ -24,6 +24,87 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
 }
 
+StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = START_BASEBACKUP;
+  this->catalog = catalog;
+}
+
+StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+
+}
+
+void StartBasebackupCatalogCommand::execute(bool background) {
+
+  std::shared_ptr<CatalogDescr> temp_descr(nullptr);
+
+  /*
+   * Die hard in case no catalog descriptor available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute archive command: no catalog");
+
+  /*
+   * Open the catalog, if not done yet.
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  this->catalog->startTransaction();
+
+  /*
+   * Check if the specified archive_name is present, get
+   * its descriptor.
+   */
+  temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    /* Requested archive doesn't exist, error out */
+    std::ostringstream oss;
+    oss << "archive " << this->archive_name << " doesn't exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  try {
+
+    PGStream pgstream(temp_descr);
+
+    /*
+     * Get connection to the PostgreSQL instance.
+     */
+    pgstream.connect();
+
+    /*
+     * Identify this replication connection.
+     */
+    pgstream.identify();
+
+
+    /*
+     * Enter basebackup stream.
+     */
+    
+
+    /*
+     * And disconnect
+     */
+    pgstream.disconnect();
+
+  } catch(CPGBackupCtlFailure& e) {
+
+    this->catalog->rollbackTransaction();
+    /* re-throw ... */
+    throw e;
+
+  }
+
+  this->catalog->commitTransaction();
+
+}
+
 DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = LIST_BACKUP_PROFILE;
   this->catalog = catalog;
@@ -32,7 +113,7 @@ DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr
 DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
-  
+
 }
 
 void DropBackupProfileCatalogCommand::execute(bool extended) {
@@ -60,7 +141,7 @@ void DropBackupProfileCatalogCommand::execute(bool extended) {
      */
     std::shared_ptr<BackupProfileDescr> profileDescr = this->getBackupProfileDescr();
     std::shared_ptr<BackupProfileDescr> temp_descr = catalog->getBackupProfile(profileDescr->name);
-    
+
     /*
      * NOTE: BackupCatalog::getBackupProfile() always returns an
      *       BackupProfileDescr, but in case the specified
@@ -73,12 +154,12 @@ void DropBackupProfileCatalogCommand::execute(bool extended) {
     }
 
     catalog->commitTransaction();
-    
+
   } catch(exception& e) {
     catalog->rollbackTransaction();
     /* re-throw exception */
     throw e;
-  }  
+  }
 }
 
 ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
@@ -89,7 +170,7 @@ ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr
 ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
-  
+
 }
 
 void ListBackupProfileCatalogCommand::execute(bool extended) {
@@ -127,7 +208,7 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
       cout << CPGBackupCtlBase::makeHeader("List of backup profiles",
                                            boost::format("%-25s\t%-15s")
                                            % "Name" % "Backup Label", 80);
-      
+
       /*
        * Print name and label
        */
@@ -184,7 +265,7 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
   } catch (exception& e) {
     this->catalog->rollbackTransaction();
-    throw e;    
+    throw e;
   }
 
 }
@@ -624,113 +705,6 @@ void DropArchiveCatalogCommand::execute(bool existsOk) {
     throw e;
 
   }
-
-}
-
-StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
-
-  this->copy(*(descr.get()));
-
-}
-
-StartBaseBackupCatalogCommand::StartBaseBackupCatalogCommand() {
-  this->tag = START_BASEBACKUP;
-}
-
-void StartBaseBackupCatalogCommand::execute(bool ignored) {
-
-  std::shared_ptr<CatalogDescr> temp_descr(nullptr);
-
-  /*
-   * Die hard in case no catalog descriptor available.
-   */
-  if (this->catalog == nullptr)
-    throw CArchiveIssue("could not execute archive command: no catalog");
-
-  /*
-   * Open the catalog, if not done yet.
-   */
-  if (!this->catalog->available()) {
-    this->catalog->open_rw();
-  }
-
-  this->catalog->startTransaction();
-
-  /*
-   * Check if the specified archive_name is present, get
-   * its descriptor.
-   */
-  temp_descr = this->catalog->existsByName(this->archive_name);
-
-  if (temp_descr->id < 0) {
-    /* Requested archive doesn't exist, error out */
-    std::ostringstream oss;
-    oss << "archive " << this->archive_name << " doesn't exist";
-    throw CArchiveIssue(oss.str());
-  }
-
-  try {
-
-    /*
-     * Setup PostgreSQL streaming object.
-     */
-    using namespace credativ::streaming;
-
-    PGStream pgstream(temp_descr);
-
-    /*
-     * Get connection to the PostgreSQL instance.
-     */
-    pgstream.connect();
-
-    /*
-     * Identify this replication connection.
-     */
-    pgstream.identify();
-
-    /*
-     * Register information for the current basebackup in the catalog.
-     */
-    this->catalog->registerStream(temp_descr->id, pgstream.streamident);
-
-    CompressedArchiveFile file(path(temp_descr->directory) / "test.gz");
-    file.setOpenMode("w");
-    file.open();
-    file.write("This is a file with compression", 31);
-    file.fsync();
-    file.close();
-
-#ifdef __DEBUG__
-    std::cerr << "STREAM reg, id "
-              << pgstream.streamident.id
-              << " date "
-              << pgstream.streamident.create_date
-              << std::endl;
-#endif
-
-    /*
-     * Enter basebackup stream.
-     */
-
-    /*
-     * ...and finally drop the current stream.
-     */
-    this->catalog->dropStream(pgstream.streamident.id);
-
-    /*
-     * And disconnect
-     */
-    pgstream.disconnect();
-
-  } catch(CPGBackupCtlFailure& e) {
-
-    this->catalog->rollbackTransaction();
-    /* re-throw ... */
-    throw e;
-
-  }
-
-  this->catalog->commitTransaction();
 
 }
 

@@ -10,7 +10,7 @@ Backup::~Backup() {};
 StreamBaseBackup::StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr) : Backup(descr) {
 
   this->descr = descr;
-  this->directory = new BackupDirectory(path(this->descr->directory));
+  this->identifier = this->createMyIdentifier();
 
 }
 
@@ -28,6 +28,13 @@ StreamBaseBackup::~StreamBaseBackup() {
   delete this->directory;
 
 };
+
+std::string StreamBaseBackup::createMyIdentifier() {
+
+  return "streambackup-"
+    + CPGBackupCtlBase::current_timestamp(true);
+
+}
 
 void StreamBaseBackup::finalize() {
 
@@ -52,7 +59,31 @@ void StreamBaseBackup::finalize() {
 
 }
 
-void StreamBaseBackup::create(std::string name) {
+bool StreamBaseBackup::isInitialized() {
+  return this->initialized;
+}
+
+void StreamBaseBackup::initialize() {
+
+  this->directory = new StreamingBaseBackupDirectory(this->identifier,
+                                                     path(this->descr->directory));
+  this->initialized = true;
+
+  /*
+   * A streamed base backup is hosted within a
+   * subdirectory in <ARCHIVEDIR>/base. Create a new one but
+   * create() will throw a CArchiveIssue exception in case
+   * it already exists.
+   */
+  this->directory->create();
+
+}
+
+std::shared_ptr<BackupFile> StreamBaseBackup::stackFile(std::string name) {
+
+  if (!this->isInitialized()) {
+    throw CArchiveIssue("cannot create stream backup files: not initialized");
+  }
 
   /*
    * Allocate a new basebackup file. This will overwrite
@@ -64,5 +95,6 @@ void StreamBaseBackup::create(std::string name) {
    * Stack this reference into the private file stack.
    */
   this->fileList.push_back(this->file);
+  return this->file;
 
 }

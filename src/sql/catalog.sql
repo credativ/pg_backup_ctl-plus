@@ -13,6 +13,7 @@ CREATE TABLE backup(
        id integer not null primary key,
        archive_id integer not null,
        xlogpos text not null,
+       xlogposend text null,
        timeline integer not null,
        label text not null,
        fsentry text not null,

@@ -2,7 +2,7 @@
 
 #include <stream.hxx>
 
-using namespace credativ::streaming;
+using namespace credativ;
 
 std::string ERRCODE_DUPLICATE_OBJECT("42710");
 
@@ -84,71 +84,6 @@ void StreamIdentification::reset() {
   this->slot = nullptr;
 }
 
-/******************************************************************************
- * Implementation of BaseBackupProcess
- ******************************************************************************/
-
-BaseBackupProcess::BaseBackupProcess(StreamIdentification ident,
-                                     PGconn *prepared_connection,
-                                     std::shared_ptr<BackupProfileDescr> profile) {
-
-  this->current_state = BASEBACKUP_INIT;
-
-  this->ident = ident;
-  this->pgconn = prepared_connection;
-
-  /*
-   * prepared_connection needs to be a connected
-   * libpq connection, otherwise we have to error out.
-   */
-  if (!((this->pgconn != NULL)
-        && (PQstatus(this->pgconn) == CONNECTION_OK)))
-    throw StreamingFailure("basebackup stream not connected");
-
-  this->current_state = BASEBACKUP_STARTED;
-}
-
-BaseBackupProcess::~BaseBackupProcess() {
-
-  /*
-   * Don't close the associated PostgreSQL
-   * connection handle here!
-   *
-   * We are expected to operate as a sub
-   * on a calling PGStream handle, which does
-   * all the legwork for us.
-   */
-
-}
-
-void BaseBackupProcess::start() {
-
-  PGresult *result;
-  std::ostringstream query;
-
-  this->current_state = BASEBACKUP_START_POSITION;
-
-  /*
-   * First result set is the starting position of
-   * the basebackup stream, with two columns:
-   * 1 - XLogRecPtr
-   * 2 - TimelineID
-   */
-  query << "BASE_BACKUP";
-
-}
-
-void BaseBackupProcess::readTablespaceInfo() {
-
-}
-
-bool BaseBackupProcess::stepTablespace(std::shared_ptr<credativ::BackupDirectory> archivedir) {
-
-}
-
-void BaseBackupProcess::backupTablespace(int OID) {
-
-}
 
 /******************************************************************************
  * Implementation of PGStream
@@ -171,7 +106,8 @@ XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 int PGStream::getServerVersion() {
 
   if (!this->connected()) {
-    throw StreamingConnectionFailure("could not get server version: not connected", CONNECTION_BAD);
+    throw StreamingConnectionFailure("could not get server version: not connected",
+                                     CONNECTION_BAD);
   }
 
   return PQserverVersion(this->pgconn);
@@ -338,7 +274,8 @@ std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
 }
 
 std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupProfileDescr> profile) {
-
+  return std::make_shared<BaseBackupProcess>(this->pgconn,
+                                             profile);
 }
 
 std::string PGStream::generateSlotName() {
@@ -358,8 +295,8 @@ std::string PGStream::generateSlotName() {
 }
 
 std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot(bool reserve_wal,
-                                                                             bool existing_ok,
-                                                                             bool noident_ok) {
+                                                                                 bool existing_ok,
+                                                                                 bool noident_ok) {
 
   std::ostringstream query;
   ExecStatusType es;

@@ -10,7 +10,7 @@
 #include <stream.hxx>
 
 namespace credativ {
-
+  
   /*
    * Base catalog exception.
    */
@@ -246,7 +246,7 @@ namespace credativ {
      * stream id.
      */
     virtual void registerStream(int archive_id,
-                                credativ::streaming::StreamIdentification& streamident)
+                                StreamIdentification& streamident)
       throw (CCatalogIssue);
 
     /*
@@ -259,7 +259,7 @@ namespace credativ {
      * Returns a StreamIdentification shared pointer
      * from a result set based on the stream catalog table.
      */
-    std::shared_ptr<credativ::streaming::StreamIdentification>
+    std::shared_ptr<StreamIdentification>
        fetchStreamData(sqlite3_stmt *stmt,
                        std::string archive_name,
                        std::vector<int> affectedRows)
@@ -268,7 +268,7 @@ namespace credativ {
     /*
      * Get a list of streams for the specified archive.
      */
-    std::vector<std::shared_ptr<credativ::streaming::StreamIdentification>>
+    std::vector<std::shared_ptr<StreamIdentification>>
        getStreams(std::string archive_name)
     throw(CCatalogIssue);
 

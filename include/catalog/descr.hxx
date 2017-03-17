@@ -41,6 +41,52 @@ namespace credativ {
   } BackupProfileCompressType;
 
   /*
+   * Represents a physical replication slot.
+   * State of base backup stream.
+   */
+  struct PhysicalReplicationSlot {
+    std::string slot_name;
+    std::string consistent_point;
+    std::string snapshot_name;
+    std::string output_plugin;
+  };
+
+  /*
+   * Represents an identified streaming connection.
+   */
+  class StreamIdentification {
+  public:
+    unsigned long long id = -1; /* internal catalog stream id */
+    int archive_id = -1; /* used to reflect assigned archive */
+    std::string stype;
+    std::string slot_name;
+    std::string systemid;
+    int         timeline;
+    std::string xlogpos;
+    std::string dbname;
+    std::string status;
+    std::string create_date;
+
+    StreamIdentification();
+    ~StreamIdentification();
+
+    /*
+     * Physical replication slot, if any
+     */
+    std::shared_ptr<PhysicalReplicationSlot> slot = nullptr;
+
+    /*
+     * Set properties back to default.
+     */
+    void reset();
+
+    /*
+     * Returns the decoded XLogRecPtr from xlogpos
+     */
+    XLogRecPtr getXLOGStartPos();
+  };
+
+  /*
    * Base class for descriptors which wants
    * to have dynamic cols associated.
    */
@@ -83,6 +129,10 @@ namespace credativ {
     std::string pguser = "";
     std::string pgdatabase = "";
 
+    /*
+     * The methods below are used by our spirit::parser
+     * implementation.
+     */
     void setDbName(std::string const& db_name);
 
     void setCommandTag(credativ::CatalogTag const& tag);
@@ -161,6 +211,7 @@ namespace credativ {
     int archive_id = -1;
 
     std::string xlogpos;
+    std::string xlogposend;
     int timeline;
     std::string label;
     std::string fsentry;
