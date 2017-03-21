@@ -77,13 +77,6 @@ namespace credativ {
      */
     struct BackupTablespaceStep stepInfo;
 
-    /*
-     * Backup the requested tablespace OID. Throws a
-     * StreamingExecution exception in case the OID
-     * is not in the internal tablespace meta info.
-     */
-    void backupTablespace(std::shared_ptr<BackupTablespaceDescr> descr);
-
   public:
 
     BaseBackupProcess(PGconn *prepared_connection,
@@ -108,6 +101,13 @@ namespace credativ {
     virtual void readTablespaceInfo();
 
     /*
+     * Backup the requested tablespace OID. Throws a
+     * StreamingExecution exception in case the OID
+     * is not in the internal tablespace meta info.
+     */
+    void backupTablespace(std::shared_ptr<BackupTablespaceDescr> descr);
+
+    /*
      * Step through the interal tablespace meta info
      * (initialized by calling readTablespaceInfo()), and
      * backup 'em into files into the catalog. The method
@@ -124,6 +124,11 @@ namespace credativ {
      * the current tablespace descriptor used for the last recent step.
      * The caller can just pass null and will get a valid pointer in case
      * the current step is operating on a valid tablespace meta entry.
+     *
+     * Please note that calling stepTablespace() multiple times without
+     * a curse through backupTablespace() will throw a StreamingFailure
+     * exception, since the tablespace data needs to be streamed to keep
+     * the PostgreSQL protocol in sync.
      */
     virtual bool stepTablespace(std::shared_ptr<StreamBaseBackup> backupHandle,
                                 std::shared_ptr<BackupTablespaceDescr> &descr);

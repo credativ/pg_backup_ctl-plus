@@ -23,7 +23,7 @@ namespace credativ {
     std::shared_ptr<CatalogDescr> descr = nullptr;
 
     bool initialized = false;
-    
+
     /*
      * File handle object representing a physical
      * backup file
@@ -45,7 +45,7 @@ namespace credativ {
 
     virtual bool isInitialized() = 0;
     virtual void initialize() = 0;
-    virtual void create(std::string name) = 0;
+    virtual void create() = 0;
     virtual void finalize() = 0;
   };
 
@@ -108,6 +108,7 @@ namespace credativ {
     virtual void finalize();
     virtual void setCompression(BackupProfileCompressType compression);
     virtual BackupProfileCompressType getCompression();
+    virtual void create();
   };
 
 }

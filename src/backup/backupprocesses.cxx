@@ -104,11 +104,13 @@ void BaseBackupProcess::start() {
   /*
    * Fire the query...
    */
-  if (PQsendQuery(this->pgconn, query.str().c_str()) != 0) {
+  if (PQsendQuery(this->pgconn, query.str().c_str()) == 0) {
     std::ostringstream oss;
     oss << "BASE_BACKUP command failed: " << PQerrorMessage(this->pgconn);
     throw StreamingFailure(oss.str());
   }
+
+  result = PQgetResult(this->pgconn);
 
   if ((es = PQresultStatus(result)) != PGRES_TUPLES_OK) {
     std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
@@ -118,8 +120,6 @@ void BaseBackupProcess::start() {
     PQclear(result);
     throw StreamingExecutionFailure(oss.str(), es, sqlstate);
   }
-
-  result = PQgetResult(this->pgconn);
 
   if (PQntuples(result) != 1) {
     std::ostringstream oss;
@@ -344,4 +344,6 @@ void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> 
      */
     this->stepInfo.file->write(copybuf, rc);
   }
+
+  this->current_state = BASEBACKUP_TABLESPACE_READY;
 }

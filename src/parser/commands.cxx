@@ -33,12 +33,12 @@ StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<Cat
 
   this->copy(*(descr.get()));
 
-
 }
 
 void StartBasebackupCatalogCommand::execute(bool background) {
 
   std::shared_ptr<CatalogDescr> temp_descr(nullptr);
+  std::shared_ptr<BackupProfileDescr> backupProfile(nullptr);
 
   /*
    * Die hard in case no catalog descriptor available.
@@ -68,31 +68,146 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     throw CArchiveIssue(oss.str());
   }
 
+  /*
+   * If the PROFILE keyword was specified, select
+   * the requested profile from the catalog. If it doesn't
+   * exist, throw an error.
+   *
+   * Iff PROFILE was omitted, select the default profile.
+   */
+  if (this->backup_profile->name != "") {
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: checking for profile " << this->backup_profile->name << endl;
+#endif
+
+    backupProfile = catalog->getBackupProfile(this->backup_profile->name);
+
+    /*
+     * If the requested backup profile was not found, raise
+     * an exception.
+     */
+    if (backupProfile->profile_id < 0) {
+      std::ostringstream oss;
+      oss << "backup profile \"" << this->backup_profile->name << "\" does not exist";
+      throw CArchiveIssue(oss.str());
+    }
+
+  } else {
+
+    /*
+     * The PROFILE keyword wasn't specified to
+     * the START BASEBACKUP command. Request the default
+     * profile...
+     */
+    backupProfile = catalog->getBackupProfile("default");
+
+    /*
+     * Iff the "default" profile doesn't exist, tell
+     * the user that this is an unexpected error condition.
+     */
+    if (backupProfile->profile_id < 0) {
+      std::ostringstream oss;
+      oss << "default profile not found: please check your backup catalog or create a new one";
+      throw CArchiveIssue(oss.str());
+    }
+
+  }
+
   try {
 
     PGStream pgstream(temp_descr);
+
+    /*
+     * Basebackup stream process handler.
+     */
+    std::shared_ptr<BaseBackupProcess> bbp;
+
+    /*
+     * Create base backup stream handler.
+     */
+    std::shared_ptr<StreamBaseBackup> backupHandle
+      = std::make_shared<StreamBaseBackup>(temp_descr);
+
+    /*
+     * Meta information handle for streamed tablespace.
+     */
+    std::shared_ptr<BackupTablespaceDescr> tablespaceDescr = nullptr;
+
+    /*
+     * Prepare backup handler. Should successfully create
+     * target streaming directory...
+     */
+    backupHandle->initialize();
+    backupHandle->create();
 
     /*
      * Get connection to the PostgreSQL instance.
      */
     pgstream.connect();
 
+#ifdef __DEBUG__
+    cerr << "DEBUG: connecting stream" << endl;
+#endif
+
     /*
      * Identify this replication connection.
      */
     pgstream.identify();
 
+#ifdef __DEBUG__
+    cerr << "DEBUG: identify stream" << endl;
+#endif
+
+    /*
+     * Get basebackup stream handle.
+     */
+    bbp = pgstream.basebackup(backupProfile);
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: basebackup stream handle initialize" << endl;
+#endif
 
     /*
      * Enter basebackup stream.
      */
-    
+    bbp->start();
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: basebackup stream started" << endl;
+#endif
+
+    /*
+     * Initialize list of tablespaces, if any.
+     */
+    bbp->readTablespaceInfo();
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: basebackup tablespace meta info requested" << endl;
+#endif
+
+    /*
+     * Loop through tablespaces and stream their contents.
+     */
+    while(bbp->stepTablespace(backupHandle,
+                              tablespaceDescr)) {
+#ifdef __DEBUG__
+      cerr << "streaming tablespace OID "
+           << tablespaceDescr->spcoid
+           << ",size " << tablespaceDescr->spcsize
+           << endl;
+#endif
+      bbp->backupTablespace(tablespaceDescr);
+    }
 
     /*
      * And disconnect
      */
-    pgstream.disconnect();
+#ifdef __DEBUG__
+    cerr << "DEBUG: disconnecting stream" << endl;
+#endif
 
+    pgstream.disconnect();
   } catch(CPGBackupCtlFailure& e) {
 
     this->catalog->rollbackTransaction();

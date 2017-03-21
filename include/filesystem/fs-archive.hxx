@@ -113,7 +113,7 @@ namespace credativ {
     virtual void remove();
 
     /*
-     * Set open mode for this file. The default is "r"
+     * Set open mode for this file. The default is "rb".
      */
     virtual void setOpenMode(std::string mode);
 

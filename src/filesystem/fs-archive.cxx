@@ -40,7 +40,11 @@ StreamingBaseBackupDirectory::~StreamingBaseBackupDirectory() {}
 void StreamingBaseBackupDirectory::create() {
   if (!exists(this->streaming_subdir)) {
 #ifdef __DEBUG__
-    cerr << "DEBUG: creating streaming basebackup directory" << endl;
+    cerr << "DEBUG: creating streaming basebackup directory "
+         << "\""
+         << this->streaming_subdir.string()
+         << "\""
+         << endl;
 #endif
     create_directories(this->streaming_subdir);
   } else {

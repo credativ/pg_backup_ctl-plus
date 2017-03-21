@@ -133,8 +133,10 @@ namespace credativ {
                         /*
                          * START BASEBACKUP FOR ARCHIVE <name> command
                          */
-                        | cmd_start_basebackup > identifier
+                        | cmd_start_basebackup
+                        > identifier
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                        > with_profile
 
                         ); /* start rule end */
 
@@ -164,7 +166,7 @@ namespace credativ {
           > -(identifier)
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
           [  boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE_DETAIL) ];
-        
+
         /*
          * CREATE BACKUP PROFILE <name> command
          */
@@ -309,6 +311,10 @@ namespace credativ {
         /* We enforce quoting for path strings */
         directory_string = no_skip[ '"' >> +(char_ - ('"') ) >> '"' ];
 
+        /* WITH PROFILE property */
+        with_profile = no_case[lexeme [ lit("PROFILE") ]] >> identifier
+          [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
+
         /*
          * error handling
          */
@@ -349,6 +355,7 @@ namespace credativ {
         directory_string.name("directory path");
         directory.name("DIRECTORY=path");
         backup_profile_opts.name("backup profile parameters");
+        with_profile.name("backup profile name");
       }
 
       /*
@@ -377,7 +384,8 @@ namespace credativ {
                           profile_checkpoint_option,
                           profile_max_rate_option,
                           profile_compression_option,
-                          profile_backup_label_option;
+                          profile_backup_label_option,
+                          with_profile;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string;
 

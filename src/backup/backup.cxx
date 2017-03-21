@@ -24,8 +24,10 @@ BackupProfileCompressType StreamBaseBackup::getCompression() {
 
 StreamBaseBackup::~StreamBaseBackup() {
 
-  this->finalize();
-  delete this->directory;
+  if (this->isInitialized()) {
+    this->finalize();
+    delete this->directory;
+  }
 
 };
 
@@ -33,6 +35,22 @@ std::string StreamBaseBackup::createMyIdentifier() {
 
   return "streambackup-"
     + CPGBackupCtlBase::current_timestamp(true);
+
+}
+
+void StreamBaseBackup::create() {
+
+  if (this->isInitialized()) {
+    /*
+     * A streamed base backup is hosted within a
+     * subdirectory in <ARCHIVEDIR>/base. Create a new one but
+     * create() will throw a CArchiveIssue exception in case
+     * it already exists.
+     */
+    this->directory->create();
+  } else {
+    throw CArchiveIssue("cannot call create on initialized streaming directory handle");
+  }
 
 }
 
@@ -69,14 +87,6 @@ void StreamBaseBackup::initialize() {
                                                      path(this->descr->directory));
   this->initialized = true;
 
-  /*
-   * A streamed base backup is hosted within a
-   * subdirectory in <ARCHIVEDIR>/base. Create a new one but
-   * create() will throw a CArchiveIssue exception in case
-   * it already exists.
-   */
-  this->directory->create();
-
 }
 
 std::shared_ptr<BackupFile> StreamBaseBackup::stackFile(std::string name) {
@@ -90,6 +100,8 @@ std::shared_ptr<BackupFile> StreamBaseBackup::stackFile(std::string name) {
    * the last used file reference.
    */
   this->file = this->directory->basebackup(name, this->compression);
+  this->file->setOpenMode("wb+");
+  this->file->open();
 
   /*
    * Stack this reference into the private file stack.
