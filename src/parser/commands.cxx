@@ -102,13 +102,17 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     backupProfile = catalog->getBackupProfile("default");
 
+#ifdef __DEBUG__
+    cerr << "PROFILE keyword not specified, using \"default\" backup profile" << endl;
+#endif
+
     /*
      * Iff the "default" profile doesn't exist, tell
      * the user that this is an unexpected error condition.
      */
     if (backupProfile->profile_id < 0) {
       std::ostringstream oss;
-      oss << "default profile not found: please check your backup catalog or create a new one";
+      oss << "\"default\" profile not found: please check your backup catalog or create a new one";
       throw CArchiveIssue(oss.str());
     }
 

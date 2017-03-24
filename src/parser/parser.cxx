@@ -136,7 +136,7 @@ namespace credativ {
                         | cmd_start_basebackup
                         > identifier
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                        > with_profile
+                        > -(with_profile)
 
                         ); /* start rule end */
 
@@ -311,7 +311,7 @@ namespace credativ {
         /* We enforce quoting for path strings */
         directory_string = no_skip[ '"' >> +(char_ - ('"') ) >> '"' ];
 
-        /* WITH PROFILE property */
+        /* PROFILE property */
         with_profile = no_case[lexeme [ lit("PROFILE") ]] >> identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
 
