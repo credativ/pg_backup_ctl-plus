@@ -281,7 +281,7 @@ void BackupCatalog::rollbackTransaction()
 
 std::shared_ptr<StreamIdentification> BackupCatalog::fetchStreamData(sqlite3_stmt *stmt,
                                                                      std::string archive_name,
-                                                                     std::vector<int> affectedRows) 
+                                                                     std::vector<int> affectedRows)
   throw(CCatalogIssue) {
 
   int currindex = 0; /* column index starts at 0 */
@@ -1456,7 +1456,7 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 2, backupDescr->xlogpos.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 3, backupDescr->timeline);
   sqlite3_bind_text(stmt, 4, backupDescr->label.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 6, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 5, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
 
   /*
@@ -1497,14 +1497,14 @@ void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDe
   if (backupDescr->id < 0) {
     throw CCatalogIssue("could not finalize basebackup: invalid backup id");
   }
-  
+
   /*
    * Check if this descriptor has an xlogposend value assigned.
    */
   if (backupDescr->xlogposend == "") {
     throw CCatalogIssue("could not finalize basebackup: expected xlog end position");
   }
-  
+
   rc = sqlite3_prepare_v2(this->db_handle,
                           "UPDATE backup SET status = 'ready', stopped = ?1, xlogposend = ?2 "
                           "WHERE id = ?3 AND archive_id = ?4;",
@@ -1545,13 +1545,67 @@ void BackupCatalog::finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDe
   sqlite3_finalize(stmt);
 }
 
+void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+  std::ostringstream query;
+
+  if (!this->available()) {
+    throw CCatalogIssue("could not update basebackup status: catalog not available");
+  }
+
+  /*
+   * Descriptor should have a valid backup id
+   */
+  if (backupDescr->id < 0) {
+    throw CCatalogIssue("could not mark basebackup aborted: invalid backup id");
+  }
+
+  query << "UPDATE backup SET status = 'aborted' WHERE id = ?1 AND archive_id = ?2;";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    std::ostringstream oss;
+    oss << "error code "
+        << rc
+        << " when preparing to register stream: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind parameters...
+   */
+  sqlite3_bind_int(stmt, 3, backupDescr->id);
+  sqlite3_bind_int(stmt, 4, backupDescr->archive_id);
+
+  rc = sqlite3_step(stmt);
+
+  /*
+   * Check command status.
+   */
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    oss << "error registering stream: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
+}
+
 void BackupCatalog::registerStream(int archive_id,
                                    StreamIdentification& streamident)
   throw(CCatalogIssue) {
 
   int rc;
   sqlite3_stmt *stmt;
-  std::ostringstream query;
 
   if (!this->available()) {
     throw CCatalogIssue("could not register stream: database not opened");

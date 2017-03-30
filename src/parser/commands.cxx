@@ -41,6 +41,14 @@ void StartBasebackupCatalogCommand::execute(bool background) {
   std::shared_ptr<BackupProfileDescr> backupProfile(nullptr);
 
   /*
+   * Basebackup stream process handler.
+   */
+  std::shared_ptr<BaseBackupProcess> bbp(nullptr);
+
+  /* Track if basebackup was registered already */
+  bool basebackup_registered = false;
+
+  /*
    * Die hard in case no catalog descriptor available.
    */
   if (this->catalog == nullptr)
@@ -55,16 +63,26 @@ void StartBasebackupCatalogCommand::execute(bool background) {
 
   this->catalog->startTransaction();
 
-  /*
-   * Check if the specified archive_name is present, get
-   * its descriptor.
-   */
-  temp_descr = this->catalog->existsByName(this->archive_name);
+  try {
+    /*
+     * Check if the specified archive_name is present, get
+     * its descriptor.
+     */
+    temp_descr = this->catalog->existsByName(this->archive_name);
+    this->catalog->commitTransaction();
+
+  } catch(CPGBackupCtlFailure& e) {
+    /* oops */
+    this->catalog->rollbackTransaction();
+    throw e;
+  }
 
   if (temp_descr->id < 0) {
     /* Requested archive doesn't exist, error out */
     std::ostringstream oss;
+
     oss << "archive " << this->archive_name << " doesn't exist";
+    this->catalog->rollbackTransaction();
     throw CArchiveIssue(oss.str());
   }
 
@@ -81,7 +99,15 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     cerr << "DEBUG: checking for profile " << this->backup_profile->name << endl;
 #endif
 
-    backupProfile = catalog->getBackupProfile(this->backup_profile->name);
+    this->catalog->startTransaction();
+
+    try {
+      backupProfile = catalog->getBackupProfile(this->backup_profile->name);
+      this->catalog->commitTransaction();
+    } catch(CPGBackupCtlFailure &e) {
+      this->catalog->rollbackTransaction();
+      throw e;
+    }
 
     /*
      * If the requested backup profile was not found, raise
@@ -95,12 +121,22 @@ void StartBasebackupCatalogCommand::execute(bool background) {
 
   } else {
 
-    /*
-     * The PROFILE keyword wasn't specified to
-     * the START BASEBACKUP command. Request the default
-     * profile...
-     */
-    backupProfile = catalog->getBackupProfile("default");
+    this->catalog->startTransaction();
+
+    try {
+
+      /*
+       * The PROFILE keyword wasn't specified to
+       * the START BASEBACKUP command. Request the default
+       * profile...
+       */
+      backupProfile = catalog->getBackupProfile("default");
+      this->catalog->commitTransaction();
+
+    } catch(CPGBackupCtlFailure &e) {
+      this->catalog->rollbackTransaction();
+      throw e;
+    }
 
 #ifdef __DEBUG__
     cerr << "PROFILE keyword not specified, using \"default\" backup profile" << endl;
@@ -123,11 +159,6 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     PGStream pgstream(temp_descr);
 
     /*
-     * Basebackup stream process handler.
-     */
-    std::shared_ptr<BaseBackupProcess> bbp;
-
-    /*
      * Create base backup stream handler.
      */
     std::shared_ptr<StreamBaseBackup> backupHandle
@@ -137,6 +168,11 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * Meta information handle for streamed tablespace.
      */
     std::shared_ptr<BackupTablespaceDescr> tablespaceDescr = nullptr;
+
+    /*
+     * Backup profile tells us the compression mode to use...
+     */
+    backupHandle->setCompression(backupProfile->compress_type);
 
     /*
      * Prepare backup handler. Should successfully create
@@ -177,6 +213,42 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     bbp->start();
 
+    /*
+     * Now its time to register this basebackup handle to
+     * the catalog. Do the rollback in our own exception handler
+     * in case of errors.
+     *
+     * NOTE: Since the streaming directory handle is just passed to
+     *       stepTablespace(), but we need to register the basebackup
+     *       before, we must set the fsentry to the basebackup descriptor
+     *       ourselves!
+     */
+
+    this->catalog->startTransaction();
+
+    try {
+      std::shared_ptr<BaseBackupDescr> basebackupDescr
+        = bbp->getBaseBackupDescr();
+
+      basebackupDescr->archive_id = temp_descr->id;
+      basebackupDescr->fsentry = backupHandle->backupDirectoryString();
+
+      cerr << "directory handle path " << basebackupDescr->fsentry << endl;
+
+      this->catalog->registerBasebackup(temp_descr->id,
+                                        basebackupDescr);
+      this->catalog->commitTransaction();
+
+    } catch(CPGBackupCtlFailure &e) {
+      this->catalog->rollbackTransaction();
+      throw e;
+    }
+
+    /*
+     * Remember successful registration of this basebackup.
+     */
+    basebackup_registered = true;
+
 #ifdef __DEBUG__
     cerr << "DEBUG: basebackup stream started" << endl;
 #endif
@@ -205,6 +277,11 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     }
 
     /*
+     * Call end position in backup stream.
+     */
+    bbp->end();
+
+    /*
      * And disconnect
      */
 #ifdef __DEBUG__
@@ -214,18 +291,50 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     pgstream.disconnect();
   } catch(CPGBackupCtlFailure& e) {
 
-    this->catalog->rollbackTransaction();
+    bool txinprogress = false;
+    /*
+     * If the basebackup was already registered, mark it
+     * as aborted. This is sad even if all went through, but only
+     * disconnecting from the server throws an error, but we treat this
+     * as an error nevertheless. We must be careful here, since catalog
+     * operations itself can throw exceptions and we don't mask
+     * those errors with the current one.
+     */
+    try {
+      if (basebackup_registered) {
+        this->catalog->startTransaction();
+        txinprogress = true;
+        this->catalog->abortBasebackup(bbp->getBaseBackupDescr());
+        this->catalog->commitTransaction();
+      }
+    } catch (CPGBackupCtlFailure &e) {
+      if (txinprogress)
+        this->catalog->rollbackTransaction();
+    }
+
     /* re-throw ... */
     throw e;
 
   }
 
-  this->catalog->commitTransaction();
+  /*
+   * Everything seems okay for now, finalize the backup
+   * registration.
+   */
+  this->catalog->startTransaction();
+
+  try {
+    this->catalog->finalizeBasebackup(bbp->getBaseBackupDescr());
+    this->catalog->commitTransaction();
+  } catch (CPGBackupCtlFailure &e) {
+    this->catalog->rollbackTransaction();
+    throw e;
+  }
 
 }
 
 DropBackupProfileCatalogCommand::DropBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
-  this->tag = LIST_BACKUP_PROFILE;
+  this->tag = DROP_BACKUP_PROFILE;
   this->catalog = catalog;
 }
 
@@ -272,6 +381,7 @@ void DropBackupProfileCatalogCommand::execute(bool extended) {
       throw CCatalogIssue(oss.str());
     }
 
+    catalog->dropBackupProfile(profileDescr->name);
     catalog->commitTransaction();
 
   } catch(exception& e) {
@@ -643,7 +753,7 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
        * means that we just had to display the details
        * of the specified archive NAME.
        *
-       * NOTE: In this case we usually don't 
+       * NOTE: In this case we usually don't
        * expect multiple results, however, the code supports this
        * at this point nevertheless, since we just call
        * getArchiveList with the affected NAME property attached only.

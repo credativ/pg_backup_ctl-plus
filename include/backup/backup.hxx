@@ -47,6 +47,7 @@ namespace credativ {
     virtual void initialize() = 0;
     virtual void create() = 0;
     virtual void finalize() = 0;
+    virtual std::string backupDirectoryString() = 0;
   };
 
   /*
@@ -109,6 +110,7 @@ namespace credativ {
     virtual void setCompression(BackupProfileCompressType compression);
     virtual BackupProfileCompressType getCompression();
     virtual void create();
+    virtual std::string backupDirectoryString();
   };
 
 }

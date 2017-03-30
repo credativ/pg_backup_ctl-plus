@@ -165,10 +165,20 @@ void BaseBackupProcess::start() {
   this->current_state = BASEBACKUP_STARTED;
 }
 
+std::shared_ptr<BaseBackupDescr> BaseBackupProcess::getBaseBackupDescr() {
+
+  /*
+   * NOTE. We don't bother which state the process handle has,
+   * just return the descriptor.
+   */
+  return this->baseBackupDescr;
+}
+
 void BaseBackupProcess::readTablespaceInfo() {
 
   PGresult *res;
   int i;
+  ExecStatusType es;
 
   /*
    * Stack tablespace meta info only if
@@ -184,7 +194,18 @@ void BaseBackupProcess::readTablespaceInfo() {
    */
   res = PQgetResult(this->pgconn);
 
+  if ((es = PQresultStatus(res)) != PGRES_TUPLES_OK) {
+    std::string sqlstate(PQresultErrorField(res, PG_DIAG_SQLSTATE));
+    std::ostringstream oss;
+
+    oss << "could not read tablespace meta info: "
+        << PQresultErrorMessage(res);
+    PQclear(res);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
   if (PQntuples(res) < 1) {
+    PQclear(res);
     throw StreamingFailure("unexpected number of tuples for tablespace meta info");
   }
 
@@ -308,6 +329,57 @@ bool BaseBackupProcess::stepTablespace(std::shared_ptr<StreamBaseBackup> backupH
     this->current_state = BASEBACKUP_STEP_TABLESPACE;
 
   return true;
+}
+
+void BaseBackupProcess::end() {
+
+  PGresult *res;
+  ExecStatusType es;
+
+  /*
+   * We must have reached internal state of BASEBACKUP_EOB, otherwise
+   * we cannot receive the WAL end position from the stream.
+   */
+  if (this->current_state != BASEBACKUP_EOB) {
+    throw StreamingFailure("cannot finalize basebackup stream, not in end position");
+  }
+
+  /*
+   * Get stop location.
+   */
+  res = PQgetResult(this->pgconn);
+
+  if ((es = PQresultStatus(res)) != PGRES_TUPLES_OK) {
+    std::string sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+    std::ostringstream oss;
+
+    oss << "could not read WAL end position from stream: "
+        << PQresultErrorMessage(res);
+    PQclear(res);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
+  if (PQntuples(res) != 1) {
+    throw StreamingFailure("unexpected number of tuples for stream end position");
+  }
+
+  if (PQnfields(res) != 2) {
+    std::ostringstream oss;
+    oss << "unexpected number of fields in WAL end position result set (got "
+        << PQnfields(res) << " expected 2)";
+    throw StreamingFailure(oss.str());
+  }
+
+  /*
+   * Store the XLOG end position in the BaseBackupDescr.
+   */
+  this->baseBackupDescr->xlogposend = PQgetvalue(res, 0, 0);
+  PQclear(res);
+
+  /*
+   * Update internal state that we have reached XLOG end position.
+   */
+  this->current_state = BASEBACKUP_END_POSITION;
 }
 
 void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> descr) {

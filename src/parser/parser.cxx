@@ -523,6 +523,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
   case LIST_BACKUP_PROFILE_DETAIL:
     result = make_shared<ListBackupProfileCatalogCommand>(this->catalogDescr);
     break;
+
+  case DROP_BACKUP_PROFILE:
+    result = make_shared<DropBackupProfileCatalogCommand>(this->catalogDescr);
+    break;
+
   default:
     /* no-op, but we return nullptr ! */
     break;

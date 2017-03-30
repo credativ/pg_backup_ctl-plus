@@ -90,6 +90,7 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
     break;
 
   case BACKUP_COMPRESS_TYPE_GZIP:
+
     return std::make_shared<CompressedArchiveFile>(this->streaming_subdir / (name + ".gz"));
     break;
 
@@ -144,7 +145,7 @@ path BackupDirectory::getArchiveDir() {
 }
 
 BackupDirectory::BackupDirectory(path handle) {
-  this->handle = handle;
+  this->handle = canonical(handle);
   this->base = handle / "base";
   this->log  = handle / "log";
 }
@@ -932,7 +933,8 @@ size_t CompressedArchiveFile::write(const char *buf, size_t len) {
       /* error happened in the filesystem layer */
       oss << strerror(errno);
     } else {
-      oss << gzerrstr;
+      if (gzerrstr != NULL)
+        oss << gzerrstr;
     }
 
     throw CArchiveIssue(oss.str());

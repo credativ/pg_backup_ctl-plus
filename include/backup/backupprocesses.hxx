@@ -29,6 +29,7 @@ namespace credativ {
 
     BASEBACKUP_STARTED,
     BASEBACKUP_START_POSITION,
+    BASEBACKUP_END_POSITION,
     BASEBACKUP_TABLESPACE_META,
     BASEBACKUP_TABLESPACE_READY,
     BASEBACKUP_STEP_TABLESPACE,
@@ -66,7 +67,7 @@ namespace credativ {
     BaseBackupState current_state;
     PGconn *pgconn;
     std::shared_ptr<BackupProfileDescr> profile;
-    std::shared_ptr<BaseBackupDescr> baseBackupDescr;
+    std::shared_ptr<BaseBackupDescr> baseBackupDescr = nullptr;
     std::queue<std::shared_ptr<BackupTablespaceDescr>> tablespaces;
 
     int         timeline;
@@ -82,6 +83,14 @@ namespace credativ {
     BaseBackupProcess(PGconn *prepared_connection,
                       std::shared_ptr<BackupProfileDescr> profile);
     ~BaseBackupProcess();
+
+    /*
+     * Returns a BaseBackupDescr describing the basebackup
+     * started with a BaseBackupProcess instance. Only valid,
+     * iff called after start(), otherwise you get a nullptr
+     * instance.
+     */
+    std::shared_ptr<BaseBackupDescr> getBaseBackupDescr();
 
     /*
      * Start a BASE_BACKUP stream.
@@ -106,6 +115,13 @@ namespace credativ {
      * is not in the internal tablespace meta info.
      */
     void backupTablespace(std::shared_ptr<BackupTablespaceDescr> descr);
+
+    /*
+     * Calls the final step in the streaming basebackup
+     * protocol. Receives the WAL end position in the stream
+     * and finalizes the basebackup stream.
+     */
+    virtual void end();
 
     /*
      * Step through the interal tablespace meta info

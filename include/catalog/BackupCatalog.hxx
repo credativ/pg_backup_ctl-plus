@@ -289,6 +289,15 @@ namespace credativ {
     virtual void registerBasebackup(int archive_id,
                                     std::shared_ptr<BaseBackupDescr> backupDescr);
 
+    /*
+     * Abort a registered basebackup. Marks the specified basebackup as failed.
+     */
+    virtual void abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr);
+
+    /*
+     * Finalize a basebackup in progress. This marks the basebackup a successful
+     * and usable in the catalog.
+     */
     virtual void finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr);
   };
 }

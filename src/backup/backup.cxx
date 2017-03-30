@@ -31,6 +31,16 @@ StreamBaseBackup::~StreamBaseBackup() {
 
 };
 
+std::string StreamBaseBackup::backupDirectoryString() {
+
+  if (this->isInitialized()) {
+    return ((StreamingBaseBackupDirectory *)this->directory)->getPath().string();
+  } else {
+    return std::string("");
+  }
+  
+}
+
 std::string StreamBaseBackup::createMyIdentifier() {
 
   return "streambackup-"
@@ -100,7 +110,7 @@ std::shared_ptr<BackupFile> StreamBaseBackup::stackFile(std::string name) {
    * the last used file reference.
    */
   this->file = this->directory->basebackup(name, this->compression);
-  this->file->setOpenMode("wb+");
+  this->file->setOpenMode("wb");
   this->file->open();
 
   /*
