@@ -169,6 +169,8 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     std::shared_ptr<BackupTablespaceDescr> tablespaceDescr = nullptr;
 
+    std::shared_ptr<BaseBackupDescr> basebackupDescr = nullptr;
+
     /*
      * Backup profile tells us the compression mode to use...
      */
@@ -223,12 +225,11 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      *       before, we must set the fsentry to the basebackup descriptor
      *       ourselves!
      */
+    basebackupDescr = bbp->getBaseBackupDescr();
 
     this->catalog->startTransaction();
 
     try {
-      std::shared_ptr<BaseBackupDescr> basebackupDescr
-        = bbp->getBaseBackupDescr();
 
       basebackupDescr->archive_id = temp_descr->id;
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
@@ -273,6 +274,11 @@ void StartBasebackupCatalogCommand::execute(bool background) {
            << ",size " << tablespaceDescr->spcsize
            << endl;
 #endif
+      /*
+       * Since we register each backup tablespace, we need
+       * to record the backup id, it belongs to.
+       */
+      tablespaceDescr->backup_id = basebackupDescr->id;
       bbp->backupTablespace(tablespaceDescr);
     }
 

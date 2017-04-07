@@ -740,10 +740,30 @@ std::string BackupCatalog::mapAttributeId(int catalogEntity,
     result = BackupCatalog::backupTablespacesCatalogCols[colId];
     break;
   default:
-    break; /* no op */
+    {
+      std::ostringstream oss;
+      oss << "unkown catalog entity: " << catalogEntity;
+      throw CCatalogIssue(oss.str());
+    }
   }
 
   return result;
+}
+
+string BackupCatalog::SQLgetColumnList(int catalogEntity, std::vector<int> attrs) {
+
+  int i;
+  std::ostringstream collist;
+
+  for (i = 0; i < attrs.size(); i++) {
+    collist << BackupCatalog::mapAttributeId(catalogEntity, attrs[i]);
+
+    if (i < attrs.size())
+      collist << ", ";
+  }
+
+  return collist.str();
+
 }
 
 string BackupCatalog::SQLgetUpdateColumnTarget(int catalogEntity,
@@ -999,6 +1019,63 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
   sqlite3_finalize(stmt);
 }
 
+int BackupCatalog::SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTablespaceDescr> tblspcDescr,
+                                                     std::vector<int> affectedAttributes,
+                                                     sqlite3_stmt *stmt,
+                                                     Range range) {
+  int result = range.start();
+
+  if (stmt == NULL) {
+    throw CCatalogIssue("cannot bind updated attributes: invalid statement handle");
+  }
+
+  for (auto& colId : affectedAttributes) {
+
+    /*
+     * Stop, if result has reached end of range.
+     */
+    if (result < range.end())
+      break;
+
+    switch(colId) {
+
+    case SQL_BCK_TBLSPC_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, tblspcDescr->id);
+      break;
+
+    case SQL_BCK_TBLSPC_BCK_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, tblspcDescr->backup_id);
+      break;
+
+    case SQL_BCK_TBLSPC_SPCOID_ATTNO:
+      sqlite3_bind_int(stmt, result, tblspcDescr->spcoid);
+      break;
+
+    case SQL_BCK_TBLSPC_SPCLOC_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        tblspcDescr->spclocation.c_str(),
+                        -1,
+                        SQLITE_STATIC);
+      break;
+
+    case SQL_BCK_TBLSPC_SPCSZ_ATTNO:
+      sqlite3_bind_int(stmt, result, tblspcDescr->spcsize);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+  }
+
+  return result;
+}
+
 int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
                                                   std::vector<int> affectedAttributes,
                                                   sqlite3_stmt *stmt,
@@ -1064,6 +1141,8 @@ int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileD
 
     result++;
   }
+
+  return result;
 }
 
 int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
@@ -1659,6 +1738,87 @@ void BackupCatalog::registerStream(int archive_id,
   sqlite3_finalize(stmt);
 }
 
+void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespaceDescr> tblspcDescr) {
+
+  sqlite3_stmt *stmt;
+  std::ostringstream query;
+  std::vector<int> attrs;
+  int rc;
+
+  if (!this->available()) {
+    throw CCatalogIssue("database not available");
+  }
+
+  /*
+   * We expect the backup_id identifier to be set.
+   */
+  if (tblspcDescr->backup_id < 0) {
+    throw CCatalogIssue("backup id required to register tablespace for backup");
+  }
+
+  /*
+   * Attributes required to register the new tablespace.
+   */
+  attrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
+  attrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
+  attrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
+  attrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
+
+  /*
+   * Generate INSERT SQL.
+   */
+  query << "INSERT INTO backup_tablespaces("
+        << BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
+                                           /* vector with col IDs */
+                                           attrs)
+        << ") VALUES(?1, ?2, ?3, ?4);";
+
+  /*
+   * Prepare the statement and bind values.
+   */
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to register tablespace: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_bind_int(stmt, 1, tblspcDescr->backup_id);
+  sqlite3_bind_int(stmt, 2, tblspcDescr->spcoid);
+  sqlite3_bind_text(stmt, 3, tblspcDescr->spclocation.c_str(),
+                    -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 4, tblspcDescr->spcsize);
+
+  /*
+   * Execute query...
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    oss << "error registering stream: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Remember new registered id of tablespace ...
+   */
+  tblspcDescr->id = sqlite3_last_insert_rowid(this->db_handle);
+
+  /*
+   * ... and we're done.
+   */
+  sqlite3_finalize(stmt);
+}
 
 std::vector<std::shared_ptr<StreamIdentification>> BackupCatalog::getStreams(std::string archive_name)
 throw (CCatalogIssue) {
@@ -1807,4 +1967,3 @@ void BackupCatalog::setCatalogDB(string sqliteDB) {
 bool BackupCatalog::available() {
   return ((this->isOpen) && (this->db_handle != NULL));
 }
-

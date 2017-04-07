@@ -80,6 +80,12 @@ namespace credativ {
     static std::string SQLgetUpdateColumnTarget(int catalogEntity, int colId);
 
     /*
+     * Returns a comma separated list of columns specified by
+     * colIds passed by the the attrs integer vector.
+     */
+    static std::string SQLgetColumnList(int catalogEntity, std::vector<int> attrs);
+
+    /*
      * Returns the internal catalog magic number
      */
     static std::string magicNumber() {
@@ -103,6 +109,15 @@ namespace credativ {
                                  std::vector<int> affectedAttributes,
                                  sqlite3_stmt *stmt,
                                  Range range);
+
+    /*
+     * Bind affected tablespace descriptor attributes to the
+     * given sqlite3 statement handle.
+     */
+    int SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTablespaceDescr> tblspcDescr,
+                                          std::vector<int> affectedAttributes,
+                                          sqlite3_stmt *stmt,
+                                          Range range);
 
     /*
      * Rollback an existing catalog transaction.
@@ -299,6 +314,15 @@ namespace credativ {
      * and usable in the catalog.
      */
     virtual void finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr);
+
+    /*
+     * Register the given tablespace descriptor in the
+     * backup catalog.
+     *
+     * Backup ID must be set and the descriptor should be
+     * fully initialized.
+     */
+    virtual void registerTablespaceForBackup(std::shared_ptr<BackupTablespaceDescr> tblspcDescr);
   };
 }
 
