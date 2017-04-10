@@ -16,6 +16,13 @@
 #include <zlib.h>
 #endif
 
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+/*
+ * must stay after common.hxx, since cmake defines
+ * availability of zlib there.
+ */
+#include <zstd.h>
+#endif
 
 using namespace credativ;
 using namespace std;
@@ -130,6 +137,94 @@ namespace credativ {
 
   };
 
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+
+  struct ZSTD_library_handle {
+    /*
+     * Internal ZSTD decompression handle
+     */
+    ZSTD_DStream *decompression_stream = NULL;
+
+    /*
+     * Internal ZSTD compression handle
+     */
+    ZSTD_CStream *compression_stream = NULL;
+
+    /*
+     * Input/Output buffer size for zstd compression
+     */
+    size_t compression_inbufsize  = 0;
+    size_t compression_outbufsize = 0;
+
+    /*
+     * Input/Output buffer size for zstd decompression
+     */
+    size_t decompression_inbufsize  = 0;
+    size_t decompression_outbufsize = 0;
+
+    /*
+     * Size hints returned by ZSTD_initXStream().
+     */
+    size_t init_CStream_hint = 0;
+    size_t init_DStream_hint = 0;
+  };
+
+  class ZSTDArchiveFile : public BackupFile {
+  private:
+
+    /*
+     * Internal file descriptor
+     */
+    FILE *fp = NULL;
+
+    /*
+     * ZSTD compression/decompression handler.
+     */
+    struct ZSTD_library_handle zstd_handle;
+
+    /*
+     * Indicates if the file was already opened
+     * successfully.
+     */
+    bool opened = false;
+
+    /*
+     * Sets the mode the file is opened. The default
+     * is binary read only.
+     */
+    std::string mode = "rb";
+
+    /*
+     * zstd compression level (1-19), default 1
+     */
+    int compression_level = 1;
+  public:
+    ZSTDArchiveFile(path pathHandle);
+    ~ZSTDArchiveFile();
+
+    virtual bool isCompressed();
+    virtual void setCompressed(bool compressed);
+    virtual bool isOpen();
+
+    /*
+     * Set open mode for this file. The default is "rb".
+     */
+    virtual void setOpenMode(std::string mode);
+
+    /*
+     * Opens a file for ZSTD compression/decompression.
+     */
+    virtual void open();
+    virtual size_t write(const char *buf, size_t len);
+
+    /*
+     * Extended methods.
+     */
+    virtual void setCompressionLevel(int level);
+  };
+
+#endif
+
 #ifdef PG_BACKUP_CTL_HAS_ZLIB
 
   class CompressedArchiveFile : public BackupFile {
@@ -170,7 +265,7 @@ namespace credativ {
     virtual void remove();
 
     /*
-     * Set open mode for this file. The default is "r"
+     * Set open mode for this file. The default is "rb"
      */
     virtual void setOpenMode(std::string mode);
 

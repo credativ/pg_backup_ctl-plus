@@ -121,11 +121,25 @@ find_package(ZLIB OPTIONAL_COMPONENTS)
 if(ZLIB_FOUND)
    message("using zlib support")
    set(PG_BACKUP_CTL_HAS_ZLIB "#define PG_BACKUP_CTL_HAS_ZLIB 1")
-   include_directories(${ZLIB_INCLUDE_DIRS})
-   target_link_libraries(pgbckctl-common ${ZLIB_LIBRARIES})
+   include_directories(${zlib_INCLUDE_DIRS})
+   target_link_libraries(pgbckctl-common ${zlib_LIBRARIES})
 else()
    message("no zlib found, compression unavailable")
    set(PG_BACKUP_CTL_HAS_ZLIB "#undef PG_BACKUP_CTL_HAS_ZLIB")
+endif()
+
+##
+## Checkout, if zstandard compression library is available
+##
+find_package(zstd OPTIONAL_COMPONENTS)
+if(ZSTD_FOUND)
+  message("using zstandard compression support")
+  set(PG_BACKUP_CTL_HAS_ZSTD "#define PG_BACKUP_CTL_HAS_ZSTD 1")
+  include_directories(${zstd_INCLUDE_DIRS})
+  target_link_libraries(pgbckctl-common ${zstd_LIBRARIES})
+else()
+  message("no zstd library found, zstandard compression unavailable")
+  set(PG_BACKUP_CTL_HAS_ZSTD "#undef PG_BACKUP_CTL_HAS_ZSTD")
 endif()
 
 ##

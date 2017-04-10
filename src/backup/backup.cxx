@@ -38,7 +38,7 @@ std::string StreamBaseBackup::backupDirectoryString() {
   } else {
     return std::string("");
   }
-  
+
 }
 
 std::string StreamBaseBackup::createMyIdentifier() {

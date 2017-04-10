@@ -91,7 +91,11 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
 
   case BACKUP_COMPRESS_TYPE_GZIP:
 
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
     return std::make_shared<CompressedArchiveFile>(this->streaming_subdir / (name + ".gz"));
+#else
+    throw CArchiveIssue("zlib compression support not compiled in");
+#endif
     break;
 
   default:
@@ -207,7 +211,13 @@ std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
     break;
 
   case BACKUP_COMPRESS_TYPE_GZIP:
+
+#ifdef PG_BACKUP_CTL_HASH_ZLIB
     return std::make_shared<CompressedArchiveFile>(this->basedir() / (name + ".gz"));
+#else
+    throw CArchiveIssue("zlib compression not compiled in");
+#endif
+
     break;
 
   default:
@@ -742,6 +752,133 @@ void ArchiveFile::setCompressed(bool compressed) {
 }
 
 /******************************************************************************
+ * Implementation of ZSTDArchiveFile
+ *****************************************************************************/
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+
+ZSTDArchiveFile::ZSTDArchiveFile(path pathHandle) : BackupFile(pathHandle) {
+  this->compressed = true;
+  this->fp = NULL;
+  this->zstd_handle.decompression_stream = ZSTD_createDStream();
+  this->zstd_handle.compression_stream   = ZSTD_createCStream();
+}
+
+ZSTDArchiveFile::~ZSTDArchiveFile() {
+  if (this->zstd_handle.compression_stream != NULL) {
+    ZSTD_freeCStream(this->zstd_handle.compression_stream);
+  }
+
+  if (this->zstd_handle.decompression_stream != NULL) {
+    ZSTD_freeDStream(this->zstd_handle.decompression_stream);
+  }
+
+  if (this->isOpen())
+    fclose(this->fp);
+}
+
+bool ZSTDArchiveFile::isCompressed() {
+  return true;
+}
+
+void ZSTDArchiveFile::setCompressed(bool compressed) {
+  if (!compressed)
+    throw CArchiveIssue("attempt to set uncompressed flag to compressed basebackup file handle");
+
+  /* no-op otherwise */
+}
+
+bool ZSTDArchiveFile::isOpen() {
+  return this->opened;
+}
+
+void ZSTDArchiveFile::setOpenMode(std::string mode) {
+
+  this->mode = mode;
+
+}
+
+void ZSTDArchiveFile::setCompressionLevel(int level) {
+  this->compression_level = level;
+}
+
+void ZSTDArchiveFile::open() {
+
+  /* check if we already hold a valid file stream pointer */
+  if (this->fp != NULL) {
+    std::ostringstream oss;
+    oss << "error opening "
+        << "\""
+        << this->handle.string()
+        << "\": "
+        << "file handle already initialized";
+    throw CArchiveIssue(oss.str());
+  }
+
+  this->fp = fopen(this->handle.string().c_str(),
+                   this->mode.c_str());
+
+  if (this->fp == NULL) {
+    std::ostringstream oss;
+    oss << "could not open compressed file \""
+        << this->handle.string() << " "
+        << "for writing: "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Init the zstd stream handles.
+   */
+  this->zstd_handle.init_CStream_hint
+    = ZSTD_initCStream(this->zstd_handle.compression_stream,
+                       this->compression_level);
+
+  /* Check zstd lib error code */
+  if (ZSTD_isError(this->zstd_handle.init_CStream_hint)) {
+    std::ostringstream oss;
+    oss << "could not initialize zstd compression stream: "
+        << ZSTD_getErrorName(this->zstd_handle.init_CStream_hint);
+    throw CArchiveIssue(oss.str());
+  }
+
+  this->zstd_handle.init_DStream_hint
+    = ZSTD_initDStream(this->zstd_handle.decompression_stream);
+
+  /* Check zstd lib error code */
+  if (ZSTD_isError(this->zstd_handle.init_DStream_hint)) {
+    std::ostringstream oss;
+    oss << "could not initialize zstd decompression stream: "
+        << ZSTD_getErrorName(this->zstd_handle.init_DStream_hint);
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Set recommended I/O buffer size from zstd library
+   */
+  this->zstd_handle.compression_inbufsize = ZSTD_CStreamInSize();
+  this->zstd_handle.compression_outbufsize = ZSTD_CStreamOutSize();
+  this->zstd_handle.decompression_inbufsize = ZSTD_DStreamInSize();
+  this->zstd_handle.decompression_outbufsize = ZSTD_DStreamOutSize();
+
+  this->opened = true;
+}
+
+size_t ZSTDArchiveFile::write(const char *buf, size_t len) {
+
+  ZSTD_outBuffer outbuf;
+
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+    oss << "attempt to write into unitialized file "
+        << this->handle.string();
+    throw CArchiveIssue(oss.str());
+  }
+
+}
+
+#endif
+
+/******************************************************************************
  * Implementation of CompressedArchiveFile
  *****************************************************************************/
 
@@ -781,7 +918,7 @@ void CompressedArchiveFile::setCompressed(bool compressed) {
 }
 
 void CompressedArchiveFile::rename(path& newname) {
-
+  throw CArchiveIssue("rename() of compressed file name not yet implemented");
 }
 
 void CompressedArchiveFile::setOpenMode(std::string mode) {

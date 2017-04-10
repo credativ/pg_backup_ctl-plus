@@ -18,4 +18,9 @@
  */
 @PG_BACKUP_CTL_HAS_ZLIB@
 
+/*
+ * We compile with zstandard compression support
+ */
+@PG_BACKUP_CTL_HAS_ZSTD@
+
 #endif
