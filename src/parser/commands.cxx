@@ -471,6 +471,9 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
       case BACKUP_COMPRESS_TYPE_GZIP:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "GZIP" << endl;
         break;
+      case BACKUP_COMPRESS_TYPE_ZSTD:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "ZSTD" << endl;
+        break;
       default:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "UNKNOWN or N/A" << endl;
         break;

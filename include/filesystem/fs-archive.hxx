@@ -139,36 +139,17 @@ namespace credativ {
 
 #ifdef PG_BACKUP_CTL_HAS_ZSTD
 
-  struct ZSTD_library_handle {
-    /*
-     * Internal ZSTD decompression handle
-     */
-    ZSTD_DStream *decompression_stream = NULL;
-
-    /*
-     * Internal ZSTD compression handle
-     */
-    ZSTD_CStream *compression_stream = NULL;
-
-    /*
-     * Input/Output buffer size for zstd compression
-     */
-    size_t compression_inbufsize  = 0;
-    size_t compression_outbufsize = 0;
-
-    /*
-     * Input/Output buffer size for zstd decompression
-     */
-    size_t decompression_inbufsize  = 0;
-    size_t decompression_outbufsize = 0;
-
-    /*
-     * Size hints returned by ZSTD_initXStream().
-     */
-    size_t init_CStream_hint = 0;
-    size_t init_DStream_hint = 0;
-  };
-
+  /*
+   * Implementation for archive files compressed
+   * with ZSTD library.
+   *
+   * NOTE: The current implementation uses ZStream
+   *       API calls and in its current form doesn't
+   *       support read and writing compressed files
+   *       at the same time! When used this way, the
+   *       behavior of ZSTDArchiveFile object instances
+   *       are undefined!
+   */
   class ZSTDArchiveFile : public BackupFile {
   private:
 
@@ -178,9 +159,10 @@ namespace credativ {
     FILE *fp = NULL;
 
     /*
-     * ZSTD compression/decompression handler.
+     * ZSTD compression/decompression context.
      */
-    struct ZSTD_library_handle zstd_handle;
+    ZSTD_DCtx *decompressCtx = NULL;
+    ZSTD_CCtx *compressCtx = NULL;
 
     /*
      * Indicates if the file was already opened
@@ -195,9 +177,10 @@ namespace credativ {
     std::string mode = "rb";
 
     /*
-     * zstd compression level (1-19), default 1
+     * zstd compression level (1-19), default 10
      */
-    int compression_level = 1;
+    int compression_level = 10;
+
   public:
     ZSTDArchiveFile(path pathHandle);
     ~ZSTDArchiveFile();
@@ -215,7 +198,13 @@ namespace credativ {
      * Opens a file for ZSTD compression/decompression.
      */
     virtual void open();
+    virtual void close();
     virtual size_t write(const char *buf, size_t len);
+    virtual size_t read(char *buf, size_t len);
+    virtual void fsync();
+    virtual FILE *getFileHandle();
+    virtual void remove();
+    virtual void rename(path& newname);
 
     /*
      * Extended methods.

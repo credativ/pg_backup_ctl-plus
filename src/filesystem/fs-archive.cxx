@@ -98,6 +98,14 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
 #endif
     break;
 
+  case BACKUP_COMPRESS_TYPE_ZSTD:
+
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+    return std::make_shared<ZSTDArchiveFile>(this->streaming_subdir / (name + ".zst"));
+#else
+    throw CArchiveIssue("zstandard compression support not compiled in");
+#endif
+
   default:
     std::ostringstream oss;
     oss << "could not create archive file: invalid compression type: " << compression;
@@ -759,21 +767,100 @@ void ArchiveFile::setCompressed(bool compressed) {
 ZSTDArchiveFile::ZSTDArchiveFile(path pathHandle) : BackupFile(pathHandle) {
   this->compressed = true;
   this->fp = NULL;
-  this->zstd_handle.decompression_stream = ZSTD_createDStream();
-  this->zstd_handle.compression_stream   = ZSTD_createCStream();
+
+  /*
+   * Initialize ZSTD compress/decompress contexts.
+   */
+  this->decompressCtx = ZSTD_createDCtx();
+  this->compressCtx   = ZSTD_createCCtx();
 }
 
 ZSTDArchiveFile::~ZSTDArchiveFile() {
-  if (this->zstd_handle.compression_stream != NULL) {
-    ZSTD_freeCStream(this->zstd_handle.compression_stream);
-  }
 
-  if (this->zstd_handle.decompression_stream != NULL) {
-    ZSTD_freeDStream(this->zstd_handle.decompression_stream);
-  }
+  /*
+   * Free decompression/compression contexts.
+   */
+  if (this->decompressCtx != NULL)
+    ZSTD_freeDCtx(this->decompressCtx);
+
+  if (this->compressCtx != NULL)
+    ZSTD_freeCCtx(this->compressCtx);
 
   if (this->isOpen())
     fclose(this->fp);
+
+}
+
+void ZSTDArchiveFile::rename(path& newname) {
+
+  /*
+   * First, check if newname already exists. If true, error out.
+   */
+  if (boost::filesystem::exists(status(newname))) {
+    std::ostringstream oss;
+    oss << "cannot rename "
+        << this->handle.string()
+        << "to "
+        << newname.string()
+        << ": file exists";
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Old file exists?
+   */
+  if (!boost::filesystem::exists(status(this->handle))) {
+    std::ostringstream oss;
+    oss << "cannot rename "
+        << this->handle.string()
+        << "to "
+        << newname.string()
+        << ": source file does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Fsync our old file instance.
+   */
+  this->fsync();
+
+  /*
+   * Close the old handle.
+   */
+  this->close();
+
+  if (::rename(this->handle.string().c_str(),
+               newname.string().c_str()) < 0) {
+    std::ostringstream oss;
+    oss << "cannot rename "
+        << this->handle.string()
+        << "to "
+        << newname.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Copy the newname handle into our private one.
+   */
+  this->handle = newname;
+
+  /*
+   * Open the new file.
+   */
+  this->open();
+
+  /*
+   * Fsync the new file.
+   */
+  this->fsync();
+
+  /* and we're done ... */
+}
+
+FILE *ZSTDArchiveFile::getFileHandle() {
+  return this->fp;
 }
 
 bool ZSTDArchiveFile::isCompressed() {
@@ -826,54 +913,159 @@ void ZSTDArchiveFile::open() {
     throw CArchiveIssue(oss.str());
   }
 
-  /*
-   * Init the zstd stream handles.
-   */
-  this->zstd_handle.init_CStream_hint
-    = ZSTD_initCStream(this->zstd_handle.compression_stream,
-                       this->compression_level);
-
-  /* Check zstd lib error code */
-  if (ZSTD_isError(this->zstd_handle.init_CStream_hint)) {
-    std::ostringstream oss;
-    oss << "could not initialize zstd compression stream: "
-        << ZSTD_getErrorName(this->zstd_handle.init_CStream_hint);
-    throw CArchiveIssue(oss.str());
-  }
-
-  this->zstd_handle.init_DStream_hint
-    = ZSTD_initDStream(this->zstd_handle.decompression_stream);
-
-  /* Check zstd lib error code */
-  if (ZSTD_isError(this->zstd_handle.init_DStream_hint)) {
-    std::ostringstream oss;
-    oss << "could not initialize zstd decompression stream: "
-        << ZSTD_getErrorName(this->zstd_handle.init_DStream_hint);
-    throw CArchiveIssue(oss.str());
-  }
-
-  /*
-   * Set recommended I/O buffer size from zstd library
-   */
-  this->zstd_handle.compression_inbufsize = ZSTD_CStreamInSize();
-  this->zstd_handle.compression_outbufsize = ZSTD_CStreamOutSize();
-  this->zstd_handle.decompression_inbufsize = ZSTD_DStreamInSize();
-  this->zstd_handle.decompression_outbufsize = ZSTD_DStreamOutSize();
-
   this->opened = true;
 }
 
 size_t ZSTDArchiveFile::write(const char *buf, size_t len) {
 
-  ZSTD_outBuffer outbuf;
+  size_t rc = 0;
+  size_t bufOutSize = ZSTD_compressBound(len);
+  /*
+   * Buffer for outgoing compression data.
+   */
+  char out[bufOutSize];
 
-  if (!this->isOpen()) {
+  /*
+   * Compress input
+   */
+  rc = ZSTD_compressCCtx(this->compressCtx,
+                         out, bufOutSize,
+                         buf, len,
+                         this->compression_level);
+
+  if (ZSTD_isError(rc)) {
     std::ostringstream oss;
-    oss << "attempt to write into unitialized file "
-        << this->handle.string();
+    oss << "ZSTD compression failure for file \""
+        << this->handle.string() << "\": "
+        << ZSTD_getErrorName(rc);
     throw CArchiveIssue(oss.str());
   }
 
+  /*
+   * Write file handle.
+   */
+  if ((rc = fwrite(out, bufOutSize, 1, this->fp)) != 1) {
+    std::ostringstream oss;
+    oss << "write error for file (size="
+        << len
+        << ")"
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  return rc;
+}
+
+void ZSTDArchiveFile::close() {
+
+  if (this->isOpen()) {
+
+    /*
+     * Close file handle
+     */
+    if (this->fp == NULL) {
+      std::ostringstream oss;
+      oss << "attempt to close uninitialized file \""
+          << this->handle.string() << "\"";
+      throw CArchiveIssue(oss.str());
+    }
+
+    fclose(this->fp);
+    this->fp = NULL;
+
+    this->opened = false;
+  }
+
+}
+
+void ZSTDArchiveFile::remove() {
+
+  int rc;
+
+  if (this->fp == NULL)
+    throw CArchiveIssue("cannot reference file descriptor for undefined file stream");
+
+  /*
+   * Filehandle should be closed, so we don't leak 'em
+   */
+  if (this->isOpen())
+    throw CArchiveIssue("cannot remove file still referenced by handle");
+
+  rc = unlink(this->handle.string().c_str());
+
+  if (rc != 0) {
+    std::ostringstream oss;
+    oss << "cannot unlink file \"" << this->handle.string().c_str() << "\""
+        << " (errno) " << errno;
+    throw CArchiveIssue(oss.str());
+  }
+
+}
+
+void ZSTDArchiveFile::fsync() {
+
+  if (this->fp == NULL) {
+    std::ostringstream oss;
+    oss << "attempt to fsync uninitialized file \""
+        << this->handle.string() << "\"";
+    throw CArchiveIssue(oss.str());
+  }
+
+  if (::fsync(fileno(this->fp)) != 0) {
+    std::ostringstream oss;
+    oss << "error fsyncing file \""
+        << this->handle.string()
+        << "\": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+}
+
+size_t ZSTDArchiveFile::read(char *buf, size_t len) {
+
+  size_t rc = 0;
+  size_t inBufSize = ZSTD_compressBound(len);
+  size_t decompressedSize = 0;
+
+  /*
+   * Internal frame buffer.
+   */
+  char in[inBufSize];
+
+  /* Read frame */
+  if ((rc = fread(in, inBufSize, 1, this->fp)) != 1) {
+    std::ostringstream oss;
+    oss << "read error for ZSTD file (size="
+        << len
+        << ")"
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Decompress frame data. Make sure data does fit
+   * into the target buffer.
+   */
+  rc = ZSTD_decompress(buf, len, in, inBufSize);
+
+  if (ZSTD_isError(rc)) {
+    std::ostringstream oss;
+    oss << "decompression error for ZSTD file (size="
+        << len
+        << ")"
+        << this->handle.string()
+        << ": "
+        << ZSTD_getErrorName(rc);
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  return rc;
 }
 
 #endif
@@ -893,15 +1085,14 @@ CompressedArchiveFile::CompressedArchiveFile(path pathHandle) : BackupFile(pathH
 
 CompressedArchiveFile::~CompressedArchiveFile() {
 
-  if (this->zh != NULL) {
+  if (this->isOpen()) {
     /*
+     * Don't leak file handles!
+     *
      * NOTE: this also invalidates our internal
      *       FILE * pointer, since its *NOT* duplicated.
      */
-    gzclose(this->zh);
-    this->zh = NULL;
-    this->fp = NULL;
-    this->opened = false;
+    this->close();
   }
 
 }
@@ -1129,6 +1320,11 @@ void CompressedArchiveFile::close() {
 
     int rc;
 
+    /*
+     * IMPORTANT: gzclose() also invalidates our
+     *            internal filehandle, since it's not
+     *            duplicated!
+     */
     if ((rc = gzclose(this->zh)) != Z_OK) {
 
       std::ostringstream oss;
@@ -1155,6 +1351,9 @@ void CompressedArchiveFile::close() {
       throw CArchiveIssue(oss.str());
     }
 
+    this->zh = NULL;
+    this->fp = NULL;
+
   } else {
     std::ostringstream oss;
     oss << "attempt to close uninitialized file "
@@ -1162,6 +1361,7 @@ void CompressedArchiveFile::close() {
     throw CArchiveIssue(oss.str());
   }
 
+  /* only reached in case of no errors */
   this->opened = false;
 
 }
