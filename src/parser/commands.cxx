@@ -279,6 +279,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
        * to record the backup id, it belongs to.
        */
       tablespaceDescr->backup_id = basebackupDescr->id;
+      catalog->registerTablespaceForBackup(tablespaceDescr);
       bbp->backupTablespace(tablespaceDescr);
     }
 
@@ -298,6 +299,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
   } catch(CPGBackupCtlFailure& e) {
 
     bool txinprogress = false;
+
     /*
      * If the basebackup was already registered, mark it
      * as aborted. This is sad even if all went through, but only
@@ -310,6 +312,11 @@ void StartBasebackupCatalogCommand::execute(bool background) {
       if (basebackup_registered) {
         this->catalog->startTransaction();
         txinprogress = true;
+
+#ifdef __DEBUG__
+        cerr << "DEBUG: marking basebackup as aborted" << endl;
+#endif
+
         this->catalog->abortBasebackup(bbp->getBaseBackupDescr());
         this->catalog->commitTransaction();
       }

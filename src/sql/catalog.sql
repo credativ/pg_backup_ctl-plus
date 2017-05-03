@@ -28,12 +28,11 @@ CREATE INDEX backup_id_idx ON backup(id);
 CREATE INDEX backup_archive_id_idx ON backup(archive_id);
 
 CREATE TABLE backup_tablespaces(
-       id integer not null,
        backup_id integer not null,
        spcoid integer null,
        spclocation text null,
        spcsize bigint not null,
-       PRIMARY KEY(id, backup_id),
+       PRIMARY KEY(backup_id, spcoid),
        FOREIGN KEY(backup_id) REFERENCES backup(id) ON DELETE CASCADE
 );
 

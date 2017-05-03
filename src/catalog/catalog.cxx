@@ -758,7 +758,7 @@ string BackupCatalog::SQLgetColumnList(int catalogEntity, std::vector<int> attrs
   for (i = 0; i < attrs.size(); i++) {
     collist << BackupCatalog::mapAttributeId(catalogEntity, attrs[i]);
 
-    if (i < attrs.size())
+    if (i < (attrs.size() - 1))
       collist << ", ";
   }
 
@@ -1653,7 +1653,7 @@ void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr
     std::ostringstream oss;
     oss << "error code "
         << rc
-        << " when preparing to register stream: "
+        << " when preparing to mark basebackup as aborted: "
         << sqlite3_errmsg(this->db_handle);
     throw CCatalogIssue(oss.str());
   }
@@ -1661,8 +1661,8 @@ void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr
   /*
    * Bind parameters...
    */
-  sqlite3_bind_int(stmt, 3, backupDescr->id);
-  sqlite3_bind_int(stmt, 4, backupDescr->archive_id);
+  sqlite3_bind_int(stmt, 1, backupDescr->id);
+  sqlite3_bind_int(stmt, 2, backupDescr->archive_id);
 
   rc = sqlite3_step(stmt);
 
@@ -1772,6 +1772,12 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
                                            /* vector with col IDs */
                                            attrs)
         << ") VALUES(?1, ?2, ?3, ?4);";
+
+#ifdef __DEBUG__
+  cerr << "DEBUG: registerTablespaceForBackup() query: "
+       << query.str()
+       << endl;
+#endif
 
   /*
    * Prepare the statement and bind values.
