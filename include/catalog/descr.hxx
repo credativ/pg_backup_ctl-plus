@@ -27,7 +27,8 @@ namespace credativ {
     START_BASEBACKUP,
     LIST_ARCHIVE,
     LIST_BACKUP_PROFILE,
-    LIST_BACKUP_PROFILE_DETAIL
+    LIST_BACKUP_PROFILE_DETAIL,
+    LIST_BACKUP_CATALOG
   } CatalogTag;
 
   /*
@@ -220,6 +221,45 @@ namespace credativ {
     std::string stopped;
     int pinned = 0;
     std::string status = "in progress";
+
+    /* List of tablespaces descriptors in backup */
+    std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;
+  };
+
+  /*
+   * StatCatalog is a base class for stat commands
+   * against the archive backup catalog. The idea is to
+   * provide a generic interface to the commands to create
+   * corresponding output for a specific stat*() call. Specific
+   * descriptor should override the abstract method
+   * gimmeFormattedString() to generate a string representing
+   * the stat data.
+   */
+  class StatCatalog {
+  public:
+    virtual std::string gimmeFormattedString() = 0;
+  };
+
+  /*
+   * Provides stat data for the archive itself.
+   */
+  class StatCatalogArchive : public StatCatalog {
+  public:
+    /* member values */
+    int archive_id;
+    int number_of_backups = 0;
+    int backups_failed = 0;
+    int backups_running = 0;
+
+    std::string archive_name = "";
+    std::string archive_directory = "";
+    std::string archive_host = "";
+    unsigned long long estimated_total_size = 0;
+    unsigned long avg_backup_duration = 0;
+
+    std::string latest_finished = "";
+
+    virtual std::string gimmeFormattedString();
   };
 }
 

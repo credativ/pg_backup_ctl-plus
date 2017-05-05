@@ -89,7 +89,7 @@ namespace credativ {
                         /* LIST command syntax start */
                         | cmd_list > (
                                       cmd_list_archive
-                                      | cmd_list_backup_profile
+                                      | cmd_list_backup
                                       )
 
                         /* ALTER command */
@@ -159,22 +159,28 @@ namespace credativ {
         cmd_alter = no_case[lexeme[ lit("ALTER") ]];
 
         /*
+         * LIST BACKUP CATALOG [<backup>] ...
+         *             | PROFILE [ <profile> ] ... command
+         */
+        cmd_list_backup = no_case[ lexeme[ lit("BACKUP") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_CATALOG) ]
+          > ( ( no_case[ lexeme[ lit("CATALOG") ] ]
+                > identifier
+                [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
+              | ( no_case[lexeme [ lit("PROFILE") ] ]
+                  [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE) ]
+                  > -(identifier)
+                  [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
+                  [  boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE_DETAIL) ] ) );
+
+
+        /*
          * LIST ARCHIVE [<name>] command
          */
         cmd_list_archive = no_case[ lexeme[ lit("ARCHIVE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_ARCHIVE) ]
           > -(identifier)
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
-
-        /*
-         * LIST BACKUP PROFILE [name] command
-         */
-        cmd_list_backup_profile = no_case[ lexeme[ lit("BACKUP") ] ]
-          > no_case[lexeme [ lit("PROFILE") ] ]
-          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE) ]
-          > -(identifier)
-          [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
-          [  boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE_DETAIL) ];
 
         /*
          * CREATE BACKUP PROFILE <name> command
@@ -354,7 +360,7 @@ namespace credativ {
         cmd_alter_archive_opt.name("ALTER ARCHIVE options");
         cmd_start_basebackup.name("START BASEBACKUP");
         cmd_list_archive.name("LIST ARCHIVE");
-        cmd_list_backup_profile.name("LIST BACKUP PROFILE");
+        cmd_list_backup.name("LIST BACKUP");
         identifier.name("object identifier");
         hostname.name("ip or hostname");
         profile_compression_option.name("COMPRESSION=GZIP|NONE");
@@ -385,7 +391,7 @@ namespace credativ {
                           cmd_start_basebackup,
                           cmd_list_archive,
                           cmd_create_backup_profile,
-                          cmd_list_backup_profile,
+                          cmd_list_backup,
                           cmd_drop_backup_profile,
                           cmd_alter_backup_profile,
                           backup_profile_opts;
@@ -509,6 +515,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case START_BASEBACKUP: {
     result = make_shared<StartBasebackupCatalogCommand>(this->catalogDescr);
+    break;
+  }
+
+  case LIST_BACKUP_CATALOG: {
+    result = make_shared<ListBackupCatalogCommand>(this->catalogDescr);
     break;
   }
 

@@ -24,6 +24,66 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
 }
 
+ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = LIST_BACKUP_CATALOG;
+  this->catalog = catalog;
+}
+
+ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+void ListBackupCatalogCommand::execute(bool flag) {
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+
+  if (!this->catalog->available())
+    this->catalog->open_rw();
+
+  /*
+   * Enter transaction
+   */
+  try {
+
+    std::shared_ptr<StatCatalog> stat = nullptr;
+    std::shared_ptr<CatalogDescr> temp_descr = nullptr;
+
+    this->catalog->startTransaction();
+
+    /*
+     * Check if requested archive exists in the catalog.
+     */
+    temp_descr = this->catalog->existsByName(this->archive_name);
+
+    if (temp_descr->id < 0) {
+      /*
+       * Don't need to rollback, outer exception handler will do this
+       */
+      std::ostringstream oss;
+      oss << "cannot stat catalog: archive\""
+          << this->archive_name
+          << "\" does not exist";
+
+      throw CCatalogIssue(oss.str());
+    }
+    /* list of all backups in every archive */
+    stat = this->catalog->statCatalog(this->archive_name);
+    cout << stat->gimmeFormattedString();
+
+    this->catalog->commitTransaction();
+
+  } catch (exception &e) {
+    this->catalog->rollbackTransaction();
+    throw e; /* don't hide exception from caller */
+  }
+}
+
 StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = START_BASEBACKUP;
   this->catalog = catalog;

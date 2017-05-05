@@ -35,6 +35,7 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "id",
     "archive_id",
     "xlogpos",
+    "xlogposend",
     "timeline",
     "label",
     "fsentry",
@@ -98,6 +99,32 @@ void PushableCols::clearAffectedAttributes() {
 
 void PushableCols::setAffectedAttributes(std::vector<int> affectedAttributes) {
   this->affectedAttributes = affectedAttributes;
+}
+
+std::string StatCatalogArchive::gimmeFormattedString() {
+  std::ostringstream formatted;
+
+  formatted << CPGBackupCtlBase::makeHeader("Archive Catalog Overview",
+                                            boost::format("%-15s\t%-30s\t%-20s")
+                                            % "Name" % "Directory" % "Host", 80);
+  formatted << boost::format("%-15s\t%-30s\t%-20s")
+    % this->archive_name % this->archive_directory % this->archive_host;
+  formatted << endl;
+
+  /*
+   * Catalog statistics data.
+   */
+  formatted << CPGBackupCtlBase::makeHeader("Backups",
+                                            boost::format("%-9s\t%-9s\t%-9s\t%-16s")
+                                            % "# total" % "# failed"
+                                            % "# running" % "avg duration (s)", 80);
+  formatted << boost::format("%-9s\t%-9s\t%-9s\t%-16s")
+    % this->number_of_backups % this->backups_failed
+    % this->backups_running
+    % this->avg_backup_duration;
+  formatted << endl;
+
+  return formatted.str();
 }
 
 CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
@@ -627,7 +654,8 @@ void BackupCatalog::dropArchive(std::string name)
   if (rc != SQLITE_DONE) {
     ostringstream oss;
     sqlite3_finalize(stmt);
-    oss << "unexpected result for DROP ARCHIVE in query: " << sqlite3_errmsg(this->db_handle);
+    oss << "unexpected result for DROP ARCHIVE in query: "
+        << sqlite3_errmsg(this->db_handle);
     throw CCatalogIssue(oss.str());
   }
 
@@ -635,10 +663,164 @@ void BackupCatalog::dropArchive(std::string name)
 
 }
 
-void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
-                                            std::vector<int> affectedAttributes)
-  throw (CCatalogIssue) {
+std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archive_name) {
 
+  sqlite3_stmt *stmt;
+  std::string query;
+  int rc;
+  std::shared_ptr<StatCatalogArchive> result = std::make_shared<StatCatalogArchive>();
+
+  /*
+   * per default, set the stats result set to be empty.
+   */
+  result->archive_id = -1;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  query =
+"SELECT "
+  "(SELECT COUNT(*) FROM backup WHERE archive_id = a.id) AS number_of_backups, "
+  "(SELECT COUNT(*) FROM backup b "
+                   "WHERE b.archive_id = a.id "
+                         "AND b.status = 'aborted') AS backups_failed, "
+  "(SELECT COUNT(*) FROM backup b "
+                   "WHERE b.archive_id = a.id "
+                         "AND b.status = 'in progress') AS backups_running, "
+  "a.id, "
+  "a.name, "
+  "a.directory, "
+  "a.pghost AS host, "
+  "(SELECT SUM(spcsize) FROM backup_tablespaces bt "
+                            "JOIN backup b ON b.id = bt.backup_id "
+                            "JOIN archive a2 ON a.id = b.archive_id "
+                       "WHERE a2.id = a.id) AS approx_sz, "
+  "(SELECT MAX(stopped) FROM backup b "
+                       "WHERE b.archive_id = a.id) AS latest_finished, "
+  "(SELECT CASE WHEN (started IS NOT NULL AND stopped IS NOT NULL) "
+          "THEN AVG(CAST((julianday(stopped) - julianday(started)) * 24 * 60 * 60 AS integer)) "
+          "ELSE 0 "
+          "END AS val_avg_duration "
+   "FROM "
+   "backup b "
+   "WHERE b.archive_id = a.id) AS avg_duration "
+"FROM "
+  "archive a "
+"WHERE "
+  "a.name = ?1;";
+
+  /*
+   * Prepare the query...
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    std::ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind parameters ...
+   */
+  sqlite3_bind_text(stmt, 1, archive_name.c_str(), -1, SQLITE_STATIC);
+
+  /*
+   * ... and execute the query.
+   */
+  rc = sqlite3_step(stmt);
+
+  /*
+   * Only a single line result set expected.
+   */
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    sqlite3_finalize(stmt);
+    oss << "unexpected result in catalog query: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  result->number_of_backups = sqlite3_column_int(stmt, 0);
+  result->backups_failed    = sqlite3_column_int(stmt, 1);
+  result->backups_running   = sqlite3_column_int(stmt, 2);
+  result->archive_id        = sqlite3_column_int(stmt, 3);
+
+  if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+    result->archive_name      = (char *) sqlite3_column_text(stmt, 4);
+
+  if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+    result->archive_directory = (char *) sqlite3_column_text(stmt, 5);
+
+  if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+    result->archive_host      = (char *) sqlite3_column_text(stmt, 6);
+
+  result->estimated_total_size = sqlite3_column_int(stmt, 7);
+
+  if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+    result->latest_finished      = (char *) sqlite3_column_text(stmt, 8);
+
+  result->avg_backup_duration  = sqlite3_column_int(stmt, 9);
+
+  /*
+   * We're done.
+   */
+  sqlite3_finalize(stmt);
+
+  return result;
+}
+
+std::vector<std::shared_ptr<BaseBackupDescr>>
+BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
+
+  sqlite3_stmt *stmt;
+  std::ostringstream query;
+  int rc;
+  std::vector<int> backupAttrs;
+  std::vector<int> tblspcAttrs;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Generate list of columns to retrieve...
+   */
+  backupAttrs.push_back(SQL_BACKUP_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_ARCHIVE_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOSEND_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_TIMELINE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_LABEL_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STATUS);
+
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
+
+  std::string backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                                           backupAttrs);
+  std::string tblspcCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
+                                                           tblspcAttrs);
+
+#ifdef __DEBUG__
+  cerr << backupCols << endl;
+  cerr << tblspcCols << endl;
+#endif
+}
+
+void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
+                                            std::vector<int> affectedAttributes) {
   sqlite3_stmt *stmt;
   ostringstream updateSQL;
   int rc;
@@ -1936,11 +2118,23 @@ void BackupCatalog::checkCatalog() throw (CCatalogIssue) {
   if (!this->available())
     throw CCatalogIssue("catalog database not opened");
 
+  if (!this->tableExists("version"))
+    throw CCatalogIssue("catalog database doesn't have a \"version\" table");
+
   if (!this->tableExists("archive"))
     throw CCatalogIssue("catalog database doesn't have an \"archive\" table");
 
   if (!this->tableExists("backup"))
     throw CCatalogIssue("catalog database doesn't have a \"backup\" table");
+
+  if (!this->tableExists("backup_tablespaces"))
+    throw CCatalogIssue("catalog database doesn't have a \"backup_tablespaces\" table");
+
+  if (!this->tableExists("stream"))
+    throw CCatalogIssue("catalog database doesn't have a \"stream\" table");
+
+  if (!this->tableExists("backup_profiles"))
+    throw CCatalogIssue("catalog database doesn't have a \"backup_profiles\" table");
 
 }
 

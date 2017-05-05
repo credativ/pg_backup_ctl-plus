@@ -10,7 +10,7 @@
 #include <stream.hxx>
 
 namespace credativ {
-  
+
   /*
    * Base catalog exception.
    */
@@ -183,8 +183,7 @@ namespace credativ {
      * Update archive attributes.
      */
     virtual void updateArchiveAttributes(std::shared_ptr<CatalogDescr> descr,
-                                         std::vector<int> affectedAttributes)
-      throw (CCatalogIssue);
+                                         std::vector<int> affectedAttributes);
 
     /*
      * Creates a new archive entry in the catalog database.
@@ -323,6 +322,21 @@ namespace credativ {
      * fully initialized.
      */
     virtual void registerTablespaceForBackup(std::shared_ptr<BackupTablespaceDescr> tblspcDescr);
+
+    /*
+     * Retrieve a complete list of backups stored in
+     * the current catalog.
+     *
+     * This creates a list of backup handles with
+     * alle referenced tablespaces.
+     */
+    virtual std::vector<std::shared_ptr<BaseBackupDescr>>
+    getBackupList(std::shared_ptr<CatalogDescr> descr);
+
+    /*
+     * Returns a catalog status view for the given archive.
+     */
+    virtual std::shared_ptr<StatCatalogArchive> statCatalog(std::string archive_name);
   };
 }
 
