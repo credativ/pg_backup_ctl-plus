@@ -264,8 +264,8 @@ static void executeCommand(PGBackupCtlArgs *args) {
         shared_ptr<BackupHistoryFile> file = it.second;
 
 #ifdef __DEBUG__
-        cerr << "backup found: " << file->getBackupLabel() 
-             << " stopped at " << file->getBackupStopTime() 
+        cerr << "backup found: " << file->getBackupLabel()
+             << " stopped at " << file->getBackupStopTime()
              <<  endl;
 #endif
 
@@ -329,7 +329,7 @@ int main(int argc, const char **argv) {
     if (args.catalogDir == NULL) {
       /*
        * We use a dynamically allocated string object here,
-       * since this needs to live through our while
+       * since this needs to live through our whole
        * program lifetime.
        */
       args.catalogDir = (char *)(new string(PG_BACKUP_CTL_SQLITE))->c_str();
@@ -354,7 +354,7 @@ int main(int argc, const char **argv) {
      * the program and a small grammar automating certain
      * tasks. It doesn't make sense to parse them equally,
      * so check them separately...
-     * 
+     *
      * NOTE: --action has precedence over all others.
      *       Then --action-file and interactive command
      *       line processing via readline.
@@ -388,6 +388,7 @@ int main(int argc, const char **argv) {
 
       while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
 
+
         if (strcmp(cmd_str, "quit") == 0) {
           wants_exit = true;
           break;
@@ -401,7 +402,13 @@ int main(int argc, const char **argv) {
           input += string(cmd_str, strlen(cmd_str) - 1);
           break;
         } else {
-          input += string(cmd_str);
+        /*
+         * No action needed, so we continue reading input.
+         * To support commandseparation by newline, the
+         * command string is appended by a blank.
+         * This behaviour is similar to our parseFile routine.
+         */
+          input += string(cmd_str)+" ";
         }
       }
 

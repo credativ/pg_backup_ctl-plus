@@ -581,7 +581,7 @@ shared_ptr<PGBackupCtlCommand> PGBackupCtlParser::getCommand() {
   return this->command;
 }
 
-void PGBackupCtlParser::parseLine(std::string in) 
+void PGBackupCtlParser::parseLine(std::string in)
   throw(CParserIssue) {
 
   using boost::spirit::ascii::space;
