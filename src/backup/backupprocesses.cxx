@@ -58,12 +58,14 @@ void BaseBackupProcess::start() {
   /*
    * Special LABEL requested?
    */
-  if (this->profile->label != "")
-    query << " LABEL '" << PQescapeStringConn(this->pgconn,
-                                              escapedlabel,
-                                              this->profile->label.c_str(),
-                                              this->profile->label.length(),
-                                              &escape_error) << "'";
+  if (this->profile->label != "") {
+    PQescapeStringConn(this->pgconn,
+                       escapedlabel,
+                       this->profile->label.c_str(),
+                       this->profile->label.length(),
+                       &escape_error);
+    query << " LABEL '" << escapedlabel << "'";
+  }
 
   /*
    * We always request PROGRESS
