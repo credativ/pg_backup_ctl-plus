@@ -22,6 +22,15 @@ namespace credativ {
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
   };
 
+  class StartLauncherCatalogCommand : public BaseCatalogCommand {
+  public:
+    StartLauncherCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    StartLauncherCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    StartLauncherCatalogCommand();
+
+    virtual void execute(bool flag);
+  };
+
   class ListBackupCatalogCommand : public BaseCatalogCommand {
   public:
     ListBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);

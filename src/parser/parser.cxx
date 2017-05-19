@@ -120,12 +120,18 @@ namespace credativ {
                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
 
                         /*
-                         * START BASEBACKUP FOR ARCHIVE <name> command
+                         * START command
                          */
-                        | cmd_start_basebackup
-                        > identifier
-                        [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                        > -(with_profile)
+                        | cmd_start_command > (
+                                               /*
+                                                * START BASEBACKUP FOR ARCHIVE <name> command
+                                                */
+                                               ( cmd_start_basebackup
+                                                 > identifier
+                                                 [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                                                 > -(with_profile) )
+                                               | ( cmd_start_launcher )
+                                               )
 
                         ); /* start rule end */
 
@@ -146,9 +152,14 @@ namespace credativ {
           ^ portnumber
           [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ];
 
+        /*
+         * START LAUNCHER command
+         */
+        cmd_start_launcher = no_case[lexeme[ lit("LAUNCHER") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ];
 
         /*
-         * CREATE, DROP, ALTER and LIST tokens...
+         * CREATE, DROP, ALTER, START and LIST tokens...
          */
         cmd_create = no_case[lexeme[ lit("CREATE") ]] ;
 
@@ -157,6 +168,8 @@ namespace credativ {
         cmd_list = no_case[lexeme[ lit("LIST") ]];
 
         cmd_alter = no_case[lexeme[ lit("ALTER") ]];
+
+        cmd_start_command = no_case[lexeme[ lit("START") ]];
 
         /*
          * LIST BACKUP CATALOG [<backup>] ...
@@ -240,7 +253,7 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, ALTER_ARCHIVE) ]
           > cmd_alter_archive_opt;
 
-        cmd_start_basebackup = no_case[lexeme[ lit("START") ]] > no_case[lexeme[ lit("BASEBACKUP") ]]
+        cmd_start_basebackup = no_case[lexeme[ lit("BASEBACKUP") ]]
           > no_case[lexeme[ lit("FOR") ]] > no_case[lexeme[ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_BASEBACKUP) ];
 
@@ -351,6 +364,8 @@ namespace credativ {
         cmd_drop.name("DROP start");
         cmd_list.name("LIST start");
         cmd_alter.name("ALTER start");
+        cmd_start_command.name("START start");
+        cmd_start_launcher.name("LAUNCHER");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_verify_archive.name("VERIFY ARCHIVE");
@@ -387,8 +402,10 @@ namespace credativ {
                           cmd_verify_archive,
                           cmd_drop_archive,
                           cmd_alter_archive,
+                          cmd_start_command,
                           cmd_alter_archive_opt,
                           cmd_start_basebackup,
+                          cmd_start_launcher,
                           cmd_list_archive,
                           cmd_create_backup_profile,
                           cmd_list_backup,
@@ -515,6 +532,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case START_BASEBACKUP: {
     result = make_shared<StartBasebackupCatalogCommand>(this->catalogDescr);
+    break;
+  }
+
+  case START_LAUNCHER: {
+    result = make_shared<StartLauncherCatalogCommand>(this->catalogDescr);
     break;
   }
 

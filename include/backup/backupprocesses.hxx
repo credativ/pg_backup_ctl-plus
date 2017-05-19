@@ -58,6 +58,16 @@ namespace credativ {
   };
 
   /*
+   * Implementation of class WALStreamerProcess
+   */
+  class WALStreamerProcess : public CPGBackupCtlBase {
+  protected:
+  public:
+    WALStreamerProcess(PGconn *prepared_connection);
+    ~WALStreamerProcess();
+  };
+
+  /*
    * Implements the base backup streaming
    * infrastructure.
    */

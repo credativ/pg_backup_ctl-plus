@@ -5,6 +5,18 @@
 using namespace credativ;
 
 /******************************************************************************
+ * Implementation of WALStreamerProcess
+ ******************************************************************************/
+
+WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection) {
+
+}
+
+WALStreamerProcess::~WALStreamerProcess() {
+
+}
+
+/******************************************************************************
  * Implementation of BaseBackupProcess
  ******************************************************************************/
 

@@ -1,5 +1,6 @@
 #include <boost/format.hpp>
 #include <commands.hxx>
+#include <daemon.hxx>
 #include <stream.hxx>
 
 using namespace credativ;
@@ -22,6 +23,39 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
   this->setAffectedAttributes(source.getAffectedAttributes());
 
+}
+
+StartLauncherCatalogCommand::StartLauncherCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = START_LAUNCHER;
+  this->catalog = catalog;
+}
+
+StartLauncherCatalogCommand::StartLauncherCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+void StartLauncherCatalogCommand::execute(bool flag) {
+
+  job_info job_info;
+  pid_t pid;
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+  }
+
+  job_info.catalogName = this->catalog->name();
+
+  /*
+   * Detach from current interactive terminal.
+   */
+  job_info.detach       = true;
+  job_info.close_std_fd = true;
+
+  pid = launch(job_info);
+
+  cout << "background launcher launched at pid " << pid << endl;
 }
 
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

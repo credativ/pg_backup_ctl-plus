@@ -72,6 +72,13 @@ CREATE TABLE backup_profiles(
        PRIMARY KEY(id)
 );
 
+CREATE TABLE procs(
+       pid integer not null,
+       type text not null CHECK(type IN ('launcher', 'streamer')),
+       started text not null,
+       state text not null default 'running'
+);
+
 CREATE UNIQUE INDEX backup_profiles_name_idx ON backup_profiles(name);
 
 /* Default backup profile */

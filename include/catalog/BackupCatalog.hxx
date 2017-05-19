@@ -66,6 +66,9 @@ namespace credativ {
     /* backup tablespaces catalog table */
     static std::vector<std::string> backupTablespacesCatalogCols;
 
+    /* procs catalog table */
+    static std::vector<std::string> procsCatalogCols;
+
     /*
      * This method maps col IDs from the specified
      * catalog entity to its string name.
@@ -157,6 +160,12 @@ namespace credativ {
      * Set sqlite database filename.
      */
     virtual void setCatalogDB(std::string sqliteDB);
+
+    /*
+     * Returns the name of the catalog database. In this
+     * case the full path to the sqlite3 database.
+     */
+    virtual std::string name();
 
     /*
      * Set the archive directory.

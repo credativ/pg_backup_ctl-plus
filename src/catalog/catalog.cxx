@@ -80,6 +80,14 @@ std::vector<std::string>BackupCatalog::backupTablespacesCatalogCols =
     "spcsize"
   };
 
+std::vector<std::string>BackupCatalog::procsCatalogCols =
+  {
+    "pid",
+    "type",
+    "started",
+    "state"
+  };
+
 const char * STREAM_BASEBACKUP = "BASEBACKUP";
 const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
 
@@ -242,6 +250,10 @@ BackupCatalog::BackupCatalog(string sqliteDB, string archiveDir) throw (CCatalog
    * Check catalog ...
    */
   this->checkCatalog();
+}
+
+std::string BackupCatalog::name() {
+  return this->sqliteDB;
 }
 
 void BackupCatalog::startTransaction()

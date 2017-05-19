@@ -28,7 +28,8 @@ namespace credativ {
     LIST_ARCHIVE,
     LIST_BACKUP_PROFILE,
     LIST_BACKUP_PROFILE_DETAIL,
-    LIST_BACKUP_CATALOG
+    LIST_BACKUP_CATALOG,
+    START_LAUNCHER
   } CatalogTag;
 
   /*

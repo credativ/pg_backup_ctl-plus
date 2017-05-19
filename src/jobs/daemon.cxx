@@ -17,7 +17,7 @@
 
 #include <daemon.hxx>
 
-using namespace credativ::daemon;
+using namespace credativ;
 
 volatile sig_atomic_t _pgbckctl_shutdown_mode = DAEMON_RUN;
 extern int errno;
@@ -25,7 +25,7 @@ extern int errno;
 /*
  * Forwarded declarations.
  */
-static pid_t daemonize(bool exitParent);
+static pid_t daemonize(job_info &info);
 
 /*
  * pg_backup_ctl launcher signal handler
@@ -58,7 +58,7 @@ static void _pgbckctl_sighandler(int sig) {
 
 }
 
-static pid_t daemonize(bool exitParent) {
+static pid_t daemonize(job_info &info) {
 
   /*
    * Holds PID of parent and child process
@@ -67,30 +67,70 @@ static pid_t daemonize(bool exitParent) {
   pid_t sid;
   int forkerrno;
 
-  /*
-   * First at all, fork off the launcher. This
-   * parent will fork again to launch the actual
-   * background process and will exit.
-   */
+  // /*
+  //  * First at all, fork off the launcher. This
+  //  * parent will fork again to launch the actual
+  //  * background process and will exit.
+  //  */
 
-  pid = fork();
-  forkerrno = errno;
+  // pid = fork();
+  // forkerrno = errno;
 
-  if (pid < 0) {
-    std::ostringstream oss;
-    oss << "fork error " << strerror(forkerrno);
-    throw LauncherFailure(oss.str());
-  }
+  // if (pid < 0) {
+  //   std::ostringstream oss;
+  //   oss << "fork error " << strerror(forkerrno);
+  //   throw LauncherFailure(oss.str());
+  // }
 
-  if (pid > 0) {
+  // if (pid == 0) {
 
-    /*
-     * So this is the original parent, exit, if requested.
-     */
-    if (exitParent == true) {
+  //   /*
+  //    * So this is the initial forked parent for the launcher,
+  //    * exit if requested.
+  //    */
+  //   if (info.detach == true) {
+  //     exit(0);
+  //   }
+
+  // }
+
+  if (info.detach) {
+
+    pid = fork();
+    forkerrno = errno;
+
+    if (pid < 0) {
+      std::ostringstream oss;
+      oss << "fork error " << strerror(forkerrno);
+      throw LauncherFailure(oss.str());
+    }
+
+    if (pid > 0) {
+      cout << "parent launcher forked with pid " << pid << ", detaching" << endl;
       exit(0);
     }
 
+  }
+
+  /*
+   * Install signal handlers.
+   */
+  signal(SIGTERM, _pgbckctl_sighandler);
+  signal(SIGINT, _pgbckctl_sighandler);
+  signal(SIGHUP, _pgbckctl_sighandler);
+  signal(SIGUSR1, _pgbckctl_sighandler);
+
+  /*
+   * The background process will have the following
+   * conditions set:
+   *
+   * - Change into the archive directory
+   * - Close all STDIN and STDOUT file descriptors
+   */
+  if (info.close_std_fd) {
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
   }
 
   /*
@@ -107,9 +147,8 @@ static pid_t daemonize(bool exitParent) {
   if (pid > 0) {
     /*
      * This is the launcher process.
-     * Install signal handlers, close STDIN, STDOUT and
-     * set the session  leader. This will be inherited by
-     * the background process later.
+     *
+     * Set the session  leader.
      */
     sid = setsid();
     if (sid < 0) {
@@ -117,31 +156,14 @@ static pid_t daemonize(bool exitParent) {
       oss << "could not set session leader: " << strerror(errno);
       throw LauncherFailure(oss.str());
     }
-
-    /*
-     * The background will have the following
-     * conditions set:
-     *
-     * - Change into the archive directory
-     * - Close all STDIN and STDOUT file descriptors
-     */
-    // close(STDIN_FILENO);
-    // close(STDOUT_FILENO);
-    // close(STDERR_FILENO);
-
-    /*
-     * Install signal handlers.
-     */
-    signal(SIGTERM, _pgbckctl_sighandler);
-    signal(SIGINT, _pgbckctl_sighandler);
-    signal(SIGHUP, _pgbckctl_sighandler);
-    signal(SIGUSR1, _pgbckctl_sighandler);
   }
 
   if (pid == 0) {
     /*
      * This is the background process
-     *
+     */
+
+    /*
      * Enter processing loop
      */
     while(true) {
@@ -151,22 +173,24 @@ static pid_t daemonize(bool exitParent) {
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
         std::cout << "shutdown request received" << std::endl;
+        break;
       }
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
         std::cout << "emergency shutdown request received" << std::endl;
+        break;
       }
 
     }
   }
 
+  info.pid = pid;
   return pid;
 
 }
 
 pid_t launch(job_info& info) {
 
-  info.pid = daemonize(info.detach);
-
+  daemonize(info);
   return info.pid;
 }
