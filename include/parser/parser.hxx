@@ -70,8 +70,8 @@ namespace credativ {
     /*
      * Public access methods
      */
-    virtual void parseFile() throw (CParserIssue);
-    virtual void parseLine(std::string line) throw (CParserIssue);
+    virtual void parseFile();
+    virtual void parseLine(std::string line);
 
     virtual shared_ptr<PGBackupCtlCommand> getCommand();
 

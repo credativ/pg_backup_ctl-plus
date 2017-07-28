@@ -118,8 +118,7 @@ namespace credativ {
      * replacing its whole content!
      */
     static void writeFileReplace(std::string filePath,
-                                 std::string msg)
-      throw (CPGBackupCtlFailure);
+                                 std::string msg);
 
     static boost::iostreams::filtering_ostream *
        prepareBinaryOutFile(boost::filesystem::path pathHandle,

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -67,34 +68,15 @@ static pid_t daemonize(job_info &info) {
   pid_t sid;
   int forkerrno;
 
-  // /*
-  //  * First at all, fork off the launcher. This
-  //  * parent will fork again to launch the actual
-  //  * background process and will exit.
-  //  */
-
-  // pid = fork();
-  // forkerrno = errno;
-
-  // if (pid < 0) {
-  //   std::ostringstream oss;
-  //   oss << "fork error " << strerror(forkerrno);
-  //   throw LauncherFailure(oss.str());
-  // }
-
-  // if (pid == 0) {
-
-  //   /*
-  //    * So this is the initial forked parent for the launcher,
-  //    * exit if requested.
-  //    */
-  //   if (info.detach == true) {
-  //     exit(0);
-  //   }
-
-  // }
+  /*
+   * First at all, fork off the launcher. This
+   * parent will fork again to launch the actual
+   * background process and will exit.
+   */
 
   if (info.detach) {
+
+    cout << "parent launcher detaching" << endl;
 
     pid = fork();
     forkerrno = errno;
@@ -107,7 +89,14 @@ static pid_t daemonize(job_info &info) {
 
     if (pid > 0) {
       cout << "parent launcher forked with pid " << pid << ", detaching" << endl;
-      exit(0);
+      waitpid(pid, NULL, WNOHANG);
+
+      /*
+       * This will force to return to the caller, child
+       * will resume to fork() specific worker process...
+       */
+      info.pid = pid;
+      return pid;
     }
 
   }
@@ -125,7 +114,8 @@ static pid_t daemonize(job_info &info) {
    * conditions set:
    *
    * - Change into the archive directory
-   * - Close all STDIN and STDOUT file descriptors
+   * - Close all STDIN and STDOUT file descriptors,
+   *   if requested
    */
   if (info.close_std_fd) {
     close(STDIN_FILENO);
@@ -145,17 +135,44 @@ static pid_t daemonize(job_info &info) {
   }
 
   if (pid > 0) {
+
     /*
      * This is the launcher process.
      *
      * Set the session  leader.
      */
-    sid = setsid();
-    if (sid < 0) {
-      std::ostringstream oss;
-      oss << "could not set session leader: " << strerror(errno);
-      throw LauncherFailure(oss.str());
+    if (info.detach) {
+      sid = setsid();
+      if (sid < 0) {
+        std::ostringstream oss;
+        oss << "could not set session leader: " << strerror(errno);
+        throw LauncherFailure(oss.str());
+      }
     }
+
+    /* If in detach mode, exit */
+    while (waitpid(pid, NULL, WNOHANG) != pid) {
+
+      cout << "launcher process loop" << endl;
+
+      if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
+        std::cout << "shutdown request received" << std::endl;
+        kill(SIGTERM, pid);
+        break;
+      }
+
+      if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
+        std::cout << "emergency shutdown request received" << std::endl;
+        kill(SIGINT, pid);
+        break;
+      }
+
+      sleep(1);
+    }
+
+    if (info.detach)
+      exit(0);
+
   }
 
   if (pid == 0) {
@@ -182,7 +199,9 @@ static pid_t daemonize(job_info &info) {
       }
 
     }
-  }
+
+    exit(_pgbckctl_shutdown_mode);
+  } /* child execution code */
 
   info.pid = pid;
   return pid;

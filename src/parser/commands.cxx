@@ -55,7 +55,17 @@ void StartLauncherCatalogCommand::execute(bool flag) {
 
   pid = launch(job_info);
 
-  cout << "background launcher launched at pid " << pid << endl;
+
+  if (pid > 0)
+    cout << "background launcher launched at pid " << pid << endl;
+  else {
+    /*
+     * This code shouldn't be reached, since the forked child process
+     * should take care to exit in their child code after executing
+     * the background action.
+     */
+    exit(0);
+  }
 }
 
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

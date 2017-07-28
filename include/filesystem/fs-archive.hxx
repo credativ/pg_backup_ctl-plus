@@ -510,7 +510,7 @@ namespace credativ {
     /*
      * C'tor, needs archive directory to be specified
      */
-    CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue);
+    CPGBackupCtlFS(string archiveDir) ;
     virtual ~CPGBackupCtlFS();
 
     /*
@@ -545,14 +545,14 @@ namespace credativ {
      * - subdirectory base/ exists
      * - subdirectory log/ exists
      */
-    virtual bool checkArchiveDirectory() throw(CArchiveIssue);
+    virtual bool checkArchiveDirectory();
 
     /*
      * Read the backup history from all backup files in /log.
      *
      * Returns the number of backups found.
      */
-    virtual int readBackupHistory() throw(CArchiveIssue);
+    virtual int readBackupHistory();
   };
 
 }

@@ -603,8 +603,7 @@ shared_ptr<PGBackupCtlCommand> PGBackupCtlParser::getCommand() {
   return this->command;
 }
 
-void PGBackupCtlParser::parseLine(std::string in)
-  throw(CParserIssue) {
+void PGBackupCtlParser::parseLine(std::string in) {
 
   using boost::spirit::ascii::space;
   typedef std::string::iterator iterator_type;
@@ -641,7 +640,7 @@ void PGBackupCtlParser::parseLine(std::string in)
 
 }
 
-void PGBackupCtlParser::parseFile() throw(CParserIssue) {
+void PGBackupCtlParser::parseFile() {
 
   std::ifstream fileHandle;
   std::stringstream fs;

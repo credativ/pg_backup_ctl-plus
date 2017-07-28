@@ -231,7 +231,7 @@ BackupCatalog::BackupCatalog() {
   this->db_handle = NULL;
 }
 
-BackupCatalog::BackupCatalog(string sqliteDB, string archiveDir) throw (CCatalogIssue) {
+BackupCatalog::BackupCatalog(string sqliteDB, string archiveDir) {
   this->isOpen = false;
   this->db_handle = NULL;
 
@@ -256,8 +256,7 @@ std::string BackupCatalog::name() {
   return this->sqliteDB;
 }
 
-void BackupCatalog::startTransaction()
-  throw (CCatalogIssue) {
+void BackupCatalog::startTransaction() {
 
   int rc;
 
@@ -277,8 +276,7 @@ void BackupCatalog::startTransaction()
   }
 }
 
-void BackupCatalog::commitTransaction()
-  throw (CCatalogIssue) {
+void BackupCatalog::commitTransaction() {
 
   int rc;
 
@@ -297,8 +295,7 @@ void BackupCatalog::commitTransaction()
 
 }
 
-void BackupCatalog::rollbackTransaction()
-  throw(CCatalogIssue) {
+void BackupCatalog::rollbackTransaction() {
 
   int rc;
 
@@ -320,8 +317,7 @@ void BackupCatalog::rollbackTransaction()
 
 std::shared_ptr<StreamIdentification> BackupCatalog::fetchStreamData(sqlite3_stmt *stmt,
                                                                      std::string archive_name,
-                                                                     std::vector<int> affectedRows)
-  throw(CCatalogIssue) {
+                                                                     std::vector<int> affectedRows) {
 
   int currindex = 0; /* column index starts at 0 */
   std::shared_ptr<StreamIdentification> ident(nullptr);
@@ -501,8 +497,7 @@ shared_ptr<CatalogDescr> BackupCatalog::fetchArchiveDataIntoDescr(sqlite3_stmt *
 
 }
 
-shared_ptr<CatalogDescr> BackupCatalog::existsByName(std::string name)
-  throw(CCatalogIssue) {
+shared_ptr<CatalogDescr> BackupCatalog::existsByName(std::string name) {
 
   sqlite3_stmt *stmt;
   int rc;
@@ -549,8 +544,7 @@ shared_ptr<CatalogDescr> BackupCatalog::existsByName(std::string name)
 
 }
 
-shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory)
-  throw(CCatalogIssue) {
+shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory) {
 
   sqlite3_stmt *stmt;
   int rc;
@@ -635,8 +629,7 @@ void BackupCatalog::dropBackupProfile(std::string name) {
   sqlite3_finalize(stmt);
 }
 
-void BackupCatalog::dropArchive(std::string name)
-  throw(CCatalogIssue) {
+void BackupCatalog::dropArchive(std::string name) {
 
   sqlite3_stmt *stmt;
   int rc;
@@ -1169,8 +1162,7 @@ void BackupCatalog::createBackupProfile(std::shared_ptr<BackupProfileDescr> prof
   sqlite3_finalize(stmt);
 }
 
-void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr)
-  throw (CCatalogIssue) {
+void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr) {
 
   sqlite3_stmt *stmt;
   int rc;
@@ -1419,7 +1411,7 @@ int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
 }
 
 
-void BackupCatalog::close() throw(CCatalogIssue){
+void BackupCatalog::close() {
   if (available()) {
     sqlite3_close(this->db_handle);
   }
@@ -1469,8 +1461,7 @@ std::string BackupCatalog::SQLgetFilterForArchive(std::shared_ptr<CatalogDescr> 
 }
 
 std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveList(std::shared_ptr<CatalogDescr> descr,
-                                                                                        std::vector<int> affectedAttributes)
-  throw (CCatalogIssue) {
+                                                                                        std::vector<int> affectedAttributes) {
 
   /*
    * Statement handle
@@ -1555,8 +1546,7 @@ std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArch
   return result;
 }
 
-shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveList()
-  throw(CCatalogIssue) {
+shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveList() {
 
   /*
    * Statement handle for SQLite3 catalog db.
@@ -1623,8 +1613,7 @@ shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveLi
 }
 
 void BackupCatalog::setStreamStatus(int streamid,
-                                    std::string status)
-  throw (CCatalogIssue) {
+                                    std::string status) {
 
   sqlite3_stmt *stmt;
 
@@ -1661,8 +1650,7 @@ void BackupCatalog::setStreamStatus(int streamid,
   sqlite3_finalize(stmt);
 }
 
-void BackupCatalog::dropStream(int streamid)
-  throw(CCatalogIssue) {
+void BackupCatalog::dropStream(int streamid) {
 
   int rc;
   sqlite3_stmt *stmt;
@@ -1874,8 +1862,7 @@ void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr
 }
 
 void BackupCatalog::registerStream(int archive_id,
-                                   StreamIdentification& streamident)
-  throw(CCatalogIssue) {
+                                   StreamIdentification& streamident) {
 
   int rc;
   sqlite3_stmt *stmt;
@@ -2020,8 +2007,8 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
   sqlite3_finalize(stmt);
 }
 
-std::vector<std::shared_ptr<StreamIdentification>> BackupCatalog::getStreams(std::string archive_name)
-throw (CCatalogIssue) {
+std::vector<std::shared_ptr<StreamIdentification>>
+BackupCatalog::getStreams(std::string archive_name) {
 
   std::vector<std::shared_ptr<StreamIdentification>> result;
   std::vector<int> streamRows;
@@ -2082,7 +2069,7 @@ throw (CCatalogIssue) {
 
 }
 
-bool BackupCatalog::tableExists(string tableName) throw(CCatalogIssue) {
+bool BackupCatalog::tableExists(string tableName) {
 
   int table_exists = false;
 
@@ -2125,7 +2112,7 @@ bool BackupCatalog::tableExists(string tableName) throw(CCatalogIssue) {
   return ((table_exists == 1) ? true : false);
 }
 
-void BackupCatalog::checkCatalog() throw (CCatalogIssue) {
+void BackupCatalog::checkCatalog() {
 
   if (!this->available())
     throw CCatalogIssue("catalog database not opened");
@@ -2150,7 +2137,7 @@ void BackupCatalog::checkCatalog() throw (CCatalogIssue) {
 
 }
 
-void BackupCatalog::open_rw() throw (CCatalogIssue) {
+void BackupCatalog::open_rw() {
   int rc;
 
   rc = sqlite3_open(this->sqliteDB.c_str(), &(this->db_handle));

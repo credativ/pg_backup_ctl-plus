@@ -48,8 +48,7 @@ string CPGBackupCtlBase::getVersionString() {
 }
 
 void CPGBackupCtlBase::writeFileReplace(std::string filePath,
-                                        std::string msg)
-  throw(CPGBackupCtlFailure) {
+                                        std::string msg) {
 
   boost::filesystem::path file(filePath);
   boost::filesystem::ofstream out(file);

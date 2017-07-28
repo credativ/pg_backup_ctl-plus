@@ -38,7 +38,7 @@ namespace credativ {
     bool   isOpen;
   public:
     BackupCatalog();
-    BackupCatalog(std::string sqliteDB, std::string archiveDir) throw(CCatalogIssue);
+    BackupCatalog(std::string sqliteDB, std::string archiveDir);
     virtual ~BackupCatalog();
 
     /*
@@ -125,15 +125,14 @@ namespace credativ {
     /*
      * Rollback an existing catalog transaction.
      */
-    virtual void rollbackTransaction() throw(CCatalogIssue);
+    virtual void rollbackTransaction();
 
     /*
      * Checks if the specified archive directory is already registered
      * in the catalog. Returns a valid CatalogDescr handle if true, otherwise
      * the returned CatalogDescr handle is initialized with id = -1.
      */
-    virtual std::shared_ptr<CatalogDescr> exists(std::string directory)
-      throw (CCatalogIssue);
+    virtual std::shared_ptr<CatalogDescr> exists(std::string directory);
 
     /*
      * Checks if the specified archive name is already
@@ -141,20 +140,17 @@ namespace credativ {
      * true, otherwise the returned CatalogDescr handle is initialized
      * with id = -1
      */
-    virtual std::shared_ptr<CatalogDescr> existsByName(std::string name)
-      throw (CCatalogIssue);
+    virtual std::shared_ptr<CatalogDescr> existsByName(std::string name);
 
     /*
      * Commits the current catalog transaction.
      */
-    virtual void commitTransaction()
-      throw (CCatalogIssue);
+    virtual void commitTransaction();
 
     /*
      * Starts a transaction in the catalog database.
      */
-    virtual void startTransaction()
-      throw (CCatalogIssue);
+    virtual void startTransaction();
 
     /*
      * Set sqlite database filename.
@@ -180,13 +176,13 @@ namespace credativ {
     /*
      * Check catalog tables.
      */
-    virtual void checkCatalog() throw (CCatalogIssue);
+    virtual void checkCatalog();
 
     /*
      * Checks wether the specified table exists
      * in the catalog database.
      */
-    virtual bool tableExists(std::string tableName) throw(CCatalogIssue);
+    virtual bool tableExists(std::string tableName);
 
     /*
      * Update archive attributes.
@@ -197,7 +193,7 @@ namespace credativ {
     /*
      * Creates a new archive entry in the catalog database.
      */
-    virtual void createArchive(std::shared_ptr<CatalogDescr> descr) throw (CCatalogIssue);
+    virtual void createArchive(std::shared_ptr<CatalogDescr> descr);
 
     /*
      * Drop the specified backup profile.
@@ -226,8 +222,7 @@ namespace credativ {
     /*
      * Delete the specified archive by name from the catalog.
      */
-    virtual void dropArchive(std::string name)
-      throw(CCatalogIssue);
+    virtual void dropArchive(std::string name);
 
     /*
      * Returns a SQL formatted WHERE condition with the
@@ -241,26 +236,24 @@ namespace credativ {
     /*
      * Returns a list of all registered archives in the catalog.
      */
-    std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList()
-      throw(CCatalogIssue);
+    std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList();
 
     /*
      * Returns a filtered list according the specified attributes
      * defined by the CatalogDescr.affectedAttributes list.
      */
     std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList(std::shared_ptr<CatalogDescr> descr,
-                                                                             std::vector<int> affectedAffected)
-    throw (CCatalogIssue);
+                                                                             std::vector<int> affectedAffected);
 
     /*
      * Open the sqlite database for read/write.
      */
-    virtual void open_rw() throw(CCatalogIssue);
+    virtual void open_rw();
 
     /*
      * Close the sqlite catalog database.
      */
-    virtual void close() throw(CCatalogIssue);
+    virtual void close();
 
     /*
      * Register a stream in the catalog.
@@ -269,14 +262,12 @@ namespace credativ {
      * stream id.
      */
     virtual void registerStream(int archive_id,
-                                StreamIdentification& streamident)
-      throw (CCatalogIssue);
+                                StreamIdentification& streamident);
 
     /*
      * Drop the stream from the catalog database.
      */
-    virtual void dropStream(int streamid)
-      throw(CCatalogIssue);
+    virtual void dropStream(int streamid);
 
     /*
      * Returns a StreamIdentification shared pointer
@@ -285,22 +276,19 @@ namespace credativ {
     std::shared_ptr<StreamIdentification>
        fetchStreamData(sqlite3_stmt *stmt,
                        std::string archive_name,
-                       std::vector<int> affectedRows)
-      throw(CCatalogIssue);
+                       std::vector<int> affectedRows);
 
     /*
      * Get a list of streams for the specified archive.
      */
     std::vector<std::shared_ptr<StreamIdentification>>
-       getStreams(std::string archive_name)
-    throw(CCatalogIssue);
+    getStreams(std::string archive_name);
 
     /*
      * Update the status of the specified stream.
      */
     virtual void setStreamStatus(int streamid,
-                                 std::string status)
-      throw(CCatalogIssue);
+                                 std::string status);
 
     /*
      * Register a started basebackup. This will create

@@ -304,7 +304,7 @@ path BackupDirectory::basedir() {
   return this->base;
 }
 
-CPGBackupCtlFS::CPGBackupCtlFS(string archiveDir) throw(CArchiveIssue) {
+CPGBackupCtlFS::CPGBackupCtlFS(string archiveDir) {
 
   /* initialization */
   this->archiveDir = archiveDir;
@@ -335,7 +335,7 @@ shared_ptr<CatalogDescr> CPGBackupCtlFS::catalogDescrFromBackupHistoryFile(share
   return result;
 }
 
-int CPGBackupCtlFS::readBackupHistory() throw(CArchiveIssue) {
+int CPGBackupCtlFS::readBackupHistory() {
 
   int countBackups = 0;
   path logDir      = this->archivePath / "log";
@@ -417,7 +417,7 @@ bool CPGBackupCtlFS::XLOGSegmentExists(string xlogFile) {
   return false; /* only reached in case no xlogfile present */
 }
 
-bool CPGBackupCtlFS::checkArchiveDirectory() throw(CArchiveIssue) {
+bool CPGBackupCtlFS::checkArchiveDirectory() {
 
   /*
    * We must check for file_status exceptions
