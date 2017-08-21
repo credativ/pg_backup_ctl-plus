@@ -212,4 +212,5 @@ pid_t launch(job_info& info) {
 
   daemonize(info);
   return info.pid;
+
 }

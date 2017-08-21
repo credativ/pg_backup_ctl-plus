@@ -156,7 +156,9 @@ namespace credativ {
          * START LAUNCHER command
          */
         cmd_start_launcher = no_case[lexeme[ lit("LAUNCHER") ]]
-          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ];
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ]
+          ^ no_case[lexeme[ lit("NODETACH") ]]
+          [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ];
 
         /*
          * CREATE, DROP, ALTER, START and LIST tokens...

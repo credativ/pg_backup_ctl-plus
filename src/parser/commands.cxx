@@ -21,6 +21,11 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->pgdatabase   = source.pgdatabase;
   this->backup_profile = source.getBackupProfileDescr();
 
+  /*
+   * Job control properties
+   */
+  this->detach = source.detach;
+
   this->setAffectedAttributes(source.getAffectedAttributes());
 
 }
@@ -48,9 +53,14 @@ void StartLauncherCatalogCommand::execute(bool flag) {
   job_info.catalogName = this->catalog->name();
 
   /*
-   * Detach from current interactive terminal.
+   * Detach from current interactive terminal, if requested (default).
    */
-  job_info.detach       = true;
+  job_info.detach       = this->detach;
+
+  /*
+   * Close standard file descriptors (STDOUT, STDIN, STDERR, ...), otherwise
+   * background process will clobber our interactive terminal.
+   */
   job_info.close_std_fd = true;
 
   pid = launch(job_info);
