@@ -902,6 +902,7 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
   if (rc != SQLITE_DONE) {
     ostringstream oss;
     oss << "error updating archive in catalog database: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
     throw CCatalogIssue(oss.str());
   }
 
@@ -2009,6 +2010,36 @@ void BackupCatalog::updateStream(int streamid,
                           -1,
                           &stmt,
                           NULL);
+
+  /*
+   * Bind UPDATE values. Please note that we rely
+   * on the order of affectedAttributes to match
+   * the previously formatted UPDATE SQL string.
+   */
+  this->SQLbindStreamAttributes(streamident,
+                                affectedColumns,
+                                stmt,
+                                Range(1, boundCols));
+
+  /*
+   * Don't forget to bind values to the UPDATE WHERE clause...
+   */
+  sqlite3_bind_int(stmt, boundCols, streamident->id);
+
+  /*
+   * Execute the UPDATE
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "error updating stream in catalog database: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
 }
 
 void BackupCatalog::registerStream(int archive_id,
