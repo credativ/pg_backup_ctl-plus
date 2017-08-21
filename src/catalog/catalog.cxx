@@ -150,6 +150,10 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
 }
 
+void CatalogDescr::setJobDetachMode(bool const& detach) {
+  this->detach = detach;
+}
+
 void CatalogDescr::setProfileAffectedAttribute(int const& colId) {
   this->backup_profile->pushAffectedAttribute(colId);
 }
@@ -1331,6 +1335,95 @@ int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileD
   return result;
 }
 
+int BackupCatalog::SQLbindStreamAttributes(shared_ptr<StreamIdentification> ident,
+                                           std::vector<int> affectedAttributes,
+                                           sqlite3_stmt *stmt,
+                                           Range range) {
+
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind updated attributes: invalid statement handle");
+
+  for (auto& colId : affectedAttributes) {
+
+    /*
+     * Stop, if result has reached end of range.
+     */
+    if (result > range.end())
+      break;
+
+    switch(colId) {
+
+    case SQL_STREAM_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, ident->id);
+      break;
+
+    case SQL_STREAM_ARCHIVE_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, ident->archive_id);
+      break;
+
+    case SQL_STREAM_STYPE_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->stype.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_SLOT_NAME_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->slot_name.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_SYSTEMID_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->systemid.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_TIMELINE_ATTNO:
+      sqlite3_bind_int(stmt, result, ident->timeline);
+      break;
+
+    case SQL_STREAM_XLOGPOS_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->xlogpos.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_DBNAME_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->dbname.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_STATUS_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->status.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_STREAM_REGISTER_DATE_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        ident->create_date.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    /* increment column index */
+    result++;
+  }
+
+  return result;
+}
+
 int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
                                             std::vector<int> affectedAttributes,
                                             sqlite3_stmt *stmt,
@@ -1861,7 +1954,65 @@ void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr
   sqlite3_finalize(stmt);
 }
 
+void BackupCatalog::updateStream(int streamid,
+                                 std::vector<int> affectedColumns,
+                                 std::shared_ptr<StreamIdentification> streamident) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+  ostringstream updateSQL;
+  int boundCols;
+
+  if(!this->available()) {
+    throw CCatalogIssue("could not update stream: database not opened");
+  }
+
+  /*
+   * affectedColumns should specify at least one
+   * catalog column being updated.
+   */
+  if (affectedColumns.size() <= 0)
+    throw CCatalogIssue("cannot update stream with empty attribute list");
+
+  /*
+   * Build UPDATE SQL command...
+   */
+  updateSQL << "UPDATE stream SET ";
+
+  /*
+   * Loop through the affected columns list and
+   * build a comma seprated list of col=? pairs.
+   */
+
+  for (boundCols = 0; boundCols < affectedColumns.size(); boundCols++) {
+
+    updateSQL << BackupCatalog::SQLgetUpdateColumnTarget(SQL_STREAM_ENTITY,
+                                                         affectedColumns[boundCols])
+              << (boundCols + 1);
+
+  }
+
+  /*
+   * WHERE clause identifes tuple per stream id
+   */
+  updateSQL << " WHERE id = ?" << (++boundCols) << ";";
+
+#ifdef __DEBUG__
+  cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
+#endif
+
+  /*
+   * Prepare the SQL statement.
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          updateSQL.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+}
+
 void BackupCatalog::registerStream(int archive_id,
+                                   std::string type,
                                    StreamIdentification& streamident) {
 
   int rc;
@@ -1889,7 +2040,7 @@ void BackupCatalog::registerStream(int archive_id,
   }
 
   sqlite3_bind_int(stmt, 1, archive_id);
-  sqlite3_bind_text(stmt, 2, STREAM_BASEBACKUP, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, type.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 3, streamident.systemid.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 4, streamident.timeline);
   sqlite3_bind_text(stmt, 5, streamident.xlogpos.c_str(), -1, SQLITE_STATIC);

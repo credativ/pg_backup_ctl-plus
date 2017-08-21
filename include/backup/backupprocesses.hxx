@@ -40,6 +40,17 @@ namespace credativ {
   } BaseBackupState;
 
   /*
+   *
+   */
+  typedef enum {
+    ARCHIVER_STARTUP,
+    ARCHIVER_START_POSITION,
+    ARCHIVER_STREAMING,
+    ARCHIVER_END_POSITION,
+    ARCHIVER_SHUTDOWN
+  } ArchiverState;
+
+  /*
    * Backup tablespace step information structure.
    */
   struct BackupTablespaceStep {

@@ -133,6 +133,11 @@ namespace credativ {
     std::string pgdatabase = "";
 
     /*
+     * Properties for job control
+     */
+    bool detach = true;
+
+    /*
      * The methods below are used by our spirit::parser
      * implementation.
      */
@@ -168,6 +173,7 @@ namespace credativ {
 
     void setProfileAffectedAttribute(int const& colId);
 
+    void setJobDetachMode(bool const& detach);
     CatalogDescr& operator=(const CatalogDescr& source);
   };
 

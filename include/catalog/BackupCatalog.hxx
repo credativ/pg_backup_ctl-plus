@@ -97,12 +97,20 @@ namespace credativ {
 
     /*
      * Bind affected backup profile attributes values
-     * to the given SQLite3 statment handle.
+     * to the given SQLite3 statement handle.
      */
     int SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
                                        std::vector<int> affectedAttributes,
                                        sqlite3_stmt *stmt,
                                        Range range);
+    /*
+     * Bind affected stream identification catalog attribute values
+     * to the given SQLite3 statement handle.
+     */
+    int SQLbindStreamAttributes(std::shared_ptr<StreamIdentification> ident,
+                                std::vector<int> affectedAttributes,
+                                sqlite3_stmt *stmt,
+                                Range range);
 
     /*
      * Bind affected archive attribute values to the given SQLite3
@@ -262,6 +270,7 @@ namespace credativ {
      * stream id.
      */
     virtual void registerStream(int archive_id,
+                                std::string type,
                                 StreamIdentification& streamident);
 
     /*
@@ -289,6 +298,17 @@ namespace credativ {
      */
     virtual void setStreamStatus(int streamid,
                                  std::string status);
+
+    /*
+     * Updates the specified stream handle in the
+     * catalog.
+     *
+     * affectedCols needs to specify the database columns
+     * being updated.
+     */
+    virtual void updateStream(int streamid,
+                              std::vector<int> affectedColumns,
+                              std::shared_ptr<StreamIdentification> streamident);
 
     /*
      * Register a started basebackup. This will create
