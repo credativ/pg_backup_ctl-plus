@@ -384,7 +384,18 @@ static pid_t daemonize(job_info &info) {
     }
 
     do {
-      if (waitpid(pid, &wstatus, WUNTRACED | WCONTINUED) == -1) {
+
+      if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
+        std::cout << "launcher shutdown request received" << std::endl;
+        break;
+      }
+
+      if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
+        std::cout << "launcher emergency shutdown request received" << std::endl;
+        break;
+      }
+
+      if (waitpid(pid, &wstatus, WUNTRACED | WCONTINUED | WNOHANG) == -1) {
         std::cerr << "waitpid() error " << endl;
         exit(DAEMON_FAILURE);
       }
@@ -394,38 +405,9 @@ static pid_t daemonize(job_info &info) {
         exit(0);
       }
 
-      cout << "launcher process loop" << endl;
-
-      if (WIFEXITED(wstatus)) {
-        std::cerr << "launcher exited, status " << WEXITSTATUS(wstatus) << endl;
-      }
-
-      if (WIFEXITED(wstatus)) {
-        std::cerr << "launcher exited by signal " << WTERMSIG(wstatus) << endl;
-      }
-
-      if (WIFSTOPPED(wstatus)) {
-        std::cerr << "launcher stopped by signal " << WSTOPSIG(wstatus) << endl;
-      }
-
-      if (WIFCONTINUED(wstatus)) {
-        std::cerr << "launcher continued" << endl;
-      }
-
-      if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
-        std::cout << "shutdown request received" << std::endl;
-        break;
-      }
-
-      if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
-        std::cout << "emergency shutdown request received" << std::endl;
-        break;
-      }
-
       usleep(10);
     } while (!WIFEXITED(wstatus) || !WIFSIGNALED(wstatus));
 
-    cerr << "launcher exit" << endl;
     exit(_pgbckctl_shutdown_mode);
   }
 
@@ -470,7 +452,6 @@ static pid_t daemonize(job_info &info) {
 
     }
 
-    cerr << "child exit" << endl;
     exit(_pgbckctl_shutdown_mode);
   } /* child execution code */
 
