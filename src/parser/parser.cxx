@@ -473,7 +473,7 @@ void PGBackupCtlCommand::execute(std::string catalogDir) {
    * Now establish the catalog instance.
    */
   shared_ptr<BackupCatalog> catalog
-    = make_shared<BackupCatalog>(catalogDir, descr->directory);
+    = make_shared<BackupCatalog>(catalogDir);
 
   try {
 

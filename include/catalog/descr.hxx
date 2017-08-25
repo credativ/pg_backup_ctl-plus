@@ -11,6 +11,7 @@ namespace credativ {
   class BackupProfileDescr;
   class BackupTableSpaceDescr;
   class BaseBackupDescr;
+  class PushableCols;
 
   /*
    * Defines flags to characterize the
@@ -29,7 +30,8 @@ namespace credativ {
     LIST_BACKUP_PROFILE,
     LIST_BACKUP_PROFILE_DETAIL,
     LIST_BACKUP_CATALOG,
-    START_LAUNCHER
+    START_LAUNCHER,
+    BACKGROUND_WORKER_COMMAND
   } CatalogTag;
 
   /*
@@ -55,9 +57,23 @@ namespace credativ {
   };
 
   /*
+   * Base class for descriptors which wants
+   * to have dynamic cols associated.
+   */
+  class PushableCols {
+  protected:
+    std::vector<int> affectedAttributes;
+  public:
+    virtual void pushAffectedAttribute(int colId);
+    virtual std::vector<int> getAffectedAttributes();
+    virtual void setAffectedAttributes(std::vector<int> affectedAttributes);
+    virtual void clearAffectedAttributes();
+  };
+
+    /*
    * Represents an identified streaming connection.
    */
-  class StreamIdentification {
+  class StreamIdentification : public PushableCols {
   public:
     unsigned long long id = -1; /* internal catalog stream id */
     int archive_id = -1; /* used to reflect assigned archive */
@@ -90,17 +106,29 @@ namespace credativ {
   };
 
   /*
-   * Base class for descriptors which wants
-   * to have dynamic cols associated.
+   * Catalog descriptor for background procs
+   * entities in the backup catalog.
    */
-  class PushableCols {
-  protected:
-    std::vector<int> affectedAttributes;
+  class CatalogProc : public PushableCols {
   public:
-    virtual void pushAffectedAttribute(int colId);
-    virtual std::vector<int> getAffectedAttributes();
-    virtual void setAffectedAttributes(std::vector<int> affectedAttributes);
-    virtual void clearAffectedAttributes();
+    /*
+     * Static class members, identifying proc types.
+     */
+    static constexpr const char *PROC_TYPE_LAUNCHER = "launcher";
+    static constexpr const char *PROC_TYPE_WORKER = "streamer";
+
+    /*
+     * Static class members, specifying proc status values.
+     */
+    static constexpr const char *PROC_STATUS_RUNNING = "running";
+    static constexpr const char *PROC_STATUS_SHUTDOWN = "shutdown";
+
+    int pid = -1;
+    int archive_id = -1;
+    std::string type;
+    std::string started;
+    std::string state;
+
   };
 
   /*

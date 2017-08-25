@@ -106,4 +106,20 @@
  */
 #define SQL_BCK_TBLSPC_NCOLS 5
 
+/*
+ * Attributes belonging to procs catalog table.
+ */
+#define SQL_PROCS_ENTITY 6
+
+#define SQL_PROCS_PID_ATTNO 0
+#define SQL_PROCS_ARCHIVE_ID_ATTNO 1
+#define SQL_PROCS_TYPE_ATTNO 2
+#define SQL_PROCS_STARTED_ATTNO 3
+#define SQL_PROCS_STATE_ATTNO 4
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_PROCS_NCOLS 5
+
 #endif

@@ -10,6 +10,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <signal.h>
+#include <wait.h>
 
 #include <pg_backup_ctl.hxx>
 #include <common.hxx>
@@ -29,7 +30,7 @@ using namespace std;
  * Readline loop wants to exit?
  * Set by handle_signal.
  */
-bool wants_exit = false;
+volatile bool wants_exit = false;
 
 /*
  * Handle for command line arguments
@@ -52,6 +53,17 @@ void handle_signal_on_input(int sig) {
   if ( (sig == SIGQUIT) || (sig == SIGINT) ) {
     wants_exit = true;
   }
+}
+
+/*
+ * SIGCHLD signal handler for parent processes.
+ */
+static void _pgbckctl_sigchld_handler(int sig) {
+
+  if (sig == SIGCHLD) {
+    while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
+  }
+
 }
 
 static void printActionHelp() {
@@ -211,8 +223,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
     /*
      * Open the sqlite3 database
      */
-    BackupCatalog catalog = BackupCatalog(string(args->catalogDir),
-                                          string(args->archiveDir));
+    BackupCatalog catalog = BackupCatalog(string(args->catalogDir));
 
     /*
      * Start a transaction in the catalog database.
@@ -317,6 +328,15 @@ int main(int argc, const char **argv) {
   PGBackupCtlArgs args;
   char            *cmd_str;
 
+  /*
+   * Certain actions fork off child processes. To prevent
+   * zombies, we need a SIGCHLD signal handler.
+   */
+  if (signal(SIGCHLD, _pgbckctl_sigchld_handler) == SIG_ERR) {
+    cerr << "error setting up parent signal handler" << endl;
+    exit(PG_BACKUP_CTL_GENERIC_ERROR);
+  }
+
   try {
     /*
      * Process command line arguments.
@@ -386,8 +406,8 @@ int main(int argc, const char **argv) {
     while(!wants_exit) {
       string input = "";
 
-      while ((cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
-
+      while (!wants_exit
+             && (cmd_str = readline("pg_backup_ctl++> ")) != NULL) {
 
         if (strcmp(cmd_str, "quit") == 0) {
           wants_exit = true;
@@ -410,6 +430,7 @@ int main(int argc, const char **argv) {
          */
           input += string(cmd_str)+" ";
         }
+
       }
 
       /*
@@ -428,8 +449,10 @@ int main(int argc, const char **argv) {
        * is already set by signal.
        */
 
-      if (wants_exit)
+      if (wants_exit) {
+        cout << "quit" << endl;
         break;
+      }
 
       handle_interactive(input, &args);
       free(cmd_str);

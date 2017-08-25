@@ -38,7 +38,7 @@ namespace credativ {
     bool   isOpen;
   public:
     BackupCatalog();
-    BackupCatalog(std::string sqliteDB, std::string archiveDir);
+    BackupCatalog(std::string sqliteDB);
     virtual ~BackupCatalog();
 
     /*
@@ -113,6 +113,15 @@ namespace credativ {
                                 Range range);
 
     /*
+     * Bind affected procs attribute values to the given
+     * SQLite3 stmt handle.
+     */
+    int SQLbindProcsAttributes(std::shared_ptr<CatalogProc> procInfo,
+                               std::vector<int> affectedAttributes,
+                               sqlite3_stmt *stmt,
+                               Range range);
+
+    /*
      * Bind affected archive attribute values to the given SQLite3
      * stmt handle.
      */
@@ -170,11 +179,6 @@ namespace credativ {
      * case the full path to the sqlite3 database.
      */
     virtual std::string name();
-
-    /*
-     * Set the archive directory.
-     */
-    virtual void setArchiveDir(std::string archiveDir);
 
     /*
      * Returns true wether the catalog is available.
@@ -264,6 +268,24 @@ namespace credativ {
     virtual void close();
 
     /*
+     * Register the specified process handle in the catalog database.
+     */
+    virtual void registerProc(std::shared_ptr<CatalogProc> procInfo);
+
+    /*
+     * Unregister a process handle from the catalog database.
+     */
+    virtual void unregisterProc(int pid, int archive_id);
+
+    /*
+     * Update a catalog process handle in the database.
+     */
+    virtual void updateProc(std::shared_ptr<CatalogProc> procInfo,
+                            std::vector<int> affectedAttributes,
+                            int pid,
+                            int archive_id);
+
+    /*
      * Register a stream in the catalog.
      *
      * The streamident object reference is initialized with the
@@ -284,8 +306,24 @@ namespace credativ {
      */
     std::shared_ptr<StreamIdentification>
        fetchStreamData(sqlite3_stmt *stmt,
-                       std::string archive_name,
                        std::vector<int> affectedRows);
+
+    /*
+     * Fetch catalog process information from
+     * statement handle.
+     */
+    std::shared_ptr<CatalogProc> fetchCatalogProcData(sqlite3_stmt *stmt,
+                                                      std::vector<int> affectedAttributes);
+
+    /*
+     * Returns catalog process handle information, if any.
+     * The returned CatalogProc handle is initialized with
+     * PID -1 and archive id -1 in case no process handle
+     * exists for the specified archive id.
+     *
+     * type must either be "launcher" or "archive streaming worker".
+     */
+    virtual std::shared_ptr<CatalogProc> getProc(int archive_id, std::string type);
 
     /*
      * Get a list of streams for the specified archive.

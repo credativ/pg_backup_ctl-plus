@@ -50,19 +50,25 @@ void StartLauncherCatalogCommand::execute(bool flag) {
     throw CArchiveIssue("could not execute catalog command: no catalog");
   }
 
-  job_info.catalogName = this->catalog->name();
-
   /*
    * Detach from current interactive terminal, if requested (default).
    */
-  job_info.detach       = this->detach;
+  job_info.detach = this->detach;
 
   /*
    * Close standard file descriptors (STDOUT, STDIN, STDERR, ...), otherwise
    * background process will clobber our interactive terminal.
    */
-  job_info.close_std_fd = true;
+  job_info.close_std_fd = false;
 
+  /*
+   * Assign catalog descriptor handle to the job info.
+   */
+  job_info.cmdHandle = std::make_shared<BackgroundWorkerCommandHandle>(this->catalog);
+
+  /*
+   * Finally launch the background worker.
+   */
   pid = launch(job_info);
 
 
@@ -1077,6 +1083,10 @@ CreateArchiveCatalogCommand::CreateArchiveCatalogCommand(std::shared_ptr<Catalog
 
 }
 
+std::shared_ptr<BackupCatalog> BaseCatalogCommand::getCatalog() {
+  return this->catalog;
+}
+
 void BaseCatalogCommand::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
   this->catalog = catalog;
 }
@@ -1158,3 +1168,25 @@ void CreateArchiveCatalogCommand::execute(bool existsOk) {
 
 }
 
+BackgroundWorkerCommandHandle::BackgroundWorkerCommandHandle(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = BACKGROUND_WORKER_COMMAND;
+  this->subTag = EMPTY_DESCR;
+  this->catalog = catalog;
+}
+
+BackgroundWorkerCommandHandle::BackgroundWorkerCommandHandle(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+  /*
+   * Rewrite identity command tag, subTag transports
+   * the encapsulated catalog command.
+   */
+  this->subTag = this->tag;
+  this->tag = BACKGROUND_WORKER_COMMAND;
+
+}
+
+void BackgroundWorkerCommandHandle::execute(bool noop) {
+
+}

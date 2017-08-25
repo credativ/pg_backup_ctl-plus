@@ -20,6 +20,7 @@ namespace credativ {
     virtual ~BaseCatalogCommand();
 
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
+    virtual std::shared_ptr<BackupCatalog> getCatalog();
   };
 
   class StartLauncherCatalogCommand : public BaseCatalogCommand {
@@ -179,8 +180,27 @@ namespace credativ {
     DropBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     DropBackupProfileCatalogCommand();
 
-    void execute(bool noop);
+    virtual void execute(bool noop);
   };
-}
 
+  /*
+   * Implements a dummy command to be passed to background workers.
+   *
+   * This commmand is a wrapper around commands, that
+   * are elected to be executed in a background worker.
+   *
+   * It doesn't do very much for the moment.
+   */
+  class BackgroundWorkerCommandHandle : public BaseCatalogCommand {
+  protected:
+    CatalogTag subTag = EMPTY_DESCR;
+  public:
+    BackgroundWorkerCommandHandle(std::shared_ptr<BackupCatalog> catalog);
+    BackgroundWorkerCommandHandle(std::shared_ptr<CatalogDescr> descr);
+    BackgroundWorkerCommandHandle();
+
+    virtual void execute(bool noop);
+  };
+
+}
 #endif
