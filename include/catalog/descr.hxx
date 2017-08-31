@@ -64,13 +64,34 @@ namespace credativ {
   protected:
     std::vector<int> affectedAttributes;
   public:
+    PushableCols();
+    ~PushableCols();
+
     virtual void pushAffectedAttribute(int colId);
     virtual std::vector<int> getAffectedAttributes();
     virtual void setAffectedAttributes(std::vector<int> affectedAttributes);
     virtual void clearAffectedAttributes();
   };
 
-    /*
+  /*
+   * Represents a catalog database connection.
+   */
+  class ConnectionDescr : public PushableCols {
+  public:
+    static constexpr const char *CONNECTION_TYPE_BASEBACKUP = "basebackup";
+    static constexpr const char *CONNECTION_TYPE_STREAMER = "streamer";
+    static constexpr const char *CONNECTION_TYPE_UNKNOWN = "unknown";
+
+    int archive_id = -1;
+    std::string type;
+    std::string pghost = "";
+    int    pgport = -1;
+    std::string pguser = "";
+    std::string pgdatabase = "";
+    std::string dsn = "";
+  };
+
+  /*
    * Represents an identified streaming connection.
    */
   class StreamIdentification : public PushableCols {
@@ -155,10 +176,12 @@ namespace credativ {
     std::string label;
     bool compression = false;
     std::string directory;
-    std::string pghost = "";
-    int    pgport = -1;
-    std::string pguser = "";
-    std::string pgdatabase = "";
+    // std::string pghost = "";
+    // int    pgport = -1;
+    // std::string pguser = "";
+    // std::string pgdatabase = "";
+    // std::string dsn;
+    std::shared_ptr<ConnectionDescr> coninfo = std::make_shared<ConnectionDescr>();
 
     /*
      * Properties for job control
@@ -201,7 +224,14 @@ namespace credativ {
 
     void setProfileAffectedAttribute(int const& colId);
 
+    void setDSN(std::string const& dsn);
+
+    void setArchiveId(int const& archive_id);
+
+    void setConnectionType(std::string const& type);
+
     void setJobDetachMode(bool const& detach);
+
     CatalogDescr& operator=(const CatalogDescr& source);
   };
 

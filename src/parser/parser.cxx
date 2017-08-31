@@ -143,14 +143,17 @@ namespace credativ {
           > no_case[ lexeme[ lit("SET") ] ]
           ^ directory
           [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
-          ^ hostname
-          [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-          ^ database
-          [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-          ^ username
-          [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-          ^ portnumber
-          [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ];
+          ^ ( ( hostname
+                [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                ^ database
+                [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                ^ username
+                [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                ^ portnumber
+                [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+              |
+              ( no_case[ lexeme[ lit("DSN") ]] > '=' > dsn_connection_string
+                [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
 
         /*
          * START LAUNCHER command
@@ -225,19 +228,27 @@ namespace credativ {
           > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
 
-          > no_case[ lexeme[ lit("PARAMS") ] ]
+          > ( no_case[ lexeme[ lit("PARAMS") ] ]
 
-          > directory
-          [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
-          > hostname
-          [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-          > database
-          [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-          > username
-          [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-          > portnumber
-          [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ];
+              > directory
+              [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
+              > ( ( hostname
+                  [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                  > database
+                  [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                  > username
+                  [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                  > portnumber
+                  [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+                  /* alternative DSN syntax */
+                  | ( no_case[ lexeme[ lit("DSN") ] ]
+                      > '='
+                      > dsn_connection_string
+                      [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1)] )
+                  ) /* hostname / DSN alternative */
+              );
 
+        dsn_connection_string = '"' >> no_skip[+(char_ - ('"'))] >> '"';
 
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]] > no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
@@ -391,6 +402,7 @@ namespace credativ {
         portnumber.name("port number");
         directory_string.name("directory path");
         directory.name("DIRECTORY=path");
+        dsn_connection_string.name("DSN=connection parameters key value pair");
         backup_profile_opts.name("backup profile parameters");
         with_profile.name("backup profile name");
       }
@@ -418,6 +430,7 @@ namespace credativ {
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
                           database,
                           directory,
+                          dsn_connection_string,
                           username,
                           portnumber,
                           profile_wal_option,
@@ -629,11 +642,11 @@ void PGBackupCtlParser::parseLine(std::string in) {
 #ifdef __DEBUG__
     cout << "command " << cmd.tag << endl;
     cout << "parsed ident " << cmd.archive_name << endl;
-    cout << "parsed hostname " << cmd.pghost << endl;
-    cout << "parsed database " << cmd.pgdatabase << endl;
-    cout << "parsed username " << cmd.pguser << endl;
+    cout << "parsed hostname " << cmd.coninfo->pghost << endl;
+    cout << "parsed database " << cmd.coninfo->pgdatabase << endl;
+    cout << "parsed username " << cmd.coninfo->pguser << endl;
     cout << "parsed directory " << cmd.directory << endl;
-    cout << "parsed portnumber " << cmd.pgport << endl;
+    cout << "parsed portnumber " << cmd.coninfo->pgport << endl;
 #endif
 
   }

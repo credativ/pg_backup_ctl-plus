@@ -22,13 +22,19 @@ std::vector<std::string> BackupCatalog::archiveCatalogCols =
     "id",
     "name",
     "directory",
-    "compression",
+    "compression"
+  };
+
+std::vector<std::string> BackupCatalog::connectionsCatalogCols =
+  {
+    "archive_id",
+    "type",
+    "dsn",
     "pghost",
     "pgport",
     "pguser",
     "pgdatabase"
   };
-
 
 std::vector<std::string> BackupCatalog::backupCatalogCols =
   {
@@ -92,6 +98,9 @@ std::vector<std::string>BackupCatalog::procsCatalogCols =
 const char * STREAM_BASEBACKUP = "BASEBACKUP";
 const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
 
+PushableCols::PushableCols() {}
+PushableCols::~PushableCols() {}
+
 void PushableCols::pushAffectedAttribute(int colId) {
 
   this->affectedAttributes.push_back(colId);
@@ -144,10 +153,12 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   this->label = source.label;
   this->compression = source.compression;
   this->directory = source.directory;
-  this->pghost = source.pghost;
-  this->pgport = source.pgport;
-  this->pguser = source.pguser;
-  this->pgdatabase = source.pgdatabase;
+  this->coninfo->pghost = source.coninfo->pghost;
+  this->coninfo->pgport = source.coninfo->pgport;
+  this->coninfo->pguser = source.coninfo->pguser;
+  this->coninfo->pgdatabase = source.coninfo->pgdatabase;
+  this->coninfo->dsn = source.coninfo->dsn;
+  this->coninfo->type = source.coninfo->type;
 
 }
 
@@ -199,12 +210,23 @@ void CatalogDescr::setProfileName(std::string const& profile_name) {
 }
 
 void CatalogDescr::setDbName(std::string const& db_name) {
-  this->pgdatabase = db_name;
+  this->coninfo->pgdatabase = db_name;
   this->pushAffectedAttribute(SQL_ARCHIVE_PGDATABASE_ATTNO);
 }
 
 void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
   this->tag = tag;
+
+  switch(tag) {
+  case CREATE_ARCHIVE:
+  case ALTER_ARCHIVE:
+  case DROP_ARCHIVE:
+    this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_BASEBACKUP;
+    break;
+  default:
+    this->coninfo->type = ""; /* force errors later */
+  }
+
 }
 
 void CatalogDescr::setIdent(std::string const& ident) {
@@ -212,23 +234,77 @@ void CatalogDescr::setIdent(std::string const& ident) {
   this->pushAffectedAttribute(SQL_ARCHIVE_NAME_ATTNO);
 }
 
+void CatalogDescr::setConnectionType(std::string const& type) {
+  this->coninfo->type = type;
+  this->coninfo->pushAffectedAttribute(SQL_CON_TYPE_ATTNO);
+}
+
 void CatalogDescr::setHostname(std::string const& hostname) {
-  this->pghost = hostname;
-  this->pushAffectedAttribute(SQL_ARCHIVE_PGHOST_ATTNO);
+  this->coninfo->pghost = hostname;
+  this->coninfo->pushAffectedAttribute(SQL_CON_PGHOST_ATTNO);
 }
 
 void CatalogDescr::setUsername(std::string const& username) {
-  this->pguser = username;
-  this->pushAffectedAttribute(SQL_ARCHIVE_PGUSER_ATTNO);
+  this->coninfo->pguser = username;
+  this->coninfo->pushAffectedAttribute(SQL_CON_PGUSER_ATTNO);
 }
 
 void CatalogDescr::setPort(std::string const& portNumber) {
-  this->pgport = CPGBackupCtlBase::strToInt(portNumber);
-  this->pushAffectedAttribute(SQL_ARCHIVE_PGPORT_ATTNO);
+  this->coninfo->pgport = CPGBackupCtlBase::strToInt(portNumber);
+  this->coninfo->pushAffectedAttribute(SQL_CON_PGPORT_ATTNO);
 }
 
 void CatalogDescr::setDirectory(std::string const& directory) {
   this->directory = directory;
+}
+
+void CatalogDescr::setArchiveId(int const& archive_id) {
+  this->id = archive_id;
+  this->coninfo->archive_id = this->id;
+
+  this->pushAffectedAttribute(SQL_ARCHIVE_ID_ATTNO);
+  this->coninfo->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
+}
+
+void CatalogDescr::setDSN(std::string const& dsn) {
+
+  std::vector<int> attrs;
+
+  this->coninfo->dsn = dsn;
+
+  /*
+   * DSN assignment causes to invalidate any other
+   * connection parameter assigned directly.
+   */
+  this->coninfo->pghost = "";
+  this->coninfo->pgport = -1;
+  this->coninfo->pguser = "";
+  this->coninfo->pgdatabase = "";
+
+  /*
+   * NOTE: we also need to remove them from the attributes list.
+   */
+
+  /*
+   * Copy over any element not referencing direct
+   * connection settings.
+   */
+  for(auto& colId : this->coninfo->getAffectedAttributes()) {
+
+    switch(colId) {
+    case SQL_CON_ARCHIVE_ID_ATTNO:
+    case SQL_CON_TYPE_ATTNO:
+      /* fall through until here */
+      attrs.push_back(colId);
+      break;
+    default:
+      break;
+    }
+  }
+
+  attrs.push_back(SQL_CON_DSN_ATTNO);
+  this->coninfo->setAffectedAttributes(attrs);
+
 }
 
 BackupCatalog::BackupCatalog() {
@@ -367,6 +443,58 @@ std::shared_ptr<CatalogProc> BackupCatalog::fetchCatalogProcData(sqlite3_stmt *s
   }
 
   return procInfo;
+}
+
+void BackupCatalog::fetchConnectionData(sqlite3_stmt *stmt,
+                                        std::shared_ptr<ConnectionDescr> conDescr) {
+  int currindex = 0; /* SQLite3 column index starts at zero! */
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot fetch connection information from catalog: invalid statement handle");
+
+  if (conDescr == nullptr)
+    throw CCatalogIssue("cannot fetch connection information from catalog: invalid connection handle");
+
+  for (auto& colId : conDescr->getAffectedAttributes()) {
+    switch(colId) {
+
+    case SQL_CON_ARCHIVE_ID_ATTNO:
+      conDescr->archive_id = sqlite3_column_int(stmt, currindex);
+      break;
+
+    case SQL_CON_TYPE_ATTNO:
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        conDescr->type = (char *) sqlite3_column_text(stmt, currindex);
+      break;
+    case SQL_CON_PGHOST_ATTNO:
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        conDescr->pghost = (char *) sqlite3_column_text(stmt, currindex);
+      break;
+    case SQL_CON_PGPORT_ATTNO:
+      conDescr->pgport = sqlite3_column_int(stmt, currindex);
+      break;
+    case SQL_CON_PGUSER_ATTNO:
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        conDescr->pguser = (char *) sqlite3_column_text(stmt, currindex);
+      break;
+    case SQL_CON_PGDATABASE_ATTNO:
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        conDescr->pgdatabase = (char *) sqlite3_column_text(stmt, currindex);
+      break;
+    case SQL_CON_DSN_ATTNO:
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL) {
+        conDescr->dsn = (char *) sqlite3_column_text(stmt, currindex);
+        cout << "fetch DSN " << conDescr->dsn << endl;
+      }
+      break;
+    default:
+      /* oops, should we throw a CCatalogIssue exception ? */
+      break;
+    }
+
+    currindex++;
+  }
+
 }
 
 std::shared_ptr<StreamIdentification> BackupCatalog::fetchStreamData(sqlite3_stmt *stmt,
@@ -533,18 +661,21 @@ shared_ptr<CatalogDescr> BackupCatalog::fetchArchiveDataIntoDescr(sqlite3_stmt *
   descr->compression = sqlite3_column_int(stmt, SQL_ARCHIVE_COMPRESSION_ATTNO);
 
   if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGHOST_ATTNO) != SQLITE_NULL)
-    descr->pghost = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO);
+    descr->coninfo->pghost = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGHOST_ATTNO);
 
-  descr->pgport = sqlite3_column_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO);
+  descr->coninfo->pgport = sqlite3_column_int(stmt, SQL_ARCHIVE_PGPORT_ATTNO);
 
   if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGUSER_ATTNO) != SQLITE_NULL)
-    descr->pguser = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO);
+    descr->coninfo->pguser = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGUSER_ATTNO);
 
   if (sqlite3_column_type(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO) != SQLITE_NULL)
-    descr->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
+    descr->coninfo->pgdatabase = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_PGDATABASE_ATTNO);
 
   if (sqlite3_column_type(stmt, SQL_ARCHIVE_NAME_ATTNO) != SQLITE_NULL)
     descr->archive_name = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_NAME_ATTNO);
+
+  if (sqlite3_column_type(stmt, SQL_ARCHIVE_DSN_ATTNO) != SQLITE_NULL)
+    descr->coninfo->dsn = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_DSN_ATTNO);
 
   return descr;
 
@@ -625,8 +756,8 @@ shared_ptr<CatalogDescr> BackupCatalog::exists(std::string directory) {
 
   if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
     ostringstream oss;
-    sqlite3_finalize(stmt);
     oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
     throw CCatalogIssue(oss.str());
   }
 
@@ -749,7 +880,7 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
   "a.id, "
   "a.name, "
   "a.directory, "
-  "a.pghost AS host, "
+  "CASE WHEN length(COALESCE(c.pghost, '')) > 0 THEN c.pghost ELSE c.dsn END AS pghost, "
   "(SELECT SUM(spcsize) FROM backup_tablespaces bt "
                             "JOIN backup b ON b.id = bt.backup_id "
                             "JOIN archive a2 ON a.id = b.archive_id "
@@ -764,9 +895,9 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
    "backup b "
    "WHERE b.archive_id = a.id) AS avg_duration "
 "FROM "
-  "archive a "
+  "archive a JOIN connections c ON c.archive_id = a.id "
 "WHERE "
-  "a.name = ?1;";
+  "a.name = ?1 AND c.type = 'basebackup';";
 
   /*
    * Prepare the query...
@@ -956,6 +1087,16 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
   }
 
   sqlite3_finalize(stmt);
+
+  /*
+   * Also update connection info, but only
+   * if affected attributes are set accordingly.
+   */
+  if (descr->coninfo->getAffectedAttributes().size() > 0) {
+    this->updateCatalogConnection(descr->coninfo,
+                                  descr->archive_name,
+                                  ConnectionDescr::CONNECTION_TYPE_BASEBACKUP);
+  }
 }
 
 std::string BackupCatalog::mapAttributeId(int catalogEntity,
@@ -982,6 +1123,9 @@ std::string BackupCatalog::mapAttributeId(int catalogEntity,
     break;
   case SQL_PROCS_ENTITY:
     result = BackupCatalog::procsCatalogCols[colId];
+    break;
+  case SQL_CON_ENTITY:
+    result = BackupCatalog::connectionsCatalogCols[colId];
     break;
   default:
     {
@@ -1227,9 +1371,12 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr) {
   if (!this->available())
     throw CCatalogIssue("catalog database not opened");
 
+  if (descr->coninfo->type != ConnectionDescr::CONNECTION_TYPE_BASEBACKUP)
+    throw CCatalogIssue("archives can create connections of type basebackup only");
+
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO archive(name, directory, compression, pghost, pgport, pguser, pgdatabase) "
-                          "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                          "INSERT INTO archive(name, directory, compression) "
+                          "VALUES (?1, ?2, ?3);",
                           -1,
                           &stmt,
                           NULL);
@@ -1239,14 +1386,15 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr) {
                     descr->directory.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 3,
                    descr->compression);
-  sqlite3_bind_text(stmt, 4,
-                    descr->pghost.c_str(), -1 , SQLITE_STATIC);
-  sqlite3_bind_int(stmt, 5,
-                   descr->pgport);
-  sqlite3_bind_text(stmt, 6,
-                    descr->pguser.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 7,
-                    descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
+
+  // sqlite3_bind_text(stmt, 4,
+  //                   descr->pghost.c_str(), -1 , SQLITE_STATIC);
+  // sqlite3_bind_int(stmt, 5,
+  //                  descr->pgport);
+  // sqlite3_bind_text(stmt, 6,
+  //                   descr->pguser.c_str(), -1, SQLITE_STATIC);
+  // sqlite3_bind_text(stmt, 7,
+  //                   descr->pgdatabase.c_str(), -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
 
@@ -1259,7 +1407,13 @@ void BackupCatalog::createArchive(shared_ptr<CatalogDescr> descr) {
     throw CCatalogIssue(oss.str());
   }
 
+  /*
+   * Initialize the CatalogDescr with its
+   * new ID.
+   */
+  descr->setArchiveId(sqlite3_last_insert_rowid(this->db_handle));
   sqlite3_finalize(stmt);
+
 }
 
 int BackupCatalog::SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTablespaceDescr> tblspcDescr,
@@ -1314,6 +1468,79 @@ int BackupCatalog::SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTable
     }
 
     result++;
+  }
+
+  return result;
+}
+
+int BackupCatalog::SQLbindConnectionAttributes(std::shared_ptr<ConnectionDescr> conDescr,
+                                               std::vector<int> affectedAttributes,
+                                               sqlite3_stmt *stmt,
+                                               Range range) {
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind updated attributes: invalid statement handle");
+
+  for (auto& colId : affectedAttributes) {
+    /*
+     * Stop, if result has reached end of range.
+     */
+    if (result > range.end())
+      break;
+
+    switch(colId) {
+
+    case SQL_CON_ARCHIVE_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, conDescr->archive_id);
+      break;
+
+    case SQL_CON_TYPE_ATTNO:
+      /* type cannot be null */
+      sqlite3_bind_text(stmt, result,
+                        conDescr->type.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_CON_PGHOST_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        conDescr->pghost.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_CON_PGPORT_ATTNO:
+      sqlite3_bind_int(stmt,
+                       result,
+                       conDescr->pgport);
+      break;
+
+    case SQL_CON_PGUSER_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        conDescr->pguser.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_CON_PGDATABASE_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        conDescr->pgdatabase.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    case SQL_CON_DSN_ATTNO:
+      cout << "bound DSN TO id " << result << endl;
+      sqlite3_bind_text(stmt, result,
+                        conDescr->dsn.c_str(),
+                        -1, SQLITE_STATIC);
+      break;
+
+    default:
+      {
+        std::ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+    result ++;
   }
 
   return result;
@@ -1581,24 +1808,24 @@ int BackupCatalog::SQLbindArchiveAttributes(shared_ptr<CatalogDescr> descr,
 
     case SQL_ARCHIVE_PGHOST_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        descr->pghost.c_str(),
+                        descr->coninfo->pghost.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_ARCHIVE_PGPORT_ATTNO:
       sqlite3_bind_int(stmt, result,
-                       descr->pgport);
+                       descr->coninfo->pgport);
       break;
 
     case SQL_ARCHIVE_PGUSER_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        descr->pguser.c_str(),
+                        descr->coninfo->pguser.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_ARCHIVE_PGDATABASE_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        descr->pgdatabase.c_str(),
+                        descr->coninfo->pgdatabase.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
@@ -1646,6 +1873,35 @@ std::string BackupCatalog::affectedColumnsToString(std::vector<int> affectedAttr
   return result.str();
 }
 
+std::string BackupCatalog::SQLmakePlaceholderList(std::vector<int> affectedAttributes) {
+
+  ostringstream result;
+
+  for(int i = 1; i <= affectedAttributes.size(); i++) {
+    result << "?" << i;
+
+    if (i < affectedAttributes.size())
+      result << ", ";
+  }
+
+  return result.str();
+}
+
+std::string BackupCatalog::affectedColumnsToString(int entity,
+                                                   std::vector<int> affectedAttributes) {
+
+  ostringstream result;
+
+  for (int colId = 0; colId < affectedAttributes.size(); colId++) {
+    result << this->mapAttributeId(entity, affectedAttributes[colId]);
+
+    if (colId < (affectedAttributes.size() -1))
+      result << ", ";
+  }
+  return result.str();
+
+}
+
 std::string BackupCatalog::SQLgetFilterForArchive(std::shared_ptr<CatalogDescr> descr,
                                                   std::vector<int> affectedAttributes,
                                                   Range rangeBindID,
@@ -1685,8 +1941,10 @@ std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArch
   ostringstream query;
   Range range(1, affectedAttributes.size());
 
-  query << "SELECT id, name, directory, compression, pghost, pgport, pguser, pgdatabase "
-        << " FROM archive WHERE "
+  query << "SELECT a.id, a.name, a.directory, a.compression, c.pghost, "
+        << "c.pgport, c.pguser, c.pgdatabase, c.dsn "
+        << " FROM archive a JOIN connections c ON c.archive_id = a.id"
+        << " WHERE c.type = 'basebackup' AND "
         << this->SQLgetFilterForArchive(descr,
                                         affectedAttributes,
                                         range,
@@ -1768,8 +2026,10 @@ shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArchiveLi
    * Build the query.
    */
   std::ostringstream query;
-  query << "SELECT id, name, directory, compression, pghost, pgport, pguser, pgdatabase "
-        << "FROM archive ORDER BY name";
+  query << "SELECT a.id, a.name, a.directory, a.compression, c.pghost, c.pgport, "
+        << "c.pguser, c.pgdatabase, c.dsn "
+        << "FROM archive a JOIN connections c ON c.archive_id = a.id "
+        << "WHERE c.type = 'basebackup' ORDER BY name";
 
   int rc = sqlite3_prepare_v2(this->db_handle,
                               query.str().c_str(),
@@ -2414,7 +2674,7 @@ void BackupCatalog::updateProc(std::shared_ptr<CatalogProc> procInfo,
    * Assign bind variables. Please note that we rely
    * on the order of affectedAttributes to match the
    * previously formatted UPDATE SQL string. Note that
-   * we must not recognized the bind values for the 
+   * we must not recognized the bind values for the
    * WHERE condition here, since we don't want to copy
    * around the affectedAttributes vector. Thus, we do
    * it manually afterwards.
@@ -2590,6 +2850,279 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
   sqlite3_finalize(stmt);
 }
 
+void BackupCatalog::getCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
+                                         int archive_id,
+                                         std::string type) {
+  sqlite3_stmt *stmt;
+  int rc;
+  ostringstream query;
+
+  /*
+   * Since we scripple directly on the specified
+   * pointer, make sure it's initialized.
+   */
+  if (conDescr == nullptr)
+    throw CCatalogIssue("could not get connection info: result pointer is not initialized");
+
+  query << "SELECT "
+        << this->affectedColumnsToString(SQL_CON_ENTITY,
+                                         conDescr->getAffectedAttributes())
+        << " FROM connections WHERE archive_id = ?1 AND type = ?2;";
+
+#ifdef __DEBUG__
+  cout << "generated SQL: " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to get connection: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind WHERE clause values...
+   */
+  sqlite3_bind_int(stmt, 1, archive_id);
+  sqlite3_bind_text(stmt, 2, type.c_str(), -1, SQLITE_STATIC);
+
+  /* ... execute SELECT */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "unexpected result in catalog query: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Mark result descriptor empty.
+   */
+  conDescr->archive_id = -1;
+  conDescr->type = ConnectionDescr::CONNECTION_TYPE_UNKNOWN;
+
+  /*
+   * Empty result set or single row expected.
+   */
+  try {
+    while (rc == SQLITE_ROW && rc != SQLITE_DONE) {
+      this->fetchConnectionData(stmt, conDescr);
+      break;
+    }
+  } catch(CCatalogIssue& e) {
+    sqlite3_finalize(stmt);
+    throw e;
+  }
+
+  sqlite3_finalize(stmt);
+}
+
+void
+BackupCatalog::createCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr) {
+
+  sqlite3_stmt *stmt;
+  std::ostringstream insert;
+  int rc;
+
+  if (!this-!available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  insert << "INSERT INTO connections("
+         << this->affectedColumnsToString(SQL_CON_ENTITY,
+                                          conDescr->getAffectedAttributes())
+         << ") VALUES ("
+         << this->SQLmakePlaceholderList(conDescr->getAffectedAttributes())
+         << ");";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          insert.str().c_str(),
+                          -1, &stmt, NULL);
+
+#ifdef __DEBUG__
+  cerr << "Generated SQL: " << insert.str() << endl;
+#endif
+
+  if (rc != SQLITE_OK) {
+    std::ostringstream oss;
+    oss << "could not prepare query for connection descr: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  this->SQLbindConnectionAttributes(conDescr,
+                                    conDescr->getAffectedAttributes(),
+                                    stmt,
+                                    Range(1, conDescr->getAffectedAttributes().size()));
+
+  /*
+   * Execute the prepared statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    std::ostringstream oss;
+    oss << "error creating database connection entry: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
+
+}
+
+void BackupCatalog::updateCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
+                                            std::string archive_name,
+                                            std::string type) {
+  sqlite3_stmt *stmt;
+  ostringstream updateSQL;
+  int rc;
+  int boundCols;
+  std::vector<int> attrs;
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  attrs = conDescr->getAffectedAttributes();
+  updateSQL << "UPDATE connections SET ";
+
+  /*
+   * generate column list being updated.
+   */
+  for (boundCols = 0; boundCols < attrs.size(); boundCols++) {
+
+    /*
+     * boundCols must start at index 1!
+     */
+    updateSQL << BackupCatalog::SQLgetUpdateColumnTarget(SQL_CON_ENTITY,
+                                                         attrs[boundCols])
+              << (boundCols + 1);
+
+    if (boundCols < attrs.size() - 1)
+      updateSQL << ", ";
+  }
+
+  /*
+   * ...attach WHERE clause.
+   */
+  updateSQL << " WHERE archive_id = (SELECT id FROM archive WHERE name = ?"
+            << (++boundCols)
+            << ") AND type = ?" << (++boundCols)
+            << ";";
+
+  /*
+   * ... prepare the query.
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          updateSQL.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to update connection: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind attributes, take care for the additional
+   * WHERE condition values!
+   */
+  this->SQLbindConnectionAttributes(conDescr,
+                                    attrs,
+                                    stmt,
+                                    Range(1, boundCols));
+  sqlite3_bind_text(stmt,
+                    (boundCols - 1),
+                    archive_name.c_str(),
+                    -1,
+                    SQLITE_STATIC);
+
+  sqlite3_bind_text(stmt,
+                    boundCols,
+                    type.c_str(),
+                    -1,
+                    SQLITE_STATIC);
+
+  /*
+   * Execute the query.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "error updating connection in catalog database: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* we're done */
+  sqlite3_finalize(stmt);
+}
+
+void
+BackupCatalog::dropCatalogConnection(std::string archive_name, std::string type) {
+
+  sqlite3_stmt *stmt;
+  ostringstream delete_query;
+  int rc;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  delete_query << "DELETE FROM connections "
+    "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) "
+    "AND type = ?2;";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          delete_query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to drop connection: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind statement variables
+   */
+  sqlite3_bind_text(stmt, 1, archive_name.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, type.c_str(), -1, SQLITE_STATIC);
+
+  /*
+   * Execute the statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "could not delete connection: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
+
+}
+
 std::vector<std::shared_ptr<StreamIdentification>>
 BackupCatalog::getStreams(std::string archive_name) {
 
@@ -2721,6 +3254,7 @@ void BackupCatalog::checkCatalog() {
 
 void BackupCatalog::open_rw() {
   int rc;
+  char *errmsg;
 
   rc = sqlite3_open(this->sqliteDB.c_str(), &(this->db_handle));
   if(rc) {
@@ -2730,6 +3264,19 @@ void BackupCatalog::open_rw() {
      */
     oss << "cannot open catalog: " << sqlite3_errmsg(this->db_handle);
     sqlite3_close(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  rc = sqlite3_exec(this->db_handle,
+                    "PRAGMA foreign_keys=ON;",
+                    NULL,
+                    NULL,
+                    &errmsg);
+
+  if (errmsg != NULL) {
+    ostringstream oss;
+    oss << "error setting SQLite Pragma: " << errmsg;
+    sqlite3_free(errmsg);
     throw CCatalogIssue(oss.str());
   }
 

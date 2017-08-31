@@ -2,11 +2,19 @@ CREATE TABLE archive(
        id integer primary key,
        name text not null unique,
        directory text not null unique,
-       compression    integer,
+       compression    integer
+);
+
+CREATE TABLE connections(
+       archive_id integer NOT NULL,
+       type       text NOT NULL,
+       dsn        text,
        pghost        text,
        pgport        integer,
        pguser        text,
-       pgdatabase    text
+       pgdatabase    text,
+       PRIMARY KEY(archive_id, type),
+       FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
 );
 
 CREATE TABLE backup(

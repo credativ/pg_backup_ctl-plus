@@ -15,10 +15,12 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->label        = source.label;
   this->compression  = source.compression;
   this->directory    = source.directory;
-  this->pghost       = source.pghost;
-  this->pgport       = source.pgport;
-  this->pguser       = source.pguser;
-  this->pgdatabase   = source.pgdatabase;
+  this->coninfo->type         = source.coninfo->type;
+  this->coninfo->pghost       = source.coninfo->pghost;
+  this->coninfo->pgport       = source.coninfo->pgport;
+  this->coninfo->pguser       = source.coninfo->pguser;
+  this->coninfo->pgdatabase   = source.coninfo->pgdatabase;
+  this->coninfo->dsn          = source.coninfo->dsn;
   this->backup_profile = source.getBackupProfileDescr();
 
   /*
@@ -27,6 +29,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->detach = source.detach;
 
   this->setAffectedAttributes(source.getAffectedAttributes());
+  this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
 
 }
 
@@ -138,7 +141,7 @@ void ListBackupCatalogCommand::execute(bool flag) {
 
     this->catalog->commitTransaction();
 
-  } catch (exception &e) {
+  } catch (CPGBackupCtlFailure &e) {
     this->catalog->rollbackTransaction();
     throw e; /* don't hide exception from caller */
   }
@@ -189,6 +192,26 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * its descriptor.
      */
     temp_descr = this->catalog->existsByName(this->archive_name);
+
+    /*
+     * existsByName() doesn't retrieve the archive
+     * database connection specification into our
+     * catalog descriptor, we need to do it ourselves.
+     */
+    if (temp_descr->id >= 0) {
+
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_TYPE_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_DSN_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGHOST_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGPORT_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGUSER_ATTNO);
+      temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGDATABASE_ATTNO);
+
+      this->catalog->getCatalogConnection(temp_descr->coninfo,
+                                          temp_descr->id,
+                                          ConnectionDescr::CONNECTION_TYPE_BASEBACKUP);
+    }
     this->catalog->commitTransaction();
 
   } catch(CPGBackupCtlFailure& e) {
@@ -297,13 +320,6 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     backupHandle->setCompression(backupProfile->compress_type);
 
     /*
-     * Prepare backup handler. Should successfully create
-     * target streaming directory...
-     */
-    backupHandle->initialize();
-    backupHandle->create();
-
-    /*
      * Get connection to the PostgreSQL instance.
      */
     pgstream.connect();
@@ -350,6 +366,13 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     this->catalog->startTransaction();
 
     try {
+
+      /*
+       * Prepare backup handler. Should successfully create
+       * target streaming directory...
+       */
+      backupHandle->initialize();
+      backupHandle->create();
 
       basebackupDescr->archive_id = temp_descr->id;
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
@@ -909,10 +932,11 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
       for (auto& descr: *archiveList) {
         cout << boost::format("%-20s\t%-30s") % "NAME" % descr->archive_name << endl;
         cout << boost::format("%-20s\t%-30s") % "DIRECTORY" % descr->directory << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGHOST" % descr->pghost << endl;
-        cout << boost::format("%-20s\t%-30d") % "PGPORT" % descr->pgport << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGDATABASE" % descr->pgdatabase << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGUSER" % descr->pguser << endl;
+        cout << boost::format("%-20s\t%-30s") % "PGHOST" % descr->coninfo->pghost << endl;
+        cout << boost::format("%-20s\t%-30d") % "PGPORT" % descr->coninfo->pgport << endl;
+        cout << boost::format("%-20s\t%-30s") % "PGDATABASE" % descr->coninfo->pgdatabase << endl;
+        cout << boost::format("%-20s\t%-30s") % "PGUSER" % descr->coninfo->pguser << endl;
+        cout << boost::format("%-20s\t%-30s") % "DSN" % descr->coninfo->dsn << endl;
         cout << boost::format("%-20s\t%-30s") % "COMPRESSION" % descr->compression << endl;
         cout << CPGBackupCtlBase::makeLine(80) << endl;
       }
@@ -978,7 +1002,6 @@ void AlterArchiveCatalogCommand::execute(bool ignoreMissing) {
       this->id = temp_descr->id;
       this->catalog->updateArchiveAttributes(make_shared<CatalogDescr>(*this),
                                              this->affectedAttributes);
-
     } else {
 
       if (!ignoreMissing) {
@@ -1123,7 +1146,7 @@ void CreateArchiveCatalogCommand::execute(bool existsOk) {
    * Otherwise we die a hard and unpleasent immediate
    * death...
    */
-  temp_descr =this->catalog->exists(this->directory);
+  temp_descr = this->catalog->exists(this->directory);
 
   try {
     if (temp_descr->id < 0) {
@@ -1131,7 +1154,17 @@ void CreateArchiveCatalogCommand::execute(bool existsOk) {
       /*
        * This is a new archive entry.
        */
-      this->catalog->createArchive(make_shared<CatalogDescr>(*this));
+      this->catalog->createArchive((temp_descr = make_shared<CatalogDescr>(*this)));
+
+      /*
+       * Create the corresponding database connection entry.
+       *
+       * NOTE: createArchive() should have set the archive id
+       *       in the catalog descriptor if successful.
+       */
+      temp_descr->setConnectionType(ConnectionDescr::CONNECTION_TYPE_BASEBACKUP);
+      this->catalog->createCatalogConnection(temp_descr->coninfo);
+
       this->catalog->commitTransaction();
 
     }

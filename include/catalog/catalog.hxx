@@ -15,15 +15,23 @@
 #define SQL_ARCHIVE_NAME_ATTNO 1
 #define SQL_ARCHIVE_DIRECTORY_ATTNO 2
 #define SQL_ARCHIVE_COMPRESSION_ATTNO 3
+
+/* XXX: The following are just "virtual" columns used
+ *      by most of queries used to retrieve and update archive
+ *      information. Most of the time we want to have
+ *      database connections joined with current archive
+ *      data.
+ */
 #define SQL_ARCHIVE_PGHOST_ATTNO 4
 #define SQL_ARCHIVE_PGPORT_ATTNO 5
 #define SQL_ARCHIVE_PGUSER_ATTNO 6
 #define SQL_ARCHIVE_PGDATABASE_ATTNO 7
+#define SQL_ARCHIVE_DSN_ATTNO 8
 
 /*
  * Keep that in sync with above number of cols
  */
-#define SQL_ARCHIVE_NCOLS 8
+#define SQL_ARCHIVE_NCOLS 4
 
 /*
  * Backup catalog entity
@@ -121,5 +129,23 @@
  * Keep number of columns in sync with above definitions
  */
 #define SQL_PROCS_NCOLS 5
+
+/*
+ * connections catalog entry
+ */
+#define SQL_CON_ENTITY 7
+
+#define SQL_CON_ARCHIVE_ID_ATTNO 0
+#define SQL_CON_TYPE_ATTNO 1
+#define SQL_CON_DSN_ATTNO 2
+#define SQL_CON_PGHOST_ATTNO 3
+#define SQL_CON_PGPORT_ATTNO 4
+#define SQL_CON_PGUSER_ATTNO 5
+#define SQL_CON_PGDATABASE_ATTNO 6
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_CON_NCOLS 7
 
 #endif

@@ -383,30 +383,37 @@ static pid_t daemonize(job_info &info) {
       }
     }
 
+    /*
+     * Install SIGUSR1 handler for launcher.
+     */
     do {
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
-        std::cout << "launcher shutdown request received" << std::endl;
+        std::cout << "launcher shutdown request received"
+                  << std::endl;
         break;
       }
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
-        std::cout << "launcher emergency shutdown request received" << std::endl;
+        std::cout << "launcher emergency shutdown request received"
+                  << std::endl;
         break;
       }
 
-      if (waitpid(pid, &wstatus, WUNTRACED | WCONTINUED | WNOHANG) == -1) {
+      if (waitpid(-1, &wstatus, WUNTRACED | WCONTINUED | WNOHANG) == -1) {
         std::cerr << "waitpid() error " << endl;
         exit(DAEMON_FAILURE);
       }
 
-      /* If in detach mode, exit */
-      if (info.detach) {
-        exit(0);
-      }
-
+      /*
+       * Detach, after that, the child run's
+       * as a daemon.
+       */
+      if (info.detach)
+        break;
       usleep(10);
-    } while (!WIFEXITED(wstatus) || !WIFSIGNALED(wstatus));
+
+    } while(true);
 
     exit(_pgbckctl_shutdown_mode);
   }

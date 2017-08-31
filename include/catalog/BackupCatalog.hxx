@@ -30,7 +30,23 @@ namespace credativ {
     virtual std::shared_ptr<CatalogDescr> fetchArchiveDataIntoDescr(sqlite3_stmt *stmt,
                                                                     std::shared_ptr<CatalogDescr> descr);
 
+    /*
+     * Maps column attribute numbers of the archive catalog to its names and returns
+     * a comma separated string.
+     */
     virtual std::string affectedColumnsToString(std::vector<int> affectedAttributes);
+
+    /*
+     * Maps attribute numbers of the given catalog entity to their names and returns
+     * a comma-separated string.
+     */
+    virtual std::string affectedColumnsToString(int entity, std::vector<int> affectedAttributes);
+
+    /*
+     * Makes a comma-separated placeholder list from the given attribute numbers
+     * given in affectedAttributes. Returns them as string.
+     */
+    virtual std::string SQLmakePlaceholderList(std::vector<int> affectedAttributes);
 
   protected:
     std::string sqliteDB;
@@ -69,6 +85,9 @@ namespace credativ {
     /* procs catalog table */
     static std::vector<std::string> procsCatalogCols;
 
+    /* connections catalog table */
+    static std::vector<std::string> connectionsCatalogCols;
+
     /*
      * This method maps col IDs from the specified
      * catalog entity to its string name.
@@ -94,6 +113,15 @@ namespace credativ {
     static std::string magicNumber() {
       return CPGBackupCtlBase::intToStr(CATALOG_MAGIC);
     }
+
+    /*
+     * Bind affected connection attribute values
+     * to the given SQLite3 statemenet.
+     */
+    int SQLbindConnectionAttributes(std::shared_ptr<ConnectionDescr> conDescr,
+                                    std::vector<int> affectedAttributes,
+                                    sqlite3_stmt *stmt,
+                                    Range range);
 
     /*
      * Bind affected backup profile attributes values
@@ -232,6 +260,27 @@ namespace credativ {
     virtual std::shared_ptr<BackupProfileDescr> getBackupProfile(std::string name);
 
     /*
+     * Create a catalog database connection entry.
+     */
+    virtual void createCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr);
+
+    /*
+     * Remove a catalog database connection
+     */
+    virtual void dropCatalogConnection(std::string archive_name, std::string type);
+
+    /*
+     * Updates the specified catalog connection entry.
+     */
+    virtual void updateCatalogConnection(std::shared_ptr<ConnectionDescr> conInfo,
+                                         std::string archive_name,
+                                         std::string type);
+
+    virtual void getCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
+                                      int archive_id,
+                                      std::string type);
+
+    /*
      * Delete the specified archive by name from the catalog.
      */
     virtual void dropArchive(std::string name);
@@ -314,6 +363,9 @@ namespace credativ {
      */
     std::shared_ptr<CatalogProc> fetchCatalogProcData(sqlite3_stmt *stmt,
                                                       std::vector<int> affectedAttributes);
+
+    void fetchConnectionData(sqlite3_stmt *stmt,
+                             std::shared_ptr<ConnectionDescr> conDescr);
 
     /*
      * Returns catalog process handle information, if any.

@@ -157,11 +157,25 @@ void PGStream::connect() {
    */
   std::ostringstream conninfo;
 
-  conninfo << "host=" << this->descr->pghost;
-  conninfo << " " << "dbname=" << this->descr->pgdatabase;
-  conninfo << " " << "user=" << this->descr->pguser;
-  conninfo << " " << "port=" << this->descr->pgport;
-  conninfo << " " << "replication=database";
+  /*
+   * A specified DSN setting always overrides direct
+   * host specifications and vice versa.
+   *
+   * XXX: maybe use libpq connection option parsing, looks safer.
+   */
+  cout << "DSN is " << this->descr->coninfo->dsn << endl;
+  if (this->descr->coninfo->dsn.length() > 0) {
+    cout << "using database DSN for connection" << endl;
+    conninfo << this->descr->coninfo->dsn
+             << " "
+             << "replication=database";
+  } else {
+    conninfo << "host=" << this->descr->coninfo->pghost;
+    conninfo << " " << "dbname=" << this->descr->coninfo->pgdatabase;
+    conninfo << " " << "user=" << this->descr->coninfo->pguser;
+    conninfo << " " << "port=" << this->descr->coninfo->pgport;
+    conninfo << " " << "replication=database";
+  }
 
   /*
    * Establish database connection
