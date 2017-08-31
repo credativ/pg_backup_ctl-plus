@@ -639,15 +639,8 @@ void PGBackupCtlParser::parseLine(std::string in) {
     CatalogDescr cmd = myparser.getCommand();
     this->command = make_shared<PGBackupCtlCommand>(cmd);
 
-#ifdef __DEBUG__
-    cout << "command " << cmd.tag << endl;
-    cout << "parsed ident " << cmd.archive_name << endl;
-    cout << "parsed hostname " << cmd.coninfo->pghost << endl;
-    cout << "parsed database " << cmd.coninfo->pgdatabase << endl;
-    cout << "parsed username " << cmd.coninfo->pguser << endl;
-    cout << "parsed directory " << cmd.directory << endl;
-    cout << "parsed portnumber " << cmd.coninfo->pgport << endl;
-#endif
+    cout << cmd.commandTagString() << endl;
+
 
   }
   else

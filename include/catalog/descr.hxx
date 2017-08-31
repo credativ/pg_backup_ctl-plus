@@ -189,6 +189,11 @@ namespace credativ {
     bool detach = true;
 
     /*
+     * Returns command tag as string.
+     */
+    std::string commandTagString();
+
+    /*
      * The methods below are used by our spirit::parser
      * implementation.
      */

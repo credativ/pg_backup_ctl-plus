@@ -162,6 +162,40 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
 }
 
+std::string CatalogDescr::commandTagString() {
+  switch(this->tag) {
+  case EMPTY_DESCR:
+    return "NO OP";
+  case CREATE_ARCHIVE:
+    return "CREATE ARCHIVE";
+  case CREATE_BACKUP_PROFILE:
+    return "CREATE BACKUP PROFILE";
+  case DROP_ARCHIVE:
+    return "DROP ARCHIVE";
+  case DROP_BACKUP_PROFILE:
+    return "DROP BACKUP PROFILE";
+  case ALTER_ARCHIVE:
+    return "ALTER ARCHIVE";
+  case VERIFY_ARCHIVE:
+    return "VERIFY ARCHIVE";
+  case START_BASEBACKUP:
+    return "START BASEBACKUP";
+  case LIST_ARCHIVE:
+    return "LIST ARCHIVE";
+  case LIST_BACKUP_PROFILE:
+  case LIST_BACKUP_PROFILE_DETAIL:
+    return "LIST BACKUP PROFILE";
+  case LIST_BACKUP_CATALOG:
+    return "LIST BACKUP CATALOG";
+  case START_LAUNCHER:
+    return "START LAUNCHER";
+  case BACKGROUND_WORKER_COMMAND:
+    return "BACKGROUND WORKER COMMAND";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 void CatalogDescr::setJobDetachMode(bool const& detach) {
   this->detach = detach;
 }
