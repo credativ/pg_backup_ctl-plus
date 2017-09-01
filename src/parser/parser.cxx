@@ -485,9 +485,10 @@ PGBackupCtlCommand::PGBackupCtlCommand(CatalogDescr descr) {
 
 PGBackupCtlCommand::~PGBackupCtlCommand() {}
 
-void PGBackupCtlCommand::execute(std::string catalogDir) {
+CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
 
   shared_ptr<CatalogDescr> descr(nullptr);
+  CatalogTag result = EMPTY_DESCR;
 
   /*
    * We only accept a CatalogDescr
@@ -503,6 +504,7 @@ void PGBackupCtlCommand::execute(std::string catalogDir) {
    * which will then support initializing the backup catalog.
    */
   descr = this->getExecutableDescr();
+  result = descr->tag;
 
   if (descr == nullptr) {
     throw CPGBackupCtlFailure("cannot execute uninitialized descriptor handle");
@@ -539,6 +541,8 @@ void PGBackupCtlCommand::execute(std::string catalogDir) {
       catalog->close();
     throw CCatalogIssue(e.what());
   }
+
+  return result;
 }
 
 shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
@@ -668,9 +672,6 @@ void PGBackupCtlParser::parseLine(std::string in) {
     CatalogDescr cmd = myparser.getCommand();
     this->command = make_shared<PGBackupCtlCommand>(cmd);
 
-    cout << "connection type is " << cmd.coninfo->type << endl;
-    cout << "coninfo affected attribute count " << cmd.coninfo->getAffectedAttributes().size() << endl;
-    cout << "connection dsn is " << cmd.coninfo->dsn << endl;
   }
   else
     throw CParserIssue("aborted due to parser error");

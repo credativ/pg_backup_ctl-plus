@@ -29,8 +29,13 @@ namespace credativ {
   class PGBackupCtlCommand {
   private:
     /*
-     * Optional initialized CatalogDescr, needed
-     * by certain CmdTags...
+     * Catalog descriptor wraps internal
+     * command information. This descriptor
+     * is the template for building up the
+     * executable descriptor objects dispatched by
+     * getExecutableDescr().
+     *
+     * See commands.cxx for details.
      */
     std::shared_ptr<CatalogDescr> catalogDescr;
   public:
@@ -49,7 +54,7 @@ namespace credativ {
     /*
      * executes the command handle.
      */
-    virtual void execute(std::string catalogDir);
+    virtual CatalogTag execute(std::string catalogDir);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

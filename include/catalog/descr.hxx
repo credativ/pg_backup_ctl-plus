@@ -190,9 +190,14 @@ namespace credativ {
     bool detach = true;
 
     /*
+     * Static class methods.
+     */
+    static std::string commandTagName(CatalogTag tag);
+
+    /*
      * Returns command tag as string.
      */
-    std::string commandTagString();
+    std::string getCommandTagAsStr();
 
     /*
      * The methods below are used by our spirit::parser

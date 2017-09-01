@@ -165,8 +165,8 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
 }
 
-std::string CatalogDescr::commandTagString() {
-  switch(this->tag) {
+std::string CatalogDescr::commandTagName(CatalogTag tag) {
+  switch(tag) {
   case EMPTY_DESCR:
     return "NO OP";
   case CREATE_ARCHIVE:
@@ -199,6 +199,10 @@ std::string CatalogDescr::commandTagString() {
   default:
     return "UNKNOWN";
   }
+}
+
+std::string CatalogDescr::getCommandTagAsStr() {
+  return CatalogDescr::commandTagName(this->tag);
 }
 
 void CatalogDescr::setJobDetachMode(bool const& detach) {

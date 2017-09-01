@@ -142,6 +142,8 @@ static void handle_interactive(std::string in,
 
   try {
 
+    CatalogTag cmdType;
+
     /*
      * Push the requested command into history
      */
@@ -155,7 +157,9 @@ static void handle_interactive(std::string in,
      * the current catalog.
      */
     command = parser.getCommand();
-    command->execute(string(args->catalogDir));
+    cmdType = command->execute(string(args->catalogDir));
+
+    cout << CatalogDescr::commandTagName(cmdType) << endl;
 
   } catch (exception& e) {
     cerr << "command execution failure: " << e.what() << endl;
