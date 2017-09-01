@@ -21,6 +21,7 @@ namespace credativ {
     EMPTY_DESCR = -1,
     CREATE_ARCHIVE,
     CREATE_BACKUP_PROFILE,
+    CREATE_CONNECTION,
     DROP_ARCHIVE,
     DROP_BACKUP_PROFILE,
     ALTER_ARCHIVE,
@@ -83,7 +84,7 @@ namespace credativ {
     static constexpr const char *CONNECTION_TYPE_UNKNOWN = "unknown";
 
     int archive_id = -1;
-    std::string type;
+    std::string type = ConnectionDescr::CONNECTION_TYPE_UNKNOWN;
     std::string pghost = "";
     int    pgport = -1;
     std::string pguser = "";

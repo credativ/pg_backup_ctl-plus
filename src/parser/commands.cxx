@@ -15,6 +15,10 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->label        = source.label;
   this->compression  = source.compression;
   this->directory    = source.directory;
+
+  /*
+   * Connection properties
+   */
   this->coninfo->type         = source.coninfo->type;
   this->coninfo->pghost       = source.coninfo->pghost;
   this->coninfo->pgport       = source.coninfo->pgport;
@@ -31,6 +35,105 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->setAffectedAttributes(source.getAffectedAttributes());
   this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
 
+}
+
+CreateConnectionCatalogCommand::CreateConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = CREATE_CONNECTION;
+  this->catalog = catalog;
+}
+
+CreateConnectionCatalogCommand::CreateConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+void CreateConnectionCatalogCommand::execute(bool flag) {
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute create connection command: no catalog");
+  }
+
+  /*
+   * Prepare catalog, start transaction...
+   */
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  this->catalog->startTransaction();
+
+  try {
+
+    /*
+     * Check if the requested archive really exists.
+     */
+    std::shared_ptr<CatalogDescr> tempArchiveDescr = nullptr;
+    shared_ptr<ConnectionDescr> tempConDescr = std::make_shared<ConnectionDescr>();
+
+    tempArchiveDescr = this->catalog->existsByName(this->archive_name);
+
+    if (tempArchiveDescr->id < 0) {
+      std::ostringstream oss;
+      /* Requested archive doesn't exist */
+      oss << "archive \""
+          << this->archive_name
+          << "\" does not exist";
+      throw CCatalogIssue(oss.str());
+    }
+
+    /*
+     * Archive exists, proceed.
+     *
+     * We need to take care to assign the archive_id to our
+     * own object instance, since the API currently doesn't
+     * support direct archive_name lookups during connection
+     * creation. This also makes sure, that the current command
+     * has a valid archive identification.
+     */
+    this->setArchiveId(tempArchiveDescr->id);
+
+    /*
+     * Check, if there is already a connection type colliding
+     * with the new one.
+     */
+    tempConDescr->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
+    tempConDescr->pushAffectedAttribute(SQL_CON_TYPE_ATTNO);
+    this->catalog->getCatalogConnection(tempConDescr,
+                                        tempArchiveDescr->id,
+                                        this->coninfo->type);
+
+    if (tempConDescr->archive_id >= 0
+        && tempConDescr->type != ConnectionDescr::CONNECTION_TYPE_UNKNOWN) {
+
+      /*
+       * This connection type already has a definition
+       * for the requested archive, error out.
+       */
+      std::ostringstream oss;
+      oss << "archive \""
+          << this->archive_name
+          << "\" already has a connection of this type configured"
+          << endl;
+      throw CCatalogIssue(oss.str());
+    }
+
+    /*
+     * Everything looks good; create the new connection.
+     */
+    this->catalog->createCatalogConnection(this->coninfo);
+
+    /* ... and we're done, commit transaction */
+    this->catalog->commitTransaction();
+
+  } catch(CPGBackupCtlFailure& e) {
+
+    this->catalog->rollbackTransaction();
+
+    /* re-raise */
+    throw e;
+
+  }
 }
 
 StartLauncherCatalogCommand::StartLauncherCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

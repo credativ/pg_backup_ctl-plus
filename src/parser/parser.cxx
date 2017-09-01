@@ -84,6 +84,7 @@ namespace credativ {
                         cmd_create > (
                                       cmd_create_archive
                                       | cmd_create_backup_profile
+                                      | cmd_create_connection
                                       )
 
                         /* LIST command syntax start */
@@ -218,6 +219,29 @@ namespace credativ {
           > -(profile_wal_option)
           > -(profile_checkpoint_option)
           > -(profile_wait_for_wal_option);
+
+        /*
+         * CREATE STREAMING CONNECTION FOR ARCHIVE <name> command
+         */
+        cmd_create_connection =
+          no_case[ lexeme[ lit("STREAMING") ]]
+          [ boost::bind(&CatalogDescr::setConnectionType, &cmd, ConnectionDescr::CONNECTION_TYPE_STREAMER) ]
+          > no_case[ lexeme[ lit("CONNECTION") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_CONNECTION) ]
+          > no_case[ lexeme[ lit("FOR ARCHIVE") ]]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          ^ ( ( hostname
+                [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                ^ database
+                [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                ^ username
+                [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                ^ portnumber
+                [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+              |
+              ( no_case[ lexeme[ lit("DSN") ]] > '=' > dsn_connection_string
+                [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
 
         /*
          * CREATE ARCHIVE <name> command
@@ -381,6 +405,7 @@ namespace credativ {
         cmd_start_launcher.name("LAUNCHER");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
+        cmd_create_connection.name("CREATE STREAMING CONNECTION");
         cmd_verify_archive.name("VERIFY ARCHIVE");
         cmd_drop_archive.name("DROP ARCHIVE");
         cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
@@ -425,6 +450,7 @@ namespace credativ {
                           cmd_list_backup,
                           cmd_drop_backup_profile,
                           cmd_alter_backup_profile,
+                          cmd_create_connection,
                           backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
@@ -592,6 +618,9 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
     result = make_shared<DropBackupProfileCatalogCommand>(this->catalogDescr);
     break;
 
+  case CREATE_CONNECTION:
+    result = make_shared<CreateConnectionCatalogCommand>(this->catalogDescr);
+
   default:
     /* no-op, but we return nullptr ! */
     break;
@@ -639,9 +668,9 @@ void PGBackupCtlParser::parseLine(std::string in) {
     CatalogDescr cmd = myparser.getCommand();
     this->command = make_shared<PGBackupCtlCommand>(cmd);
 
-    cout << cmd.commandTagString() << endl;
-
-
+    cout << "connection type is " << cmd.coninfo->type << endl;
+    cout << "coninfo affected attribute count " << cmd.coninfo->getAffectedAttributes().size() << endl;
+    cout << "connection dsn is " << cmd.coninfo->dsn << endl;
   }
   else
     throw CParserIssue("aborted due to parser error");

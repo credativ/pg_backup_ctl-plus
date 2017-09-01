@@ -160,6 +160,9 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   this->coninfo->dsn = source.coninfo->dsn;
   this->coninfo->type = source.coninfo->type;
 
+  /* job control */
+  this->detach = source.detach;
+
 }
 
 std::string CatalogDescr::commandTagString() {
@@ -170,6 +173,8 @@ std::string CatalogDescr::commandTagString() {
     return "CREATE ARCHIVE";
   case CREATE_BACKUP_PROFILE:
     return "CREATE BACKUP PROFILE";
+  case CREATE_CONNECTION:
+    return "CREATE CONNECTION";
   case DROP_ARCHIVE:
     return "DROP ARCHIVE";
   case DROP_BACKUP_PROFILE:
@@ -251,14 +256,25 @@ void CatalogDescr::setDbName(std::string const& db_name) {
 void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
   this->tag = tag;
 
-  switch(tag) {
-  case CREATE_ARCHIVE:
-  case ALTER_ARCHIVE:
-  case DROP_ARCHIVE:
-    this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_BASEBACKUP;
-    break;
-  default:
-    this->coninfo->type = ""; /* force errors later */
+  /*
+   * Set some useful defaults in case not already done.
+   */
+  if (this->coninfo->type == ""
+      || this->coninfo->type == ConnectionDescr::CONNECTION_TYPE_UNKNOWN) {
+
+    switch(tag) {
+    case CREATE_ARCHIVE:
+    case ALTER_ARCHIVE:
+    case DROP_ARCHIVE:
+      this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_BASEBACKUP;
+      break;
+    case CREATE_CONNECTION:
+      this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_STREAMER;
+      break;
+    default:
+      this->coninfo->type = ""; /* force errors later */
+    }
+
   }
 
 }
@@ -518,7 +534,6 @@ void BackupCatalog::fetchConnectionData(sqlite3_stmt *stmt,
     case SQL_CON_DSN_ATTNO:
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL) {
         conDescr->dsn = (char *) sqlite3_column_text(stmt, currindex);
-        cout << "fetch DSN " << conDescr->dsn << endl;
       }
       break;
     default:
@@ -1561,7 +1576,6 @@ int BackupCatalog::SQLbindConnectionAttributes(std::shared_ptr<ConnectionDescr> 
       break;
 
     case SQL_CON_DSN_ATTNO:
-      cout << "bound DSN TO id " << result << endl;
       sqlite3_bind_text(stmt, result,
                         conDescr->dsn.c_str(),
                         -1, SQLITE_STATIC);
