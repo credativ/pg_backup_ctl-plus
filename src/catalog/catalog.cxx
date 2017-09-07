@@ -2902,6 +2902,11 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
   sqlite3_finalize(stmt);
 }
 
+std::vector<std::shared_ptr<ConnectionDescr>>
+BackupCatalog::getCatalogConnection(int archive_id) {
+
+}
+
 void BackupCatalog::getCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
                                          int archive_id,
                                          std::string type) {

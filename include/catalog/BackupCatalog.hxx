@@ -276,9 +276,22 @@ namespace credativ {
                                          std::string archive_name,
                                          std::string type);
 
+    /*
+     * Initializes the specified conDescr ConnectionDescr object with
+     * catalog information, if exists.
+     *
+     * If the specified archive_id has no connection of type specified, the
+     * conDescr ConnectionDescr object will be initialized with id = -1 and
+     * type = CONNECTION_TYPE_UNKNOWN.
+     */
     virtual void getCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
                                       int archive_id,
                                       std::string type);
+
+    /*
+     * Returns all connections defined for the specified archive_id.
+     */
+    virtual std::vector<std::shared_ptr<ConnectionDescr>> getCatalogConnection(int archive_id);
 
     /*
      * Delete the specified archive by name from the catalog.

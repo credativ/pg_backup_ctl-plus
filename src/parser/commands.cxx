@@ -37,8 +37,31 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
 }
 
+ListConnectionCatalogCommand::ListConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ListConnectionCatalogCommand::ListConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+}
+
+void ListConnectionCatalogCommand::execute(bool flag) {
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute list command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+}
+
 CreateConnectionCatalogCommand::CreateConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
-  this->tag = CREATE_CONNECTION;
+  this->setCommandTag(CREATE_CONNECTION);
   this->catalog = catalog;
 }
 
