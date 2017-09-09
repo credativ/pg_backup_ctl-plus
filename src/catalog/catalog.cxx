@@ -198,6 +198,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "BACKGROUND WORKER COMMAND";
   case LIST_CONNECTION:
     return "LIST CONNECTION";
+  case DROP_CONNECTION:
+    return "DROP CONNECTION";
   default:
     return "UNKNOWN";
   }
@@ -275,6 +277,8 @@ void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
       this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_BASEBACKUP;
       break;
     case CREATE_CONNECTION:
+    case LIST_CONNECTION:
+    case DROP_CONNECTION:
       this->coninfo->type = ConnectionDescr::CONNECTION_TYPE_STREAMER;
       break;
     default:

@@ -23,6 +23,15 @@ namespace credativ {
     virtual std::shared_ptr<BackupCatalog> getCatalog();
   };
 
+  class DropConnectionCatalogCommand : public BaseCatalogCommand {
+  public:
+    DropConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    DropConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    DropConnectionCatalogCommand();
+
+    virtual void execute(bool flag);
+  };
+
   class ListConnectionCatalogCommand : public BaseCatalogCommand {
   public:
     ListConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr);

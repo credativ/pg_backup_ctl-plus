@@ -37,6 +37,96 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
 }
 
+DropConnectionCatalogCommand::DropConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+DropConnectionCatalogCommand::DropConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+}
+
+void
+DropConnectionCatalogCommand::execute(bool flag) {
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute drop command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  /*
+   * Start transaction, this will lock the
+   * database during this operation.
+   */
+  this->catalog->startTransaction();
+
+  try {
+
+    std::shared_ptr<CatalogDescr> tempDescr;
+    string contype;
+
+    /*
+     * Checkout if our archive_name really exists.
+     */
+    tempDescr = this->catalog->existsByName(this->archive_name);
+
+    /*
+     * BackupCatalog::existsByName() returns an empty
+     * catalog descriptor.
+     */
+    if (tempDescr != nullptr && tempDescr->id >= 0) {
+
+      /*
+       * Archive exists, drop its streaming connection, but
+       * check if the requested connection really exists.
+       *
+       * XXX: the parser has initialized our
+       *      connection descr handle accordingly.
+       */
+
+      /* ... we're interested in archive_id only. */
+      this->setArchiveId(tempDescr->id);
+      this->coninfo->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
+
+      /* save the connection type for error reporting later */
+      contype = this->coninfo->type;
+
+      this->catalog->getCatalogConnection(this->coninfo,
+                                          this->id,
+                                          this->coninfo->type);
+
+      if (this->coninfo->archive_id < 0) {
+        throw CCatalogIssue("archive \""
+                            + this->archive_name
+                            + "\" does not have a connection of type \""
+                            + contype
+                            +"\"");
+      }
+
+      this->catalog->dropCatalogConnection(this->archive_name,
+                                           this->coninfo->type);
+
+    } else {
+      /* requested archive name is unknown */
+      throw CCatalogIssue("archive \"" + this->archive_name + "\" does not exist");
+    }
+
+  } catch (CPGBackupCtlFailure& e) {
+    this->catalog->rollbackTransaction();
+
+    /* re-throw exception to caller */
+    throw e;
+  }
+
+  /* ... and we're done */
+  this->catalog->commitTransaction();
+}
+
 ListConnectionCatalogCommand::ListConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));

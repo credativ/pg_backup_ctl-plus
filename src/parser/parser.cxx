@@ -113,7 +113,12 @@ namespace credativ {
                                       /*
                                        * DROP BACKUP PROFILE
                                        */
-                                      | cmd_drop_backup_profile)
+                                      | cmd_drop_backup_profile
+
+                                      /*
+                                       * DROP STREAMING CONNECTION
+                                       */
+                                      | cmd_drop_connection)
 
                         /*
                          * VERIFY ARCHIVE <name> command
@@ -287,6 +292,17 @@ namespace credativ {
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]] > no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
 
+        /*
+         * DROP STREAMING CONNECTION ON ARCHIVE <archive name>
+         */
+        cmd_drop_connection = no_case[ lexeme[ lit("STREAMING") ]]
+          [ boost::bind(&CatalogDescr::setConnectionType, &cmd, ConnectionDescr::CONNECTION_TYPE_STREAMER) ]
+          > no_case[ lexeme[ lit("CONNECTION") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_CONNECTION) ]
+          > no_case[ lexeme[ lit("FROM ARCHIVE") ]]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+
         cmd_drop_backup_profile = no_case[lexeme[ lit("BACKUP") ]]
           > no_case[lexeme[ lit("PROFILE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_BACKUP_PROFILE) ]
@@ -419,6 +435,7 @@ namespace credativ {
         cmd_verify_archive.name("VERIFY ARCHIVE");
         cmd_drop_archive.name("DROP ARCHIVE");
         cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
+        cmd_drop_connection.name("DROP STREAMING CONNECTION");
         cmd_alter_archive.name("ALTER ARCHIVE");
         cmd_alter_archive_opt.name("ALTER ARCHIVE options");
         cmd_start_basebackup.name("START BASEBACKUP");
@@ -451,6 +468,7 @@ namespace credativ {
       qi::rule<Iterator, ascii::space_type> cmd_create_archive,
                           cmd_verify_archive,
                           cmd_drop_archive,
+                          cmd_drop_connection,
                           cmd_alter_archive,
                           cmd_start_command,
                           cmd_alter_archive_opt,
@@ -640,6 +658,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case LIST_CONNECTION:
     result = make_shared<ListConnectionCatalogCommand>(this->catalogDescr);
+    break;
+
+  case DROP_CONNECTION:
+    result = make_shared<DropConnectionCatalogCommand>(this->catalogDescr);
     break;
 
   default:

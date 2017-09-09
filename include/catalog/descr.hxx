@@ -16,6 +16,11 @@ namespace credativ {
   /*
    * Defines flags to characterize the
    * action defined by a catalog descriptor.
+   *
+   * IMPORTANT:
+   *
+   * Adding tags here requires CatalogDesc::setCommandTag()
+   * being teached about the new tag, too (src/catalog/catalog.cxx).
    */
   typedef enum {
     EMPTY_DESCR = -1,
@@ -24,6 +29,7 @@ namespace credativ {
     CREATE_CONNECTION,
     DROP_ARCHIVE,
     DROP_BACKUP_PROFILE,
+    DROP_CONNECTION,
     ALTER_ARCHIVE,
     VERIFY_ARCHIVE,
     START_BASEBACKUP,
