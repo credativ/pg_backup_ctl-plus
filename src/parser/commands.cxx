@@ -54,10 +54,88 @@ void ListConnectionCatalogCommand::execute(bool flag) {
     throw CArchiveIssue("could not execute list command: no catalog");
   }
 
+  /*
+   * Prepare catalog, start transaction ...
+   */
   if (!this->catalog->available()) {
     this->catalog->open_rw();
   }
 
+  this->catalog->startTransaction();
+
+  try {
+
+    std::shared_ptr<CatalogDescr> tempDescr;
+    std::vector<std::shared_ptr<ConnectionDescr>> connections;
+
+    /*
+     * Check if specified archive is valid.
+     */
+    tempDescr = this->catalog->existsByName(this->archive_name);
+
+    /*
+     * Normally we don't get a nullptr back from
+     * existsByName() ...
+     */
+    if (tempDescr != nullptr
+        && tempDescr->id >= 0) {
+
+      /*
+       * Archive exists and existsByName() has initialized
+       * our temporary descriptor with its archive_id we need to
+       * retrieve associated catalog database connections.
+       */
+      connections = this->catalog->getCatalogConnection(tempDescr->id);
+
+      /*
+       * Print result header
+       */
+      cout << "List of connections for archive \""
+           << this->archive_name
+           << "\""
+           << endl;
+
+      /*
+       * XXX: createArchive() normally ensures that a
+       *      catalog connection definition of type 'basebackup'
+       *      (CONNECTION_TYPE_BASEBACKUP) exists, at least. But
+       *      we don't rely on this fact, just loop through
+       *      the results and spill them out...
+       *
+       *      getCatalogConnection() returns the shared pointers
+       *      ordered by its type.
+       */
+      for(auto & con : connections) {
+
+        /* item header */
+        cout << CPGBackupCtlBase::makeHeader("connection type " + con->type,
+                                             boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
+                                             80);
+        cout << boost::format("%-15s\t%-60s") % "DSN" % con->dsn << endl;
+        cout << boost::format("%-15s\t%-60s") % "PGHOST" % con->pghost << endl;
+        cout << boost::format("%-15s\t%-60s") % "PGDATABASE" % con->pgdatabase << endl;
+        cout << boost::format("%-15s\t%-60s") % "PGUSER" % con->pguser << endl;
+        cout << boost::format("%-15s\t%-60s") % "PGPORT" % con->pgport << endl;
+      }
+    } else {
+
+      ostringstream oss;
+      oss << "archive \"" << this->archive_name << "\" does not exist";
+      throw CCatalogIssue(oss.str());
+
+    }
+
+  } catch(CPGBackupCtlFailure& e) {
+
+    this->catalog->rollbackTransaction();
+
+    /* re-throw to caller */
+    throw e;
+
+  }
+
+  /* ... and we're done */
+  this->catalog->commitTransaction();
 }
 
 CreateConnectionCatalogCommand::CreateConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

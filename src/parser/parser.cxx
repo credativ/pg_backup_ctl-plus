@@ -91,6 +91,7 @@ namespace credativ {
                         | cmd_list > (
                                       cmd_list_archive
                                       | cmd_list_backup
+                                      | cmd_list_connection
                                       )
 
                         /* ALTER command */
@@ -176,6 +177,15 @@ namespace credativ {
         cmd_alter = no_case[lexeme[ lit("ALTER") ]];
 
         cmd_start_command = no_case[lexeme[ lit("START") ]];
+
+        /*
+         * LIST CONNECTION FOR ARCHIVE <archive name > command
+         */
+        cmd_list_connection = no_case[ lexeme[ lit("CONNECTION") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_CONNECTION) ]
+          > no_case[ lexeme[ lit("FOR ARCHIVE") ]]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * LIST BACKUP CATALOG [<backup>] ...
@@ -414,6 +424,7 @@ namespace credativ {
         cmd_start_basebackup.name("START BASEBACKUP");
         cmd_list_archive.name("LIST ARCHIVE");
         cmd_list_backup.name("LIST BACKUP");
+        cmd_list_connection.name("LIST CONNECTION");
         identifier.name("object identifier");
         hostname.name("ip or hostname");
         profile_compression_option.name("COMPRESSION=GZIP|NONE");
@@ -446,6 +457,7 @@ namespace credativ {
                           cmd_start_basebackup,
                           cmd_start_launcher,
                           cmd_list_archive,
+                          cmd_list_connection,
                           cmd_create_backup_profile,
                           cmd_list_backup,
                           cmd_drop_backup_profile,
@@ -624,6 +636,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case CREATE_CONNECTION:
     result = make_shared<CreateConnectionCatalogCommand>(this->catalogDescr);
+    break;
+
+  case LIST_CONNECTION:
+    result = make_shared<ListConnectionCatalogCommand>(this->catalogDescr);
+    break;
 
   default:
     /* no-op, but we return nullptr ! */

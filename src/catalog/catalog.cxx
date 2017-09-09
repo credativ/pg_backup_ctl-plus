@@ -196,6 +196,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "START LAUNCHER";
   case BACKGROUND_WORKER_COMMAND:
     return "BACKGROUND WORKER COMMAND";
+  case LIST_CONNECTION:
+    return "LIST CONNECTION";
   default:
     return "UNKNOWN";
   }
@@ -2905,6 +2907,105 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
 std::vector<std::shared_ptr<ConnectionDescr>>
 BackupCatalog::getCatalogConnection(int archive_id) {
 
+  sqlite3_stmt *stmt;
+  int rc;
+  ostringstream query;
+  std::vector<std::shared_ptr<ConnectionDescr>> result;
+  std::vector<int> affectedAttrs;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * We don't like negative ID values ...
+   *
+   * XXX: The API treats ID < 0 everywhere as uninitialized data,
+   *      so tell the caller that he's doing something wrong.
+   */
+  if (archive_id < 0)
+    throw CCatalogIssue("invalid archive ID specified");
+
+  /*
+   * We need to tell the columns we want to retrieve ...
+   */
+  affectedAttrs.push_back(SQL_CON_ARCHIVE_ID_ATTNO);
+  affectedAttrs.push_back(SQL_CON_TYPE_ATTNO);
+  affectedAttrs.push_back(SQL_CON_DSN_ATTNO);
+  affectedAttrs.push_back(SQL_CON_PGHOST_ATTNO);
+  affectedAttrs.push_back(SQL_CON_PGPORT_ATTNO);
+  affectedAttrs.push_back(SQL_CON_PGUSER_ATTNO);
+  affectedAttrs.push_back(SQL_CON_PGDATABASE_ATTNO);
+
+  query << "SELECT "
+        << this->affectedColumnsToString(SQL_CON_ENTITY,
+                                         affectedAttrs)
+        << " FROM connections WHERE archive_id = ?1 ORDER BY type ASC;";
+
+#ifdef __DEBUG__
+  cout << "generated SQL " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to get connection: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind WHERE clause values...
+   */
+  sqlite3_bind_int(stmt, 1, archive_id);
+
+  /* ... execute SELECT */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "unexpected result in catalog query: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Empty result set or single row expected.
+   */
+  try {
+
+    do {
+
+      /*
+       * new connection descriptor
+       */
+      std::shared_ptr<ConnectionDescr> conDescr
+        = std::make_shared<ConnectionDescr>();
+
+      /* retrieve attribute values from result set */
+      conDescr->setAffectedAttributes(affectedAttrs);
+      this->fetchConnectionData(stmt, conDescr);
+
+      result.push_back(conDescr);
+
+      /* next one */
+      rc = sqlite3_step(stmt);
+
+    } while (rc == SQLITE_ROW && rc != SQLITE_DONE);
+
+  } catch(CCatalogIssue& e) {
+    sqlite3_finalize(stmt);
+    throw e;
+  }
+
+  sqlite3_finalize(stmt);
+  return result;
 }
 
 void BackupCatalog::getCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr,
