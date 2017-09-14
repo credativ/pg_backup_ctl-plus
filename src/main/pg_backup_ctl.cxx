@@ -13,6 +13,7 @@
 #include <wait.h>
 
 #include <pg_backup_ctl.hxx>
+#include <tab_completion.hxx>
 #include <common.hxx>
 #include <fs-archive.hxx>
 #include <parser.hxx>
@@ -407,7 +408,12 @@ int main(int argc, const char **argv) {
       exit(PG_BACKUP_CTL_GENERIC_ERROR);
     }
 
+    /* prepare readline support */
+    init_readline();
+
     while(!wants_exit) {
+
+      /* input buffer */
       string input = "";
 
       while (!wants_exit
@@ -424,14 +430,20 @@ int main(int argc, const char **argv) {
          */
         if (cmd_str[strlen(cmd_str) - 1] == ';') {
           input += string(cmd_str, strlen(cmd_str) - 1);
+
+          /*
+           * We also need to reset the global readline state.
+           */
+          step_readline();
+
           break;
         } else {
-        /*
-         * No action needed, so we continue reading input.
-         * To support commandseparation by newline, the
-         * command string is appended by a blank.
-         * This behaviour is similar to our parseFile routine.
-         */
+          /*
+           * No action needed, so we continue reading input.
+           * To support commandseparation by newline, the
+           * command string is appended by a blank.
+           * This behaviour is similar to our parseFile routine.
+           */
           input += string(cmd_str)+" ";
         }
 
