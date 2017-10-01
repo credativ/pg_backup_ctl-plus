@@ -44,15 +44,37 @@ typedef struct _completion_word {
 
 } completion_word;
 
-completion_word archive_completion[] = { { "<identifier>", COMPL_END, NULL },
-                                         { "", COMPL_END, NULL } /* marks end of list */ };
+completion_word param_pgport_completion[] = { { "PGPORT", COMPL_KEYWORD, NULL },
+                                              { "", COMPL_END, NULL } };
 
-completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, NULL },
+completion_word param_pguser_completion[] = { { "PGUSER", COMPL_KEYWORD, param_pgport_completion },
+                                              { "", COMPL_END, NULL } };
+
+completion_word param_pgdatabase_completion[] = { { "PGDATABASE" , COMPL_KEYWORD, param_pguser_completion },
+                                                  { "", COMPL_END, NULL } };
+
+completion_word param_start_completion[] = { { "DSN", COMPL_END, NULL },
+                                             { "PGHOST", COMPL_KEYWORD, param_pgdatabase_completion },
+                                             { "", COMPL_END, NULL } };
+
+completion_word create_archive_dir_completion[] = { { "DIRECTORY", COMPL_KEYWORD, param_start_completion },
+                                                    { "", COMPL_END, NULL } };
+
+completion_word create_archive_params_completion[] = { { "PARAMS", COMPL_KEYWORD, create_archive_dir_completion },
+                                                       { "", COMPL_END, NULL } };
+
+completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_archive_params_completion },
+                                                      { "", COMPL_END, NULL } /* marks end of list */ };
+
+completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_END, NULL },
+                                                    { "", COMPL_END, NULL } };
+
+completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
                                         { "STREAMING CONNECTION", COMPL_KEYWORD, NULL },
                                         { "BACKUP PROFILE", COMPL_KEYWORD, NULL },
                                         { "", COMPL_END, NULL } /* marks end of list */ };
 
-completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, NULL },
+completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "BACKUP PROFILE", COMPL_KEYWORD, NULL},
                                       { "CONNECTION", COMPL_KEYWORD, NULL },
                                       { "", COMPL_END, NULL } /* marks end of list */ };
@@ -94,8 +116,8 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
     /* previous word holds keyword list */
     completion_word c_word = completed_keywords.back();
 
-    if (c_word.type != COMPL_END
-        && c_word.next_completions != NULL) {
+    if ( (c_word.type != COMPL_END)
+         || (c_word.next_completions != NULL) ) {
 
       for(int i = 0;;i++) {
         /* is this one a completed candidate? */
@@ -114,6 +136,16 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
           //          std::cout << "NEW COMPL " << candidate.name << std::endl;
           completed_keywords.push_back(candidate);
         }
+
+        /*
+         * If current production rules imply a user submitted
+         * identifier, followed by post completion rules, treat them
+         * special. Don't look at the string itself, it doesn't
+         * contain anything interesting.
+         */
+        if (candidate.type == COMPL_IDENTIFIER) {
+          completed_keywords.push_back(candidate);
+        }
       }
     }
 
@@ -127,7 +159,8 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
       /* first completion target */
       completion_word candidate = start_keyword[i];
 
-      if (candidate.type == COMPL_END)
+      if ( (candidate.type == COMPL_END)
+           || (candidate.next_completions == NULL) )
         break;
 
       if (boost::iequals(std::string(candidate.name), last_word)) {
@@ -213,9 +246,15 @@ _evaluate_keyword(completion_word *lookup_table,
   const char *name;
 
   while ((name = lookup_table[(*index)++].name)) {
+
+    if (lookup_table[(*index)].type == COMPL_IDENTIFIER) {
+      return strdup(name);
+    }
+
     if (strncasecmp(name, input, len) == 0) {
       return strdup(name);
     }
+
   }
 
   /* only in case no match found */
@@ -234,17 +273,15 @@ keyword_generator(const char *input, int state) {
   }
 
   if (!completed_keywords.empty()
-      && ( completed_keywords.size() > 1) ) {
+      && (completed_keywords.size() >= 1) ) {
 
     result = _evaluate_keyword(completed_keywords.back().next_completions,
                                input, &list_index, len);
 
-
-    // }
   } else {
 
           result = _evaluate_keyword(start_keyword,
-                                 input, &list_index, len);
+                                     input, &list_index, len);
 
   }
 
