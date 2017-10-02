@@ -31,7 +31,8 @@ std::string delimiters("|,:");
 typedef enum {
   COMPL_KEYWORD,
   COMPL_IDENTIFIER,
-  COMPL_END
+  COMPL_END,
+  COMPL_EOL
 } CompletionWordType;
 
 typedef struct _completion_word completion_word;
@@ -44,47 +45,65 @@ typedef struct _completion_word {
 
 } completion_word;
 
-completion_word param_pgport_completion[] = { { "PGPORT", COMPL_KEYWORD, NULL },
-                                              { "", COMPL_END, NULL } };
+completion_word param_pgport_completion[] = { { "PGPORT", COMPL_END, NULL },
+                                              { "", COMPL_EOL, NULL } };
 
 completion_word param_pguser_completion[] = { { "PGUSER", COMPL_KEYWORD, param_pgport_completion },
-                                              { "", COMPL_END, NULL } };
+                                              { "", COMPL_EOL, NULL } };
 
 completion_word param_pgdatabase_completion[] = { { "PGDATABASE" , COMPL_KEYWORD, param_pguser_completion },
-                                                  { "", COMPL_END, NULL } };
+                                                  { "", COMPL_EOL, NULL } };
 
 completion_word param_start_completion[] = { { "DSN", COMPL_END, NULL },
                                              { "PGHOST", COMPL_KEYWORD, param_pgdatabase_completion },
-                                             { "", COMPL_END, NULL } };
+                                             { "", COMPL_EOL, NULL } };
 
 completion_word create_archive_dir_completion[] = { { "DIRECTORY", COMPL_KEYWORD, param_start_completion },
-                                                    { "", COMPL_END, NULL } };
+                                                    { "", COMPL_EOL, NULL } };
 
 completion_word create_archive_params_completion[] = { { "PARAMS", COMPL_KEYWORD, create_archive_dir_completion },
-                                                       { "", COMPL_END, NULL } };
+                                                       { "", COMPL_EOL, NULL } };
 
 completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_archive_params_completion },
-                                                      { "", COMPL_END, NULL } /* marks end of list */ };
+                                                      { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_END, NULL },
-                                                    { "", COMPL_END, NULL } };
+                                                    { "", COMPL_EOL, NULL } };
 
 completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
                                         { "STREAMING CONNECTION", COMPL_KEYWORD, NULL },
                                         { "BACKUP PROFILE", COMPL_KEYWORD, NULL },
-                                        { "", COMPL_END, NULL } /* marks end of list */ };
+                                        { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                      { "BACKUP PROFILE", COMPL_KEYWORD, NULL},
-                                      { "CONNECTION", COMPL_KEYWORD, NULL },
-                                      { "", COMPL_END, NULL } /* marks end of list */ };
+                                      { "BACKUP PROFILE", COMPL_END, NULL},
+                                      { "CONNECTION", COMPL_END, NULL },
+                                      { "", COMPL_EOL, NULL } /* marks end of list */ };
+
+completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_END, NULL },
+                                                     { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_profile[] = { { "PROFILE", COMPL_KEYWORD, start_basebackup_profile_ident },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_basebackup_profile },
+                                                        { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start_basebackup_ident_completion },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebackup_archive },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
+                                                  { "", COMPL_EOL, NULL } };
 
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
-                                    { "START", COMPL_KEYWORD, NULL },
+                                    { "START", COMPL_KEYWORD, start_basebackup_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
-                                    { "VERIFY", COMPL_KEYWORD, NULL },
-                                    { "DROP", COMPL_KEYWORD, NULL },
-                                    { "", COMPL_END, NULL } /* marks end of list */ };
+                                    { "VERIFY", COMPL_END, NULL },
+                                    { "DROP", COMPL_END, NULL },
+                                    { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
 std::vector<completion_word> completed_keywords = {};
@@ -102,77 +121,79 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
    */
   if (previous_words.size() <= 0)
     return;
-  else
-    last_word = previous_words[ previous_words.size() - 2 ];
 
   /*
-   * Look if we have already dispatched words in
-   * the global completed words vector. If true,
-   * take the production from the last one, if not, simply
-   * dispatch from the start_keyword array.
+   * Loop through previous_words, examing
+   * completion order and corresponding candidates.
+   *
+   * NOTE: previous_words also contains the last
+   *       *uncompleted* input, so leave it out from
+   *       examination.
    */
-  if (completed_keywords.size() > 0) {
+  for (int i = 0; i < previous_words.size() - 1; i++) {
 
-    /* previous word holds keyword list */
-    completion_word c_word = completed_keywords.back();
+    std::string current_word = previous_words[i];
+    completion_word *candidates;
 
-    if ( (c_word.type != COMPL_END)
-         || (c_word.next_completions != NULL) ) {
-
-      for(int i = 0;;i++) {
-        /* is this one a completed candidate? */
-        completion_word candidate = c_word.next_completions[i];
-
-        /*
-         * Terminate, if we reach COMPL_END.
-         */
-        if (candidate.type == COMPL_END)
-          break;
-
-        if (boost::iequals(std::string(candidate.name), last_word)) {
-          /*
-           * Yeha, add it.
-           */
-          //          std::cout << "NEW COMPL " << candidate.name << std::endl;
-          completed_keywords.push_back(candidate);
-        }
-
-        /*
-         * If current production rules imply a user submitted
-         * identifier, followed by post completion rules, treat them
-         * special. Don't look at the string itself, it doesn't
-         * contain anything interesting.
-         */
-        if (candidate.type == COMPL_IDENTIFIER) {
-          completed_keywords.push_back(candidate);
-        }
-      }
-    }
-
-  } else {
+    /* nothing to compare */
+    if (current_word.length() <= 0)
+      continue;
 
     /*
-     * No completed previous words already, start
-     * over with the start_keywords list.
+     * Iff the list of completed_keywords is empty, start
+     * with the start_keyword array. Stop if we find a match.
      */
-    for(int i = 0;;i++) {
-      /* first completion target */
-      completion_word candidate = start_keyword[i];
+    if (completed_keywords.size() <= 0)
+      candidates = start_keyword;
+    else {
 
-      if ( (candidate.type == COMPL_END)
-           || (candidate.next_completions == NULL) )
-        break;
+      candidates = completed_keywords.back().next_completions;
 
-      if (boost::iequals(std::string(candidate.name), last_word)) {
-        /*
-         * Yeha, add it.
-         */
-        //        std::cout << "NEW COMPL " << candidate.name << std::endl;
-        completed_keywords.push_back(candidate);
-      }
     }
 
+    if (candidates == NULL)
+        break;
+
+    for (int j = 0;;j++) {
+
+      completion_word c_word;
+
+      c_word = candidates[j];
+
+      /* End of list ? */
+      if (c_word.type == COMPL_EOL)
+        break;
+
+      /* No completion alternatives avail ? */
+      if (c_word.type == COMPL_END)
+        continue;
+
+      if (boost::iequals(current_word, std::string(c_word.name))) {
+
+        /* push recognized completion to vector */
+        completed_keywords.push_back(c_word);
+
+        /* inner loop done, next previous word */
+        break;
+
+      }
+
+      /*
+       * We didn't match a keyword, examine wether
+       * we expect an identifier for completion.
+       */
+      if (c_word.type == COMPL_IDENTIFIER) {
+        /* name content is not interesting, since it can
+         * contain anything user defined */
+        completed_keywords.push_back(c_word);
+
+         break;
+      }
+    }
   }
+
+  return;
+
 }
 
 char **keyword_completion(const char *input, int start, int end) {
@@ -193,10 +214,6 @@ char **keyword_completion(const char *input, int start, int end) {
    */
   boost::split(previous_words, current_input_buf, boost::is_any_of(WORD_BREAKS));
 
-  // for (auto &i : previous_words) {
-  //   std::cout << " PREV " << i << std::endl;
-  // }
-
   /*
    * Now recognize completed words. This is done from the start
    * or last production rule. We put this into the global
@@ -207,9 +224,15 @@ char **keyword_completion(const char *input, int start, int end) {
    *       why we force the previous_words vector
    *       having two elements at least!
    */
+  completed_keywords.clear();
+
   if (previous_words.size() > 1) {
     recognize_previous_words(previous_words);
   }
+
+  // for (auto &i : previous_words) {
+  //   std::cout << " PREV " << i << std::endl;
+  // }
 
   /*
    * Return matches.
@@ -247,9 +270,9 @@ _evaluate_keyword(completion_word *lookup_table,
 
   while ((name = lookup_table[(*index)++].name)) {
 
-    if (lookup_table[(*index)].type == COMPL_IDENTIFIER) {
-      return strdup(name);
-    }
+    // if (lookup_table[(*index)].type == COMPL_IDENTIFIER) {
+    //   return strdup(name);
+    // }
 
     if (strncasecmp(name, input, len) == 0) {
       return strdup(name);
@@ -272,16 +295,15 @@ keyword_generator(const char *input, int state) {
     len = strlen(input);
   }
 
-  if (!completed_keywords.empty()
-      && (completed_keywords.size() >= 1) ) {
+  if (!completed_keywords.empty()) {
 
     result = _evaluate_keyword(completed_keywords.back().next_completions,
                                input, &list_index, len);
 
   } else {
 
-          result = _evaluate_keyword(start_keyword,
-                                     input, &list_index, len);
+    result = _evaluate_keyword(start_keyword,
+                               input, &list_index, len);
 
   }
 
