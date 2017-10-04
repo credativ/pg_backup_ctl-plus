@@ -67,7 +67,7 @@ completion_word create_archive_params_completion[] = { { "PARAMS", COMPL_KEYWORD
 completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_archive_params_completion },
                                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
-completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_END, NULL },
+completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
                                                     { "", COMPL_EOL, NULL } };
 
 completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
@@ -75,8 +75,12 @@ completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archi
                                         { "BACKUP PROFILE", COMPL_KEYWORD, NULL },
                                         { "", COMPL_EOL, NULL } /* marks end of list */ };
 
+completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_archive_ident_completion },
+                                             { "CATALOG", COMPL_KEYWORD, list_archive_ident_completion },
+                                             { "", COMPL_EOL, NULL } };
+
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                      { "BACKUP PROFILE", COMPL_END, NULL},
+                                      { "BACKUP", COMPL_KEYWORD, list_backup_completion },
                                       { "CONNECTION", COMPL_END, NULL },
                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
@@ -98,11 +102,17 @@ completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebac
 completion_word start_basebackup_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
                                                   { "", COMPL_EOL, NULL } };
 
+completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                                { "", COMPL_EOL, NULL } };
+
+completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                      { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_basebackup_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
-                                    { "VERIFY", COMPL_END, NULL },
-                                    { "DROP", COMPL_END, NULL },
+                                    { "VERIFY", COMPL_KEYWORD, verify_archive_completion },
+                                    { "DROP", COMPL_KEYWORD, drop_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
@@ -306,7 +316,6 @@ keyword_generator(const char *input, int state) {
                                input, &list_index, len);
 
   }
-
 
   return result;
 }
