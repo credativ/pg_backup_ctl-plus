@@ -2,3 +2,4 @@ build/*
 *~
 *.*~
 include/pg_backup_ctl.hxx
+doc/*

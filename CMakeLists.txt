@@ -143,6 +143,17 @@ else()
 endif()
 
 ##
+## Configure doxygen and a custom target "doc"
+## to build documentation
+##
+find_package(Doxygen OPTIONAL_COMPONENTS)
+if(DOXYGEN_FOUND)
+  message("doxygen documentation processor found")
+  set(DOXYGEN_OUTPUT_DIRECTORY ../doc)
+  doxygen_add_docs(doc src include)
+endif()
+
+##
 ## Get current git revision.
 ##
 execute_process(COMMAND git describe --dirty --tags --always
