@@ -108,11 +108,21 @@ completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list
 completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "", COMPL_EOL, NULL } };
 
+completion_word alter_archive_set_completion[] = { { "SET", COMPL_KEYWORD, param_start_completion },
+                                                   { "", COMPL_EOL, NULL } };
+
+completion_word alter_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, alter_archive_set_completion },
+                                                     { "", COMPL_EOL, NULL } };
+
+completion_word alter_completion[] = { { "ARCHIVE", COMPL_KEYWORD, alter_archive_ident_completion },
+                                       { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_basebackup_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
                                     { "VERIFY", COMPL_KEYWORD, verify_archive_completion },
                                     { "DROP", COMPL_KEYWORD, drop_completion },
+                                    { "ALTER", COMPL_KEYWORD, alter_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
