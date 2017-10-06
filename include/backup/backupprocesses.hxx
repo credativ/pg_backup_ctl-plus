@@ -40,7 +40,7 @@ namespace credativ {
   } BaseBackupState;
 
   /*
-   *
+   * State of archiver (WAL Streamer).
    */
   typedef enum {
     ARCHIVER_STARTUP,
@@ -73,8 +73,13 @@ namespace credativ {
    */
   class WALStreamerProcess : public CPGBackupCtlBase {
   protected:
+    ArchiverState current_state;
+    PGconn *pgconn;
+    std::shared_ptr<BackupProfileDescr> profile;
   public:
     WALStreamerProcess(PGconn *prepared_connection);
+    WALStreamerProcess(PGconn *prepared_connection,
+                       std::shared_ptr<BackupProfileDescr> profile);
     ~WALStreamerProcess();
   };
 

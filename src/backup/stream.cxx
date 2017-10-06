@@ -218,6 +218,132 @@ bool PGStream::isIdentified() {
   return this->identified;
 }
 
+void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
+                                          std::string &filename,
+                                          int timeline) {
+  ExecStatusType es;
+  PGresult *result;
+  std::ostringstream query;
+
+  if (!this->connected()) {
+    throw StreamingFailure("stream is not connected");
+  }
+
+  query << "TIMELINE_HISTORY " << timeline << ";";
+
+  result = PQexec(this->pgconn, query.str().c_str());
+
+  /*
+   * Valid result?
+   */
+  es = PQresultStatus(result);
+
+  if (es != PGRES_TUPLES_OK) {
+    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
+    std::ostringstream oss;
+    oss << "TIMELINE_HISTORY command failed: " << PQresultErrorMessage(result);
+    PQclear(result);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
+  /*
+   * We expect one row, two columns.
+   */
+  if (PQnfields(result) != 2) {
+    PQclear(result);
+    throw StreamingFailure("TIMELINE_HISTORY command error: expected 2 columns in result");
+  }
+
+  if (PQntuples(result) != 1) {
+    PQclear(result);
+    throw StreamingFailure("TIMELINE_HISTORY command error: expected single row in result");
+  }
+
+  filename = PQgetvalue(result, 0, 0);
+
+  /*
+   * Write the history file contents into referenced memory buffer.
+   * Do this in a try..catch block to prevent result set leak.
+   */
+  try {
+
+    buffer.allocate(PQgetlength(result, 0, 1));
+    buffer.write(PQgetvalue(result, 0, 1), buffer.getSize(), 0);
+    PQclear(result);
+
+  } catch (CPGBackupCtlFailure &e) {
+
+    PQclear(result);
+    /* re-throw as StreamingFailure */
+    throw StreamingFailure(e.what());
+
+  }
+
+  /* and we're done */
+
+}
+
+void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
+                                          std::string &filename) {
+
+  if (!this->isIdentified()) {
+    throw StreamingFailure("cannot get timeline history file content without timeline ID");
+  }
+
+  this->timelineHistoryFileContent(buffer,
+                                   filename,
+                                   this->streamident.timeline);
+
+}
+
+std::string PGStream::getServerSetting(std::string name) {
+
+  ExecStatusType es;
+  PGresult *result;
+  std::string value;
+  std::ostringstream query;
+
+  if (!this->connected()) {
+    throw StreamingFailure("stream is not connected");
+  }
+
+  query << "SHOW " << name << ";";
+
+  /*
+   * SHOW doesn't require to honour internal state of
+   * the stream handle, so just go forward and get the parameter
+   * value.
+   */
+  result = PQexec(this->pgconn, query.str().c_str());
+
+  /*
+   * Valid result?
+   */
+  es = PQresultStatus(result);
+
+  if (es != PGRES_TUPLES_OK) {
+    /* treat error as an exception */
+    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
+    std::ostringstream oss;
+    oss << "SHOW command failed: " << PQresultErrorMessage(result);
+    PQclear(result);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
+  /*
+   * We expect at least one tuple...
+   */
+  if (PQntuples(result) >= 1) {
+    value = std::string(PQgetvalue(result, 0, 0));
+  } else {
+    PQclear(result);
+    throw StreamingFailure("unexpected result for parameter value: no rows");
+  }
+
+  PQclear(result);
+  return value;
+}
+
 void PGStream::identify() {
 
   ExecStatusType es;

@@ -91,6 +91,15 @@ namespace credativ {
      */
     StreamIdentification streamident;
 
+    /**
+     * Returns the server parameter value. Throws
+     * a StreamingExecutionFailure exception in case
+     * the SHOW query fails. A StreamingFailure is thrown,
+     * if the parameter value doesn't return a value (which
+     * shouldn't happen).
+     */
+    virtual std::string getServerSetting(std::string name);
+
     /*
      * Helper function to decode a XLOG position string.
      */
@@ -132,6 +141,30 @@ namespace credativ {
      */
     virtual bool isIdentified();
 
+    /**
+     * Request a timeline history file content. The content
+     * is returned in buf, which is dynamically allocated by
+     * PGStream.
+     *
+     * Requires a valid connected and identified streaming
+     * replication connection, throws a StreamingFailure
+     * exception otherwise.
+     *
+     * If a specific timeline is requested, use the overloaded version
+     * of timelineHistoryFileContent(), which allows to specify a
+     * specific timeline ID and doesn't insist on an identified
+     * stream.
+     *
+     * If the timeline history file contents cannot be read from
+     * the streaming connection, a StreamingExecutionFailure
+     * exception will be generated.
+     */
+    virtual void timelineHistoryFileContent(MemoryBuffer &buffer,
+                                            std::string &filename);
+    virtual void timelineHistoryFileContent(MemoryBuffer &buffer,
+                                            std::string &filename,
+                                            int timeline);
+
     /*
      * Override internal PostgreSQL connection handle.
      */
@@ -160,13 +193,18 @@ namespace credativ {
                                   bool existing_ok,
                                   bool noident_ok);
 
-    /*
+    /**
      * Starts streaming a basebackup. Stream should be
      * already connected and identified.
      * basebackup()
      */
     virtual std::shared_ptr<BaseBackupProcess> basebackup();
     virtual std::shared_ptr<BaseBackupProcess> basebackup(std::shared_ptr<BackupProfileDescr> profile);
+
+    /**
+     * Returns information about the current timeline of the
+     * PostgreSQL server.
+     */
   };
 
 }

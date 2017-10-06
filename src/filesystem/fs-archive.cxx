@@ -120,6 +120,25 @@ path StreamingBaseBackupDirectory::getPath() {
 }
 
 /******************************************************************************
+ * ArchiveLogDirectory Implementation
+ ******************************************************************************/
+
+ArchiveLogDirectory::ArchiveLogDirectory(std::shared_ptr<BackupDirectory> parent)
+  : BackupDirectory(parent->getArchiveDir()) {
+
+  this->handle = parent->getArchiveDir();
+  this->base   = parent->basedir();
+  this->log    = parent->logdir();
+
+}
+
+ArchiveLogDirectory::~ArchiveLogDirectory() {}
+
+path ArchiveLogDirectory::getPath() {
+  return this->log;
+}
+
+/******************************************************************************
  * BackupDirectory Implementation
  ******************************************************************************/
 
@@ -208,6 +227,39 @@ void BackupDirectory::verify() {
 
 }
 
+std::shared_ptr<BackupFile> BackupDirectory::walfile(std::string name,
+                                                     BackupProfileCompressType compression) {
+
+  switch(compression) {
+
+  case BACKUP_COMPRESS_TYPE_NONE:
+    return std::make_shared<ArchiveFile>(this->log / name);
+    break;
+
+  case BACKUP_COMPRESS_TYPE_GZIP:
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
+    return std::make_shared<CompressedArchiveFile>(this->log / (name + ".gz"));
+#else
+    throw CArchiveIssue("zlib compression support not compiled in");
+#endif
+    break;
+
+  case BACKUP_COMPRESS_TYPE_ZSTD:
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+    return std::make_shared<ZSTDArchiveFile>(this->log / (name + ".zstd"));
+#else
+    throw CArchiveIssue("z/standard compression support not compiled in");
+#endif
+    break;
+
+  default:
+    std::ostringstream oss;
+    oss << "could not create wal file: invalid compression type: " << compression;
+    throw CArchiveIssue(oss.str());
+
+  }
+}
+
 std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
                                                         BackupProfileCompressType compression) {
 
@@ -220,12 +272,20 @@ std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
 
   case BACKUP_COMPRESS_TYPE_GZIP:
 
-#ifdef PG_BACKUP_CTL_HASH_ZLIB
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
     return std::make_shared<CompressedArchiveFile>(this->basedir() / (name + ".gz"));
 #else
-    throw CArchiveIssue("zlib compression not compiled in");
+    throw CArchiveIssue("zlib compression support not compiled in");
 #endif
 
+    break;
+
+  case BACKUP_COMPRESS_TYPE_ZSTD:
+#ifdef PG_BACKUP_CTL_HAS_ZSTD
+    return std::make_shared<ZSTDArchiveFile>(this->basedir() / (name + ".zstd"));
+#else
+    throw CArchiveIssue("z/standard compression support not compiled in");
+#endif
     break;
 
   default:

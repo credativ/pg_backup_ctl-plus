@@ -338,6 +338,12 @@ namespace credativ {
     virtual path getArchiveDir();
 
     /*
+     * Returns a file belonging to this directory.
+     */
+    virtual std::shared_ptr<BackupFile> walfile(std::string name,
+                                                BackupProfileCompressType compression);
+
+    /*
      * Factory method returns a new basebackup file handle.
      *
      * This will create a file handle pointing into
@@ -354,6 +360,25 @@ namespace credativ {
      */
     virtual std::shared_ptr<BackupFile> basebackup(std::string name,
                                                    BackupProfileCompressType compression);
+  };
+
+  /*
+   * Specialized class for archive log directories.
+   *
+   * This is a specialized descendant class of BackupDirectory,
+   * extending the functionality for wal streaming functions.
+   */
+  class ArchiveLogDirectory : public BackupDirectory {
+  protected:
+  public:
+    ArchiveLogDirectory(std::shared_ptr<BackupDirectory> parent);
+
+    virtual ~ArchiveLogDirectory();
+
+    /*
+     * Returns the path to the archive log segment files.
+     */
+    virtual path getPath();
   };
 
   /*

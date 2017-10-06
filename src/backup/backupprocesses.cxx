@@ -10,10 +10,32 @@ using namespace credativ;
 
 WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection) {
 
+  this->current_state = ARCHIVER_STARTUP;
+  this->pgconn        = prepared_connection;
+
+  this->profile       = std::make_shared<BackupProfileDescr>();
+
+}
+
+WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection,
+                                       std::shared_ptr<BackupProfileDescr> profile) {
+
+
+  this->current_state = ARCHIVER_STARTUP;
+  this->pgconn        = prepared_connection;
+  this->profile       = profile;
+
 }
 
 WALStreamerProcess::~WALStreamerProcess() {
 
+  /*
+   * Don't close the inherited PostgreSQL connection here.
+   *
+   * We are expecting to operate as a sub
+   * on a calling PGStream handle, which
+   * does all the legwork for us.
+   */
 }
 
 /******************************************************************************

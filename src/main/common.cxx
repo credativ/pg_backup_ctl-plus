@@ -18,6 +18,105 @@ using namespace std;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
 
+MemoryBuffer::MemoryBuffer(size_t initialsz) {
+
+  this->allocate(initialsz);
+
+}
+
+MemoryBuffer::MemoryBuffer() {
+
+}
+
+MemoryBuffer::~MemoryBuffer() {
+
+  if (this->memory_buffer != NULL) {
+    delete this->memory_buffer;
+  }
+
+}
+
+size_t MemoryBuffer::getSize() {
+  return this->size;
+}
+
+void MemoryBuffer::allocate(size_t size) {
+
+  if (this->memory_buffer != NULL) {
+    delete this->memory_buffer;
+    this->memory_buffer = NULL;
+    this->size          = 0;
+  }
+
+  this->memory_buffer = new char[size];
+  this->size = size;
+}
+
+size_t MemoryBuffer::write(const char *buf, size_t bufsize, size_t off) {
+
+  char *buf_ptr;
+
+  if (this->memory_buffer == NULL)
+    throw CPGBackupCtlFailure("could not write into uninitialized memory buffer");
+
+  /*
+   * Sanity check, off cannot be larger than size
+   */
+  if (off >= this->getSize()) {
+    throw CPGBackupCtlFailure("offset into memory buffer exceeds size");
+  }
+
+  /*
+   * Also, off + bufsize must fit into the remaining buffer.
+   */
+  if ( (off + bufsize) > this->getSize() ) {
+    std::ostringstream oss;
+    oss << "writing " << bufsize << " into memory buffer exceeds size";
+    throw CPGBackupCtlFailure(oss.str());
+  }
+
+  buf_ptr = this->memory_buffer + off;
+  memcpy(buf_ptr, buf, bufsize);
+
+  return bufsize;
+
+}
+
+size_t MemoryBuffer::read(char *buf, size_t readsz, size_t off) {
+
+  if (this->memory_buffer == NULL)
+    throw CPGBackupCtlFailure("could not write into uninitialized memory buffer");
+
+  /*
+   * Sanity check, off cannot be larger than size
+   */
+  if (off >= this->getSize()) {
+    throw CPGBackupCtlFailure("offset into memory buffer exceeds size");
+  }
+
+    /*
+   * Also, off + bufsize must it into the remaining buffer.
+   */
+  if ( (off + readsz) > this->getSize() ) {
+    std::ostringstream oss;
+    oss << "reading " << readsz << " from memory exhausts buffer size";
+    throw CPGBackupCtlFailure(oss.str());
+  }
+
+  memcpy(buf, this->memory_buffer + off, readsz);
+
+  return readsz;
+}
+
+void MemoryBuffer::clear() {
+
+  if (this->memory_buffer == NULL)
+    /* nothing to do */
+    return;
+
+  memset(this->memory_buffer, 0x0, this->size);
+}
+
 Range::Range(int start, int end) {
 
   if (start > end)
