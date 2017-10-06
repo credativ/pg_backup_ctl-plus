@@ -7,6 +7,50 @@ Backup::Backup(const std::shared_ptr<CatalogDescr>& descr) {}
 
 Backup::~Backup() {};
 
+TransactionLogBackup::TransactionLogBackup(const std::shared_ptr<CatalogDescr>& descr) : Backup(descr) {
+
+  this->descr = descr;
+
+}
+
+TransactionLogBackup::~TransactionLogBackup() {}
+
+bool TransactionLogBackup::isInitialized() {
+
+}
+
+void TransactionLogBackup::create() {
+
+}
+
+void TransactionLogBackup::finalize() {
+
+}
+
+void TransactionLogBackup::initialize() {
+
+}
+
+std::string TransactionLogBackup::backupDirectoryString() {
+
+}
+
+std::shared_ptr<BackupFile> stackFile(std::string name) {
+
+}
+
+void TransactionLogBackup::sync_pending() {
+
+}
+
+void TransactionLogBackup::flush_pending() {
+
+}
+
+std::shared_ptr<BackupFile> TransactionLogBackup::stackFile(std::string name) {
+
+}
+
 StreamBaseBackup::StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr) : Backup(descr) {
 
   this->descr = descr;

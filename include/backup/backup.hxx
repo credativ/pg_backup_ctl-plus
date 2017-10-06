@@ -51,6 +51,53 @@ namespace credativ {
   };
 
   /*
+   * Represents a list entry of pending
+   * transaction log segments in TransactionLogBackup.
+   */
+  class TransactionLogListItem {
+  public:
+    std::shared_ptr<BackupFile> fileHandle;
+    std::string filename;
+    bool sync_pending = false;
+    bool flush_pending = false;
+  };
+
+  /*
+   * Transaction log segment backup object representation.
+   *
+   * LogSegmentBackup encapsulates access between backup
+   * (WAL streaming) operation and, backup catalog and
+   * filesystem access.
+   */
+  class TransactionLogBackup : public Backup {
+  private:
+
+    /*
+     * Internal stack of allocated and pending
+     * transaction log segments. This allows to
+     * stack actions on transaction log segments until
+     * finalize() is called (see methods sync_pending() and
+     * flush_pending() for details).
+     */
+    std::vector<std::shared_ptr<TransactionLogListItem>> fileList;
+
+  public:
+    TransactionLogBackup(const std::shared_ptr<CatalogDescr> & descr);
+    virtual ~TransactionLogBackup();
+
+    virtual bool isInitialized();
+    virtual void initialize();
+    virtual void create();
+    virtual void finalize();
+    virtual std::string backupDirectoryString();
+
+    virtual std::shared_ptr<BackupFile> stackFile(std::string name);
+
+    virtual void sync_pending();
+    virtual void flush_pending();
+  };
+
+  /*
    * Streamed basebackup object representation.
    *
    * This class shouldn't be instantiated directly, but within
