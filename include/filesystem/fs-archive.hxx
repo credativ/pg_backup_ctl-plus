@@ -372,6 +372,7 @@ namespace credativ {
   protected:
   public:
     ArchiveLogDirectory(std::shared_ptr<BackupDirectory> parent);
+    ArchiveLogDirectory(path parent);
 
     virtual ~ArchiveLogDirectory();
 

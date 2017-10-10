@@ -16,6 +16,12 @@ using namespace credativ;
 
 namespace credativ {
 
+  /* forwarded declarations */
+  class FeedbackMessage;
+  class HotstandbyFeedbackMessage;
+  class ReceiverStatusUpdateMessage;
+  class PGStream;
+
   class StreamingFailure : public CPGBackupCtlFailure {
   private:
     ConnStatusType connStatus;
@@ -56,6 +62,56 @@ namespace credativ {
   public:
     StreamingTransactionFailure(std::string errstring, PGTransactionStatusType transStatus)
       : StreamingFailure(errstring, transStatus) {};
+  };
+
+  class FeedbackMessage {
+  protected:
+    /*
+     * Database connection handle, must be prepared
+     * by PGstream
+     */
+    PGconn *connection = NULL;
+
+    /*
+     * Message type, implemented by derived message types.
+     */
+    unsigned char kind = 0;
+  public:
+    FeedbackMessage(PGconn *prepared_connection);
+    ~FeedbackMessage();
+
+    virtual void send() = 0;
+  };
+
+  class ReceiverStatusUpdateMessage : public FeedbackMessage {
+  private:
+    bool requestPrimaryStatus = false;
+  public:
+    ReceiverStatusUpdateMessage(PGconn *prepared_connection);
+    ~ReceiverStatusUpdateMessage();
+
+    /**
+     * Toggle request for server feedback message. Calling this before
+     * send() requests the streaming endpoint to respond to this
+     * message immediately. This will be resettet after each send()
+     * call.
+     *
+     * This causes the primary to intermix own status messages into
+     * the receiving WAL stream.
+     */
+    void wantsServerResponse();
+
+    /**
+     * Sends a receiver status update to the inherited
+     * database connection.
+     */
+    virtual void send();
+  };
+
+  class HotStandbyFeedbackMessage : public FeedbackMessage {
+  public:
+    HotStandbyFeedbackMessage(PGconn *prepared_connection);
+    ~HotStandbyFeedbackMessage();
   };
 
   class PGStream : CPGBackupCtlBase {
@@ -202,9 +258,10 @@ namespace credativ {
     virtual std::shared_ptr<BaseBackupProcess> basebackup(std::shared_ptr<BackupProfileDescr> profile);
 
     /**
-     * Returns information about the current timeline of the
-     * PostgreSQL server.
+     * Sends a streaming receiver update message to the
+     * primary endpoint.
      */
+    virtual void sendReceiverStatusUpdate();
   };
 
 }

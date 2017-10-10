@@ -84,6 +84,47 @@ void StreamIdentification::reset() {
   this->slot = nullptr;
 }
 
+/******************************************************************************
+ * Helper classes.
+ ******************************************************************************/
+
+FeedbackMessage::FeedbackMessage(PGconn *prepared_connection) {
+
+  this->connection = prepared_connection;
+
+}
+
+FeedbackMessage::~FeedbackMessage() {}
+
+ReceiverStatusUpdateMessage::ReceiverStatusUpdateMessage(PGconn *prepared_connection)
+  : FeedbackMessage(prepared_connection) {
+
+  this->kind = 'r';
+
+}
+
+ReceiverStatusUpdateMessage::~ReceiverStatusUpdateMessage() {}
+
+void ReceiverStatusUpdateMessage::send() {
+
+  /*
+   * Finally reset primary status request flag.
+   */
+  this->requestPrimaryStatus = false;
+}
+
+void ReceiverStatusUpdateMessage::wantsServerResponse() {
+  this->requestPrimaryStatus = true;
+}
+
+HotStandbyFeedbackMessage::HotStandbyFeedbackMessage(PGconn *prepared_connection)
+  : FeedbackMessage(prepared_connection) {
+
+  this->kind = 'h';
+
+}
+
+HotStandbyFeedbackMessage::~HotStandbyFeedbackMessage() {}
 
 /******************************************************************************
  * Implementation of PGStream
@@ -216,6 +257,13 @@ void PGStream::disconnect() {
 
 bool PGStream::isIdentified() {
   return this->identified;
+}
+
+void PGStream::sendReceiverStatusUpdate() {
+
+  ExecStatusType es;
+  PGresult *result;
+  
 }
 
 void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,

@@ -13,41 +13,114 @@ TransactionLogBackup::TransactionLogBackup(const std::shared_ptr<CatalogDescr>& 
 
 }
 
-TransactionLogBackup::~TransactionLogBackup() {}
+TransactionLogBackup::~TransactionLogBackup() {
 
-bool TransactionLogBackup::isInitialized() {
+  if (this->isInitialized()) {
+    this->finalize();
+    delete this->directory;
+  }
 
 }
 
+bool TransactionLogBackup::isInitialized() {
+  return this->initialized;
+}
+
 void TransactionLogBackup::create() {
+
+  if (this->isInitialized()) {
+    /*
+     * Transaction log segments are always stored
+     * within the log/ subdirectory under the parent
+     * archive directory. Usually these directory
+     * already exists, but make sure ...
+     */
+    this->directory->create();
+  } else {
+    throw CArchiveIssue("cannot call create on uninitialized transaction log directory handle");
+  }
 
 }
 
 void TransactionLogBackup::finalize() {
 
+  /*
+   * Sync all stacked file handles. Close all
+   * files.
+   *
+   * NOTE: we call sync_pending() here, which already does all
+   *       the necessary synchronisation here.
+   */
+  this->sync_pending();
+
+  for (auto &item : this->fileList) {
+    item->fileHandle->close();
+  }
+
 }
 
 void TransactionLogBackup::initialize() {
 
+  if (!this->isInitialized()) {
+    this->directory = new ArchiveLogDirectory(path(this->descr->directory));
+    this->initialized = true;
+  }
+
 }
 
 std::string TransactionLogBackup::backupDirectoryString() {
-
-}
-
-std::shared_ptr<BackupFile> stackFile(std::string name) {
-
+  return ((ArchiveLogDirectory *)this->directory)->getPath().string();
 }
 
 void TransactionLogBackup::sync_pending() {
 
+  for (auto &item : this->fileList) {
+    if (item->sync_pending ||
+        item->flush_pending) {
+      item->fileHandle->fsync();
+      item->sync_pending = item->flush_pending = true;
+    }
+  }
+
+  /*
+   * Make sure directory meta information is also
+   * synced.
+   */
+  this->directory->fsync();
 }
 
 void TransactionLogBackup::flush_pending() {
-
+  /* currently a no-op, call sync_pending instead */
+  this->sync_pending();
 }
 
 std::shared_ptr<BackupFile> TransactionLogBackup::stackFile(std::string name) {
+
+  std::shared_ptr<TransactionLogListItem> logref = std::make_shared<TransactionLogListItem>();
+
+  /*
+   * Stack a new transaction log segment file into
+   * current pending file list.
+   */
+  if (!this->isInitialized()) {
+    throw CArchiveIssue("cannot create transaction log backup file: not initialized");
+  }
+
+  /* Allocate new segment file handle */
+  this->file = this->directory->walfile(name, this->compression);
+  this->file->setOpenMode("wb");
+  this->file->open();
+
+  /*
+   * Stack walfile reference into open file list.
+   */
+  logref->fileHandle = file;
+  logref->filename = name;
+  logref->sync_pending = true;
+  logref->flush_pending = true;
+
+  this->fileList.push_back(logref);
+  return this->file;
 
 }
 
@@ -103,7 +176,7 @@ void StreamBaseBackup::create() {
      */
     this->directory->create();
   } else {
-    throw CArchiveIssue("cannot call create on initialized streaming directory handle");
+    throw CArchiveIssue("cannot call create on uninitialized streaming directory handle");
   }
 
 }
@@ -137,9 +210,11 @@ bool StreamBaseBackup::isInitialized() {
 
 void StreamBaseBackup::initialize() {
 
-  this->directory = new StreamingBaseBackupDirectory(this->identifier,
-                                                     path(this->descr->directory));
-  this->initialized = true;
+  if (!this->isInitialized()) {
+    this->directory = new StreamingBaseBackupDirectory(this->identifier,
+                                                       path(this->descr->directory));
+    this->initialized = true;
+  }
 
 }
 

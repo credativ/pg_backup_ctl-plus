@@ -28,9 +28,12 @@ StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming
 StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
                                                            std::shared_ptr<BackupDirectory> parent)
   : BackupDirectory(parent->getArchiveDir()) {
+
+  /*
   this->handle = parent->getArchiveDir();
   this->base   = parent->basedir();
   this->log    = parent->logdir();
+  */
 
   this->streaming_subdir = this->basedir() / streaming_dirname;
 }
@@ -124,13 +127,10 @@ path StreamingBaseBackupDirectory::getPath() {
  ******************************************************************************/
 
 ArchiveLogDirectory::ArchiveLogDirectory(std::shared_ptr<BackupDirectory> parent)
-  : BackupDirectory(parent->getArchiveDir()) {
+  : BackupDirectory(parent->getArchiveDir()) {}
 
-  this->handle = parent->getArchiveDir();
-  this->base   = parent->basedir();
-  this->log    = parent->logdir();
-
-}
+ArchiveLogDirectory::ArchiveLogDirectory(path parent)
+  : BackupDirectory(parent) {}
 
 ArchiveLogDirectory::~ArchiveLogDirectory() {}
 
