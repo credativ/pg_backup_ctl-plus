@@ -98,6 +98,7 @@ namespace credativ {
 
     int         timeline;
     std::string xlogpos;
+    std::string systemid;
 
     /*
      * Internal state of tablespace backup steps.
@@ -107,7 +108,8 @@ namespace credativ {
   public:
 
     BaseBackupProcess(PGconn *prepared_connection,
-                      std::shared_ptr<BackupProfileDescr> profile);
+                      std::shared_ptr<BackupProfileDescr> profile,
+                      std::string systemid);
     ~BaseBackupProcess();
 
     /*
@@ -117,6 +119,12 @@ namespace credativ {
      * instance.
      */
     std::shared_ptr<BaseBackupDescr> getBaseBackupDescr();
+
+    /*
+     * Returns the system identifier of this basebackup. If not
+     * yet performed, an empty string will be returned.
+     */
+    virtual std::string getSystemIdentifier();
 
     /*
      * Start a BASE_BACKUP stream.

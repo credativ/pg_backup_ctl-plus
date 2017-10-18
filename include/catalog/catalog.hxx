@@ -52,11 +52,12 @@
 #define SQL_BACKUP_STOPPED_ATTNO 8
 #define SQL_BACKUP_PINNED_ATTNO 9
 #define SQL_BACKUP_STATUS 10
+#define SQL_BACKUP_SYSTEMID 11
 
 /*
  * Keep that in sync with above number of cols
  */
-#define SQL_BACKUP_NCOLS 11
+#define SQL_BACKUP_NCOLS 12
 
 /*
  * Attributes belong to stream tablex

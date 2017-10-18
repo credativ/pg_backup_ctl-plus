@@ -48,7 +48,8 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "started",
     "stopped",
     "pinned",
-    "status"
+    "status",
+    "systemid"
   };
 
 std::vector<std::string> BackupCatalog::streamCatalogCols =
@@ -1032,6 +1033,8 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
   std::vector<int> backupAttrs;
   std::vector<int> tblspcAttrs;
 
+  std::string backupCols;
+  std::string tblspcCols;
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
   }
@@ -1049,6 +1052,7 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
   backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_STATUS);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
@@ -1056,15 +1060,11 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
 
-  std::string backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
-                                                           backupAttrs);
-  std::string tblspcCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
-                                                           tblspcAttrs);
+  backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                               backupAttrs);
+  tblspcCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
+                                               tblspcAttrs);
 
-#ifdef __DEBUG__
-  cerr << backupCols << endl;
-  cerr << tblspcCols << endl;
-#endif
 }
 
 void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
@@ -2222,8 +2222,8 @@ void BackupCatalog::registerBasebackup(int archive_id,
   }
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started) "
-                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6);",
+                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid) "
+                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7);",
                           -1,
                           &stmt,
                           NULL);
@@ -2243,6 +2243,7 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 4, backupDescr->label.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 5, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 7, backupDescr->systemid.c_str(), -1, SQLITE_STATIC);
 
   /*
    * Execute the statement.

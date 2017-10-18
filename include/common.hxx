@@ -23,6 +23,11 @@
 #include <fstream>
 #include <stdexcept>
 
+/* time handling supporting includes */
+#include <ctime>
+#include <ratio>
+#include <chrono>
+
 #define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
 
 namespace credativ {
@@ -186,19 +191,36 @@ namespace credativ {
                            char *binaryblock,
                            size_t size);
 
-    /*
+    /**
      * Creates a string used as a backup label with
      * the current date/time formatted.
      */
     static std::string basebackup_filename();
 
-    /*
+    /**
      * Returns the current date/time as an ANSI formatted
      * string YYYY-MM-DD H24:MIN:SS. If asFilename is set to
      * true, the string will be formatted to be able to be used
      * as a filename.
      */
     static std::string current_timestamp(bool asFilename = false);
+
+    /**
+     * Calculates a duration of high resolution time points.
+     */
+    static std::chrono::milliseconds calculate_duration_ms(std::chrono::high_resolution_clock::time_point start,
+                                                           std::chrono::high_resolution_clock::time_point stop);
+
+    /**
+     * Returns a high resolution time point
+     */
+    static std::chrono::high_resolution_clock::time_point current_hires_time_point();
+
+    /**
+     * Extracts the number of milliseconds from the given duration.
+     */
+    static long long duration_get_ms(std::chrono::milliseconds ms);
+
   };
 
 }

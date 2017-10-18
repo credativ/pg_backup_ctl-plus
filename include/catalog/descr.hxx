@@ -304,6 +304,7 @@ namespace credativ {
     std::string stopped;
     int pinned = 0;
     std::string status = "in progress";
+    std::string systemid;
 
     /* List of tablespaces descriptors in backup */
     std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;

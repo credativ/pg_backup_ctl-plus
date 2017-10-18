@@ -43,12 +43,14 @@ WALStreamerProcess::~WALStreamerProcess() {
  ******************************************************************************/
 
 BaseBackupProcess::BaseBackupProcess(PGconn *prepared_connection,
-                                     std::shared_ptr<BackupProfileDescr> profile) {
+                                     std::shared_ptr<BackupProfileDescr> profile,
+                                     std::string systemid) {
 
   this->current_state = BASEBACKUP_INIT;
 
   this->pgconn = prepared_connection;
   this->profile = profile;
+  this->systemid = systemid;
 
   /*
    * prepared_connection needs to be a connected
@@ -178,6 +180,10 @@ void BaseBackupProcess::start() {
   this->baseBackupDescr = std::make_shared<BaseBackupDescr>();
   this->baseBackupDescr->xlogpos = PQgetvalue(result, 0, 0);
 
+  /* Save system identifier to descriptor */
+
+  this->baseBackupDescr->systemid = this->systemid;
+
   /*
    * We always expect the timeline from the server here. Older
    * PostgreSQL instances than 9.3 don't send the timeline via
@@ -207,6 +213,15 @@ std::shared_ptr<BaseBackupDescr> BaseBackupProcess::getBaseBackupDescr() {
    * just return the descriptor.
    */
   return this->baseBackupDescr;
+}
+
+std::string BaseBackupProcess::getSystemIdentifier() {
+
+  if (this->baseBackupDescr != nullptr)
+    return this->baseBackupDescr->systemid;
+
+  return "";
+
 }
 
 void BaseBackupProcess::readTablespaceInfo() {

@@ -463,7 +463,8 @@ std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
 
 std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupProfileDescr> profile) {
   return std::make_shared<BaseBackupProcess>(this->pgconn,
-                                             profile);
+                                             profile,
+                                             this->streamident.systemid);
 }
 
 std::string PGStream::generateSlotName() {

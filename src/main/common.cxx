@@ -17,6 +17,7 @@ using namespace credativ;
 using namespace std;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
+using namespace std::chrono;
 
 MemoryBuffer::MemoryBuffer(size_t initialsz) {
 
@@ -315,6 +316,24 @@ string CPGBackupCtlBase::current_timestamp(bool asFilename) {
     result = "";
 
   return result;
+}
+
+high_resolution_clock::time_point CPGBackupCtlBase::current_hires_time_point() {
+
+  return high_resolution_clock::now();
+
+}
+
+std::chrono::milliseconds CPGBackupCtlBase::calculate_duration_ms(high_resolution_clock::time_point start,
+                                                                  high_resolution_clock::time_point stop) {
+
+  auto result = duration_cast<std::chrono::milliseconds>(stop - start);
+  return result;
+
+}
+
+long long CPGBackupCtlBase::duration_get_ms(std::chrono::milliseconds ms) {
+  return ms.count();
 }
 
 string CPGBackupCtlBase::ptime_to_str(ptime input) {

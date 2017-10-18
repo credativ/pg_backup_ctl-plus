@@ -29,6 +29,7 @@ CREATE TABLE backup(
        stopped text,
        pinned integer default 0,
        status text default 'in progress',
+       systemid text not null,
        FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
 );
 
