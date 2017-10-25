@@ -10,7 +10,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <signal.h>
-#include <wait.h>
+#include <sys/wait.h>
 
 #include <pg_backup_ctl.hxx>
 #include <tab_completion.hxx>

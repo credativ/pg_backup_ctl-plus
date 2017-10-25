@@ -53,6 +53,23 @@ add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archiv
   src/backup/backupprocesses.cxx)
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
+# Detect if the "port" command is valid on this system; if so, return full path
+EXECUTE_PROCESS(COMMAND which port RESULT_VARIABLE DETECT_MACPORTS OUTPUT_VARIABLE MACPORTS_PREFIX ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+IF (${DETECT_MACPORTS} EQUAL 0)
+    # "/opt/local/bin/port" doesn't have libs, so we get the parent directory
+    GET_FILENAME_COMPONENT(MACPORTS_PREFIX ${MACPORTS_PREFIX} DIRECTORY)
+
+    # "/opt/local/bin" doesn't have libs, so we get the parent directory
+    GET_FILENAME_COMPONENT(MACPORTS_PREFIX ${MACPORTS_PREFIX} DIRECTORY)
+
+    # "/opt/local" is where MacPorts lives, add `/lib` suffix and link
+    link_directories("${MACPORTS_PREFIX}/lib")
+    include_directories("${MACPORTS_PREFIX}/include")
+    target_link_libraries (pgbckctl-common z)
+    MESSAGE("MacPorts libraries from ${MACPORTS_PREFIX}/lib")
+ENDIF()
+
 ##
 ## We need readline
 ##
@@ -86,7 +103,7 @@ endif (sqlite3_FOUND)
 ##
 ## We need Boost::filesystem
 ##
-find_package(Boost REQUIRED COMPONENTS regex filesystem system date_time iostreams)
+find_package(Boost REQUIRED COMPONENTS filesystem regex system date_time iostreams)
 if (Boost_FOUND)
    include_directories(${Boost_INCLUDE_DIRS})
    message("linking Boost ${Boost_LIBRARIES}")
@@ -123,6 +140,7 @@ if(ZLIB_FOUND)
    set(PG_BACKUP_CTL_HAS_ZLIB "#define PG_BACKUP_CTL_HAS_ZLIB 1")
    include_directories(${zlib_INCLUDE_DIRS})
    target_link_libraries(pgbckctl-common ${zlib_LIBRARIES})
+   message("linking zlib in ${zlib_LIBRARIES}")
 else()
    message("no zlib found, compression unavailable")
    set(PG_BACKUP_CTL_HAS_ZLIB "#undef PG_BACKUP_CTL_HAS_ZLIB")
