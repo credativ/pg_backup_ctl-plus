@@ -150,7 +150,13 @@ find_package(Doxygen OPTIONAL_COMPONENTS)
 if(DOXYGEN_FOUND)
   message("doxygen documentation processor found")
   set(DOXYGEN_OUTPUT_DIRECTORY ../doc)
-  doxygen_add_docs(doc src include)
+
+  if(${CMAKE_VERSION} VERSION_LESS "3.9.0")
+    message("automatic doxygen support not available, please consider to switch to CMake 3.9.0")
+  else()
+    doxygen_add_docs(doc src include)
+  endif()
+
 endif()
 
 ##
