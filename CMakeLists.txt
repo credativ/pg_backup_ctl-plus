@@ -68,17 +68,28 @@ IF (${DETECT_MACPORTS} EQUAL 0)
     include_directories("${MACPORTS_PREFIX}/include")
     target_link_libraries (pgbckctl-common z)
     MESSAGE("MacPorts libraries from ${MACPORTS_PREFIX}/lib")
-ENDIF()
 
-##
-## We need readline
-##
-find_package (readline REQUIRED)
-if (readline_FOUND)
-  include_directories(${readline_INCLUDE_DIRS})
-  message("linking libreadline ${readline_LIBRARIES}")
-  target_link_libraries (pg_backup_ctl++ ${readline_LIBRARIES})
-endif (readline_FOUND)
+    # iff we have macports, we need to lookup for libreadline there, which
+    # isn't shipped with Mac (it's libedit there which we can't
+    # use). Since the check above already added the macports
+    # library path for library search during linking, we just add
+    # libreadline explicitely to link to when we find it.
+    find_library(MACPORTS_LIBREADLINE readline NO_DEFAULT_PATH PATHS ${MACPORTS_PREFIX}/include ${MACPORTS_PREFIX}/lib)
+    message("macports provides libreadline ${MACPORTS_LIBREADLINE}")
+    target_link_libraries(pg_backup_ctl++ ${MACPORTS_LIBREADLINE})
+ELSE()
+
+    ##
+    ## We need readline
+    ##
+    find_package (readline REQUIRED)
+
+    if (readline_FOUND)
+       include_directories(${readline_INCLUDE_DIRS})
+       message("linking libreadline ${readline_LIBRARIES}")
+       target_link_libraries (pg_backup_ctl++ ${readline_LIBRARIES})
+    endif (readline_FOUND)
+ENDIF()
 
 ##
 ## We need popt
