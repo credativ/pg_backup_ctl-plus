@@ -84,7 +84,7 @@ completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_i
                                       { "CONNECTION", COMPL_END, NULL },
                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
-completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_END, NULL },
+completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
                                                      { "", COMPL_EOL, NULL } };
 
 completion_word start_basebackup_profile[] = { { "PROFILE", COMPL_KEYWORD, start_basebackup_profile_ident },
@@ -288,11 +288,24 @@ _evaluate_keyword(completion_word *lookup_table,
   char * result = NULL;
   const char *name;
 
-  while ((name = lookup_table[(*index)++].name)) {
+  /* nothing to do if lookup table is undefined */
+  if (lookup_table == NULL)
+    return result;
 
-    // if (lookup_table[(*index)].type == COMPL_IDENTIFIER) {
-    //   return strdup(name);
-    // }
+  /* Sanity check: same with index */
+  if (index == NULL)
+    return result;
+
+  /*
+   * Take care here, since we rely on index being
+   * resettet to zero when entering this function. Index
+   * is then incremented during the keyword lookup of the
+   * specified lookup table.
+   */
+  while (lookup_table[(*index)].type != COMPL_EOL) {
+
+    /* NOTE: lookup keyword, but also increment index for next round */
+    name = lookup_table[(*index)++].name;
 
     if (strncasecmp(name, input, len) == 0) {
       return strdup(name);
