@@ -25,9 +25,9 @@
 /* charakters that are breaking words into pieces */
 #define WORD_BREAKS		"\t\n@$><=;|&{() "
 
-std::string inputString("One!Two,Three:Four");
-std::string delimiters("|,:");
-
+/*
+ * Completion tags, used to identify completion token type.
+ */
 typedef enum {
   COMPL_KEYWORD,
   COMPL_IDENTIFIER,
@@ -35,6 +35,9 @@ typedef enum {
   COMPL_EOL
 } CompletionWordType;
 
+/*
+ * Completion token definition.
+ */
 typedef struct _completion_word completion_word;
 
 typedef struct _completion_word {
@@ -44,6 +47,10 @@ typedef struct _completion_word {
   completion_word *next_completions;
 
 } completion_word;
+
+/******************************************************************************
+ * Completion definitions.
+ *****************************************************************************/
 
 completion_word param_pgport_completion[] = { { "PGPORT", COMPL_END, NULL },
                                               { "", COMPL_EOL, NULL } };
@@ -250,10 +257,6 @@ char **keyword_completion(const char *input, int start, int end) {
     recognize_previous_words(previous_words);
   }
 
-  // for (auto &i : previous_words) {
-  //   std::cout << " PREV " << i << std::endl;
-  // }
-
   /*
    * Return matches.
    */
@@ -262,15 +265,22 @@ char **keyword_completion(const char *input, int start, int end) {
 }
 
 void init_readline() {
-    /*
-     * Setup readline callbacks
-     */
-    rl_attempted_completion_function = keyword_completion;
 
-    /*
-     * Set word breaks.
-     */
-    rl_basic_word_break_characters = WORD_BREAKS;
+  /* XXX: what about specific append settings?
+   *
+   * rl_completion_append_character = '\0'
+   * rl_completion_suppress_append = 1;
+   */
+
+  /*
+   * Setup readline callbacks
+   */
+  rl_attempted_completion_function = keyword_completion;
+
+  /*
+   * Set word breaks.
+   */
+  rl_basic_word_break_characters = WORD_BREAKS;
 }
 
 void step_readline() {
