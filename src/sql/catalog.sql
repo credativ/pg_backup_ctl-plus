@@ -67,7 +67,7 @@ CREATE TABLE version(
        create_date text not null);
 
 /* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
-INSERT INTO version VALUES(0x1000, datetime('now'));
+INSERT INTO version VALUES(102, datetime('now'));
 
 CREATE TABLE backup_profiles(
        id integer not null,

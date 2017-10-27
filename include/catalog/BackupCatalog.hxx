@@ -457,6 +457,23 @@ namespace credativ {
      * Returns a catalog status view for the given archive.
      */
     virtual std::shared_ptr<StatCatalogArchive> statCatalog(std::string archive_name);
+
+    /**
+     * Returns the compiled in catalog magic number. Should
+     * match at least the version returned from the catalog database
+     * via getCatalogVersion();
+     */
+    static int getCatalogMagic();
+
+    /**
+     * Returns the catalog version number.
+     *
+     * This method returns the version number of the
+     * database catalog, *not* the catalog version this module
+     * needs. See catalogMagicNumber() for the compiled in
+     * catalog version.
+     */
+    virtual int getCatalogVersion();
   };
 }
 

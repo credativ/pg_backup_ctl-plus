@@ -3376,7 +3376,9 @@ bool BackupCatalog::tableExists(string tableName) {
 
     if (rc != SQLITE_ROW) {
       ostringstream oss;
-      oss << "could not execute query for table info: " << sqlite3_errmsg(this->db_handle);
+      oss << "could not execute query for table info: "
+          << sqlite3_errmsg(this->db_handle);
+      sqlite3_finalize(stmt);
       throw CCatalogIssue(oss.str());
     }
 
@@ -3390,7 +3392,46 @@ bool BackupCatalog::tableExists(string tableName) {
   return ((table_exists == 1) ? true : false);
 }
 
+int BackupCatalog::getCatalogVersion() {
+
+  sqlite3_stmt *stmt;
+  int version;
+  int rc;
+
+  if (!this->available())
+    throw CCatalogIssue("catalog database not opened");
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "SELECT number FROM version;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not catalog version from database: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW) {
+    ostringstream oss;
+    oss << "could not execute query for table info: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  version = sqlite3_column_int(stmt, 0);
+  sqlite3_finalize(stmt);
+
+  return version;
+}
+
 void BackupCatalog::checkCatalog() {
+
+  int version = -1;
 
   if (!this->available())
     throw CCatalogIssue("catalog database not opened");
@@ -3413,6 +3454,29 @@ void BackupCatalog::checkCatalog() {
   if (!this->tableExists("backup_profiles"))
     throw CCatalogIssue("catalog database doesn't have a \"backup_profiles\" table");
 
+  /*
+   * Version check. Examine wether CATALOG_MAGIC and the
+   * current database schema version match. This is a weak check,
+   * since one with access to our sqlite database is able to fake
+   * this entry. But better than nothing...
+   */
+  version = this->getCatalogVersion();
+
+#ifdef __DEBUG__
+  std::cerr << "catalog version "
+            << version
+            << ", catalog magic "
+            << this->getCatalogMagic()
+            << std::endl;
+#endif
+
+  if (version < this->getCatalogMagic())
+    throw CCatalogIssue("catalog database schema version too old");
+
+}
+
+int BackupCatalog::getCatalogMagic() {
+  return CATALOG_MAGIC;
 }
 
 void BackupCatalog::open_rw() {
