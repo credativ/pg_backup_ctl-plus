@@ -75,12 +75,16 @@ namespace credativ {
   protected:
     ArchiverState current_state;
     PGconn *pgconn;
-    std::shared_ptr<BackupProfileDescr> profile;
+    StreamIdentification streamident;
   public:
-    WALStreamerProcess(PGconn *prepared_connection);
     WALStreamerProcess(PGconn *prepared_connection,
-                       std::shared_ptr<BackupProfileDescr> profile);
+                       StreamIdentification streamident);
     ~WALStreamerProcess();
+
+    /**
+     * Start streaming of XLOG records.
+     */
+    virtual void start();
   };
 
   /*

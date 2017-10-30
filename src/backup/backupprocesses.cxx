@@ -1,6 +1,7 @@
 #include <stream.hxx>
 #include <backup.hxx>
 #include <backupprocesses.hxx>
+#include <xlogdefs.hxx>
 
 using namespace credativ;
 
@@ -8,22 +9,12 @@ using namespace credativ;
  * Implementation of WALStreamerProcess
  ******************************************************************************/
 
-WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection) {
-
-  this->current_state = ARCHIVER_STARTUP;
-  this->pgconn        = prepared_connection;
-
-  this->profile       = std::make_shared<BackupProfileDescr>();
-
-}
-
 WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection,
-                                       std::shared_ptr<BackupProfileDescr> profile) {
-
+                                       StreamIdentification streamident) {
 
   this->current_state = ARCHIVER_STARTUP;
   this->pgconn        = prepared_connection;
-  this->profile       = profile;
+  this->streamident   = streamident;
 
 }
 
@@ -36,6 +27,19 @@ WALStreamerProcess::~WALStreamerProcess() {
    * on a calling PGStream handle, which
    * does all the legwork for us.
    */
+}
+
+void WALStreamerProcess::start() {
+
+  /*
+   * NOTE: we expect a valid initialized Stream Identification handle,
+   *       holding the starting XLOG position and a valid replication
+   *       slot identifier.
+   */
+  std::ostringstream oss;
+
+  oss << "START_REPLICATION SLOT " << this->streamident.slot_name;
+
 }
 
 /******************************************************************************

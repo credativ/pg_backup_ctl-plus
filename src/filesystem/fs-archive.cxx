@@ -1439,6 +1439,17 @@ BackupHistoryFile::BackupHistoryFile(path handle) : BackupFile(handle) {
 
 }
 
+BackupHistoryFile::BackupHistoryFile(path handle, bool readFile)
+  : BackupFile(handle) {
+
+  if (!readFile) {
+    this->opened = false;
+  } else {
+    read();
+  }
+
+}
+
 void BackupHistoryFile::open() {
 
   read();
@@ -1447,6 +1458,15 @@ void BackupHistoryFile::open() {
 
 void BackupHistoryFile::rename(path& newname) {
   throw CArchiveIssue("renaming backup history files not supported");
+}
+
+size_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
+
+
+}
+
+size_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
+
 }
 
 size_t BackupHistoryFile::read(char *buf, size_t len) {

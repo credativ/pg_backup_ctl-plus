@@ -64,56 +64,6 @@ namespace credativ {
       : StreamingFailure(errstring, transStatus) {};
   };
 
-  class FeedbackMessage {
-  protected:
-    /*
-     * Database connection handle, must be prepared
-     * by PGstream
-     */
-    PGconn *connection = NULL;
-
-    /*
-     * Message type, implemented by derived message types.
-     */
-    unsigned char kind = 0;
-  public:
-    FeedbackMessage(PGconn *prepared_connection);
-    ~FeedbackMessage();
-
-    virtual void send() = 0;
-  };
-
-  class ReceiverStatusUpdateMessage : public FeedbackMessage {
-  private:
-    bool requestPrimaryStatus = false;
-  public:
-    ReceiverStatusUpdateMessage(PGconn *prepared_connection);
-    ~ReceiverStatusUpdateMessage();
-
-    /**
-     * Toggle request for server feedback message. Calling this before
-     * send() requests the streaming endpoint to respond to this
-     * message immediately. This will be resettet after each send()
-     * call.
-     *
-     * This causes the primary to intermix own status messages into
-     * the receiving WAL stream.
-     */
-    void wantsServerResponse();
-
-    /**
-     * Sends a receiver status update to the inherited
-     * database connection.
-     */
-    virtual void send();
-  };
-
-  class HotStandbyFeedbackMessage : public FeedbackMessage {
-  public:
-    HotStandbyFeedbackMessage(PGconn *prepared_connection);
-    ~HotStandbyFeedbackMessage();
-  };
-
   class PGStream : CPGBackupCtlBase {
   private:
     /*
@@ -156,10 +106,17 @@ namespace credativ {
      */
     virtual std::string getServerSetting(std::string name);
 
-    /*
+    /**
      * Helper function to decode a XLOG position string.
      */
     static XLogRecPtr decodeXLOGPos(std::string pos) ;
+
+    /**
+     * Helper function to encode a given XLogRecPtr value.
+     *
+     * Returns the string representation of the given position.
+     */
+    static std::string encodeXLOGPos(XLogRecPtr pos);
 
     /*
      * Get version from connected server

@@ -131,7 +131,9 @@ namespace credativ {
     /*
      * Returns the decoded XLogRecPtr from xlogpos
      */
-    XLogRecPtr getXLOGStartPos();
+    XLogRecPtr xlogposDecoded();
+    std::string xlogposEncoded();
+
   };
 
   /*

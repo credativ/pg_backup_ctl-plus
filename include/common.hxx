@@ -98,6 +98,16 @@ namespace credativ {
      * Effectively, this sets all bytes to NULL.
      */
     void clear();
+
+    /**
+     * Assigns contents of the specified buffer.
+     *
+     * NOTE: This allocates a new internal buffer, in opposite
+     *       to a clear()/write() sequence.
+     */
+    virtual void assign(char *buf, size_t sz);
+
+    std::ostream& operator<<(std::ostream& out);
   };
 
   /**

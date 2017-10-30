@@ -95,8 +95,8 @@ size_t MemoryBuffer::read(char *buf, size_t readsz, size_t off) {
     throw CPGBackupCtlFailure("offset into memory buffer exceeds size");
   }
 
-    /*
-   * Also, off + bufsize must it into the remaining buffer.
+  /*
+   * Also, off + bufsize must fit into the remaining buffer.
    */
   if ( (off + readsz) > this->getSize() ) {
     std::ostringstream oss;
@@ -109,6 +109,17 @@ size_t MemoryBuffer::read(char *buf, size_t readsz, size_t off) {
   return readsz;
 }
 
+void MemoryBuffer::assign(char *buf, size_t sz) {
+
+  /*
+   * Make a new internal buffer
+   */
+  this->allocate(sz);
+
+  /* Copy over bytes from buf */
+  this->write(buf, sz, 0);
+}
+
 void MemoryBuffer::clear() {
 
   if (this->memory_buffer == NULL)
@@ -116,6 +127,13 @@ void MemoryBuffer::clear() {
     return;
 
   memset(this->memory_buffer, 0x0, this->size);
+}
+
+std::ostream& MemoryBuffer::operator<<(std::ostream& out) {
+
+  out << std::string(this->memory_buffer);
+  return out;
+
 }
 
 Range::Range(int start, int end) {
@@ -258,7 +276,8 @@ void CPGBackupCtlBase::openFile(std::ifstream& file,
    */
   boost::filesystem::path file_ext = pathHandle.extension();
 
-  if (file_ext.string() == ".gz") {
+  if (file_ext.string() == ".gz"
+      || file_ext.string() == ".zstd") {
     /*
      * This is a gzipp'ed backup history file. We need
      * to read and uncompress the data before scanning

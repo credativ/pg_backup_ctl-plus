@@ -49,8 +49,8 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/jobs")
 include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
 add_library (pgbckctl-common SHARED src/main/common.cxx src/filesystem/fs-archive.cxx src/catalog/catalog.cxx
-  src/parser/parser.cxx src/parser/commands.cxx src/jobs/daemon.cxx src/backup/backup.cxx src/backup/stream.cxx
-  src/backup/backupprocesses.cxx)
+  src/parser/parser.cxx src/parser/commands.cxx src/jobs/daemon.cxx src/backup/xlogdefs.cxx
+  src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx)
 target_link_libraries (pg_backup_ctl++ pgbckctl-common)
 
 # Detect if the "port" command is valid on this system; if so, return full path

@@ -463,7 +463,11 @@ namespace credativ {
     ptime backupStopped;
   public:
     BackupHistoryFile(path handle);
+    BackupHistoryFile(path handle, bool readFile);
     virtual ~BackupHistoryFile();
+
+    virtual size_t write_mem(MemoryBuffer &mybuffer);
+    virtual size_t read_mem(MemoryBuffer &mybuffer);
 
     virtual void read();
     virtual string getBackupStartTime();
@@ -486,8 +490,12 @@ namespace credativ {
      *
      * Also note that read() cannot be called with
      * an explicit buffer, you have to use the read()
-     * method without arguments here.
+     * method without arguments here, the same with write().
+     *
+     * BackupHistoryFile also supports reading and writing
+     * to a MemoryBuffer object instance, see above.
      */
+
     virtual void open();
     virtual void close();
     virtual void fsync();

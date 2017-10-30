@@ -47,8 +47,12 @@ StreamingExecutionFailure::StreamingExecutionFailure(std::string errstring,
   this->SQLSTATE = SQLSTATE;
 };
 
-XLogRecPtr StreamIdentification::getXLOGStartPos() {
+XLogRecPtr StreamIdentification::xlogposDecoded() {
   return PGStream::decodeXLOGPos(this->xlogpos);
+}
+
+std::string StreamIdentification::xlogposEncoded() {
+  return this->xlogpos;
 }
 
 StreamIdentification::StreamIdentification() {
@@ -85,50 +89,16 @@ void StreamIdentification::reset() {
 }
 
 /******************************************************************************
- * Helper classes.
- ******************************************************************************/
-
-FeedbackMessage::FeedbackMessage(PGconn *prepared_connection) {
-
-  this->connection = prepared_connection;
-
-}
-
-FeedbackMessage::~FeedbackMessage() {}
-
-ReceiverStatusUpdateMessage::ReceiverStatusUpdateMessage(PGconn *prepared_connection)
-  : FeedbackMessage(prepared_connection) {
-
-  this->kind = 'r';
-
-}
-
-ReceiverStatusUpdateMessage::~ReceiverStatusUpdateMessage() {}
-
-void ReceiverStatusUpdateMessage::send() {
-
-  /*
-   * Finally reset primary status request flag.
-   */
-  this->requestPrimaryStatus = false;
-}
-
-void ReceiverStatusUpdateMessage::wantsServerResponse() {
-  this->requestPrimaryStatus = true;
-}
-
-HotStandbyFeedbackMessage::HotStandbyFeedbackMessage(PGconn *prepared_connection)
-  : FeedbackMessage(prepared_connection) {
-
-  this->kind = 'h';
-
-}
-
-HotStandbyFeedbackMessage::~HotStandbyFeedbackMessage() {}
-
-/******************************************************************************
  * Implementation of PGStream
  ******************************************************************************/
+
+std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
+
+  unsigned int hi = pos >> 32;
+  unsigned int lo = (unsigned int) lo;
+
+  return hi + "/" + lo;
+}
 
 XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 
