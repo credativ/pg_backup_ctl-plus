@@ -129,6 +129,16 @@ void MemoryBuffer::clear() {
   memset(this->memory_buffer, 0x0, this->size);
 }
 
+char& MemoryBuffer::operator[](int index) {
+
+  /* Overflow checking */
+  if (index >= this->getSize()
+      || index < 0)
+    throw CPGBackupCtlFailure("memory buffer index out of range");
+
+  return this->memory_buffer[index];
+}
+
 std::ostream& MemoryBuffer::operator<<(std::ostream& out) {
 
   out << std::string(this->memory_buffer);
