@@ -139,6 +139,18 @@ char& MemoryBuffer::operator[](int index) {
   return this->memory_buffer[index];
 }
 
+MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& out) {
+
+  /*
+   * NOTE: allocate already frees the internal buffer
+   *       and creates an new one with the appropiate size.
+   */
+  out.allocate(this->getSize());
+  out.write(this->memory_buffer, this->getSize(), 0);
+  return out;
+
+}
+
 std::ostream& MemoryBuffer::operator<<(std::ostream& out) {
 
   out << std::string(this->memory_buffer);

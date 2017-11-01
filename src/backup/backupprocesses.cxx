@@ -38,7 +38,31 @@ void WALStreamerProcess::start() {
    */
   std::ostringstream oss;
 
-  oss << "START_REPLICATION SLOT " << this->streamident.slot_name;
+  /*
+   * buffer for escaped identifiers.
+   */
+  char escapedLabel[MAXPATH];
+
+  /*
+   * XXX: slot_name and xlogpos are incorporated as
+   *      strings here, so we might have to deal with
+   *      injection attempts here.
+   *
+   *      Normally they're comming from a PGStream
+   *      object instance, but be paranoid here.
+   */
+  PQescapeStringConn(this->pgconn,
+                     escapedLabel,
+                     this->streamident.slot_name.c_str(),
+                     this->streamident.slot_name.length(),
+                     &escape_error);
+
+  oss << "START_REPLICATION SLOT "
+      << this->streamident.slot_name
+      << " PHYSICAL "
+      << this->streamident.xlogpos
+      << " TIMELINE "
+      << this->streamident.timeline;
 
 }
 
@@ -291,7 +315,7 @@ void BaseBackupProcess::readTablespaceInfo() {
     /*
      * Tablespace size.
      *
-     * Since we rely in PROGRESS in the BASE_BACKUP command, this is
+     * Since we rely on PROGRESS in the BASE_BACKUP command, this is
      * assumed to be never NULL!
      */
     descr->spcsize = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(res, i, 2)));

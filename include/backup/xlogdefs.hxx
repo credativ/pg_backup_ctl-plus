@@ -7,6 +7,15 @@
 
 namespace credativ {
 
+  /**
+   * XLOG stream message exception.
+   */
+  class XLOGMessageFailure : public CPGBackupCtlFailure {
+  public:
+    XLOGMessageFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
+    XLOGMessageFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
+  };
+
   /*
    * Message handles for XLOG streaming.
    */
@@ -28,6 +37,11 @@ namespace credativ {
      * a response.
      */
     bool requestResponse;
+
+    /**
+     * Performs basic checks on the assigned byte buffer.
+     */
+    void basicCheckMemoryBuffer(MemoryBuffer &mybuffer);
   public:
     XLOGStreamMessage(PGconn *prepared_connection);
     ~XLOGStreamMessage();
@@ -46,6 +60,11 @@ namespace credativ {
      * Returns the message type identifier byte.
      */
     virtual unsigned char what();
+
+    /**
+     * Operator to assign streamed byte buffer
+     */
+    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer) = 0;
   };
 
   /**
@@ -53,9 +72,22 @@ namespace credativ {
    */
   class XLOGDataStreamMessage : protected XLOGStreamMessage {
   protected:
+    long long xlogstartpos = 0;
+    long long xlogserverpos = 0;
+    long long xlogstreamtime = 0;
+    MemoryBuffer xlogdata;
   public:
     XLOGDataStreamMessage(PGconn *prepared_connection);
     ~XLOGDataStreamMessage();
+
+    /**
+     * Assign a byte buffer to this message, interpreting
+     * the bytes and assigning to the current state of the message.
+     *
+     * If the incoming byte buffer doesn't hold a XLOGData message,
+     * a XLOGMessageFailure exception is thrown.
+     */
+    virtual void assign(MemoryBuffer &mybuffer);
   };
 
   class FeedbackMessage : protected XLOGStreamMessage {
@@ -76,6 +108,10 @@ namespace credativ {
    * required).
    */
   class PrimaryFeedbackMessage : protected XLOGStreamMessage {
+  protected:
+    long long xlogserverendpos = 0;
+    long long xlogservertime = 0;
+    unsigned char responseFlag;
   public:
     PrimaryFeedbackMessage(PGconn *prepared_connection);
     ~PrimaryFeedbackMessage();

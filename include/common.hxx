@@ -108,6 +108,7 @@ namespace credativ {
     virtual void assign(char *buf, size_t sz);
 
     std::ostream& operator<<(std::ostream& out);
+    MemoryBuffer& operator=(MemoryBuffer &out);
     char& operator[](int index);
   };
 
