@@ -41,7 +41,9 @@ void WALStreamerProcess::start() {
   /*
    * buffer for escaped identifiers.
    */
-  char escapedLabel[MAXPATH];
+  char escapedLabel[MAXPGPATH];
+  char escapedXlogPos[MAXPGPATH];
+  int escape_error;
 
   /*
    * XXX: slot_name and xlogpos are incorporated as
@@ -57,8 +59,14 @@ void WALStreamerProcess::start() {
                      this->streamident.slot_name.length(),
                      &escape_error);
 
+  PQescapeStringConn(this->pgconn,
+                     escapedXlogPos,
+                     this->streamident.xlogpos.c_str(),
+                     this->streamident.xlogpos.length(),
+                     &escape_error);
+
   oss << "START_REPLICATION SLOT "
-      << this->streamident.slot_name
+      << escapedLabel
       << " PHYSICAL "
       << this->streamident.xlogpos
       << " TIMELINE "
