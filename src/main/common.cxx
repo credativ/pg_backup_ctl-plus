@@ -365,6 +365,10 @@ high_resolution_clock::time_point CPGBackupCtlBase::current_hires_time_point() {
 
 }
 
+std::chrono::milliseconds CPGBackupCtlBase::ms_get_duration(long ms) {
+  return std::chrono::milliseconds(ms);
+}
+
 std::chrono::milliseconds CPGBackupCtlBase::calculate_duration_ms(high_resolution_clock::time_point start,
                                                                   high_resolution_clock::time_point stop) {
 

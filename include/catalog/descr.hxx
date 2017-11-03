@@ -39,6 +39,7 @@ namespace credativ {
     LIST_BACKUP_CATALOG,
     LIST_CONNECTION,
     START_LAUNCHER,
+    START_STREAMING_FOR_ARCHIVE,
     BACKGROUND_WORKER_COMMAND
   } CatalogTag;
 
@@ -53,6 +54,14 @@ namespace credativ {
 
   } BackupProfileCompressType;
 
+  typedef enum {
+
+    REPLICATION_SLOT_OK,
+    REPLICATION_SLOT_EXISTS,
+    REPLICATION_SLOT_ERROR
+
+  } ReplicationSlotStatus;
+
   /*
    * Represents a physical replication slot.
    * State of base backup stream.
@@ -62,6 +71,15 @@ namespace credativ {
     std::string consistent_point;
     std::string snapshot_name;
     std::string output_plugin;
+
+    /*
+     * Flag indicating that the slot
+     * already existed and we have to ignore
+     * it.
+     *
+     * This flag is only set by PGStream::createPhysicalReplicationSlot().
+     */
+    ReplicationSlotStatus status;
   };
 
   /*
@@ -114,6 +132,12 @@ namespace credativ {
     std::string dbname;
     std::string status;
     std::string create_date;
+
+    /*
+     * Additional properties, those aren't necessarily
+     * initialized. Use them with care.
+     */
+    std::string archive_name = "";
 
     StreamIdentification();
     ~StreamIdentification();

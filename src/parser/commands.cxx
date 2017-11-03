@@ -381,6 +381,124 @@ void StartLauncherCatalogCommand::execute(bool flag) {
   }
 }
 
+StartStreamingForArchiveCommand::StartStreamingForArchiveCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = START_STREAMING_FOR_ARCHIVE;
+  this->catalog = catalog;
+}
+
+StartStreamingForArchiveCommand::StartStreamingForArchiveCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+void StartStreamingForArchiveCommand::execute(bool noop) {
+
+  std::shared_ptr<CatalogDescr> temp_descr = nullptr;
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  /*
+   * Don't employ transactions here, since we just read.
+   */
+
+  /*
+   * Check, if archive exists.
+   */
+  temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    /*
+     * Don't need to rollback, outer exception handler will do this
+     */
+    std::ostringstream oss;
+    oss << "archive\""
+        << this->archive_name
+        << "\" does not exist";
+
+    throw CCatalogIssue(oss.str());
+  }
+
+  try {
+
+    /*
+     * Get the streaming connection for this archive. Please note that we
+     * have to fallback to archive default connection.
+     */
+
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_TYPE_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_DSN_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGHOST_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGPORT_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGUSER_ATTNO);
+    temp_descr->coninfo->pushAffectedAttribute(SQL_CON_PGDATABASE_ATTNO);
+
+    /*
+     * We need to try harder here, if anynone has defined a separate
+     * streaming connection for this archive. If no streamer type is found,
+     * switch back to basebackup type and use that.
+     */
+    this->catalog->getCatalogConnection(temp_descr->coninfo,
+                                        temp_descr->id,
+                                        ConnectionDescr::CONNECTION_TYPE_STREAMER);
+
+    if (temp_descr->coninfo->archive_id < 0
+        && temp_descr->coninfo->type == ConnectionDescr::CONNECTION_TYPE_UNKNOWN) {
+      /* use archive default connection */
+      this->catalog->getCatalogConnection(temp_descr->coninfo,
+                                          temp_descr->id,
+                                          ConnectionDescr::CONNECTION_TYPE_BASEBACKUP);
+    }
+
+#ifdef __DEBUG__
+    cout << "streaming connection DSN " << temp_descr->coninfo->dsn << endl;
+#endif
+    /*
+     * Connection definition should be ready now, create PGStream
+     * connection handle and go further.
+     */
+    std::shared_ptr<WALStreamerProcess> walstreamer = nullptr;
+    PGStream pgstream(temp_descr);
+    pgstream.connect();
+
+    /*
+     * Identify system
+     */
+    pgstream.identify();
+
+    /*
+     * Set correct archive_id and stream connection
+     * identification. Also we need an identifier
+     * for the replication slot.
+     */
+    pgstream.streamident.archive_id = temp_descr->coninfo->archive_id;
+    pgstream.generateSlotName(temp_descr->archive_name);
+
+    /*
+     * Replication slot for this archive required.
+     * We do not care if the slot already exists.
+     */
+    pgstream.createPhysicalReplicationSlot(true, true, false);
+
+    walstreamer = pgstream.walstreamer();
+    walstreamer->start();
+    walstreamer->receive();
+
+  } catch(CPGBackupCtlFailure &e) {
+    throw e;
+  }
+}
+
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = LIST_BACKUP_CATALOG;
   this->catalog = catalog;

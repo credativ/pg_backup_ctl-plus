@@ -7,6 +7,16 @@
 
 namespace credativ {
 
+  /*
+   * Forwarded class declarations.
+   */
+  class XLOGStreamMessage;
+  class XLOGDataStreamMessage;
+  class FeedbackMessage;
+  class PrimaryFeedbackMessage;
+  class ReceiverStatusUpdateMessage;
+  class HotStandbyFeedBackMessage;
+
   /**
    * XLOG stream message exception.
    */
@@ -46,7 +56,7 @@ namespace credativ {
     XLOGStreamMessage(PGconn *prepared_connection);
     ~XLOGStreamMessage();
 
-    virtual void assign(MemoryBuffer &mybuffer) = 0;
+    virtual void assign(MemoryBuffer &mybuffer) {};
 
     /**
      * Toggle request for server/client feedback message. Calling this before
@@ -64,13 +74,20 @@ namespace credativ {
     /**
      * Operator to assign streamed byte buffer
      */
-    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer) = 0;
+    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer) {};
+
+    /**
+     * A factory method, returning any message instance identified
+     * by the specified XLOG data buffer.
+     */
+    static XLOGStreamMessage* message(PGconn *pg_connection,
+                                      MemoryBuffer &srcbuffer);
   };
 
   /**
    * A WAL data stream message, contains binary WAL information.
    */
-  class XLOGDataStreamMessage : protected XLOGStreamMessage {
+  class XLOGDataStreamMessage : public XLOGStreamMessage {
   protected:
     long long xlogstartpos = 0;
     long long xlogserverpos = 0;
@@ -88,16 +105,21 @@ namespace credativ {
      * a XLOGMessageFailure exception is thrown.
      */
     virtual void assign(MemoryBuffer &mybuffer);
+
+    /**
+     * Overloaded operator to assign a memory buffer.
+     */
+    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer);
   };
 
-  class FeedbackMessage : protected XLOGStreamMessage {
+  class FeedbackMessage : public XLOGStreamMessage {
   protected:
 
   public:
     FeedbackMessage(PGconn *prepared_connection);
     ~FeedbackMessage();
 
-    virtual void send() = 0;
+    virtual void send() {};
   };
 
   /*
@@ -107,7 +129,7 @@ namespace credativ {
    * it's just a status update to be read (thus, no send() action
    * required).
    */
-  class PrimaryFeedbackMessage : protected XLOGStreamMessage {
+  class PrimaryFeedbackMessage : public XLOGStreamMessage {
   protected:
     long long xlogserverendpos = 0;
     long long xlogservertime = 0;
@@ -135,7 +157,7 @@ namespace credativ {
     virtual void send();
   };
 
-  class HotStandbyFeedbackMessage : protected FeedbackMessage {
+  class HotStandbyFeedbackMessage : public FeedbackMessage {
   public:
     HotStandbyFeedbackMessage(PGconn *prepared_connection);
     ~HotStandbyFeedbackMessage();

@@ -201,6 +201,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "LIST CONNECTION";
   case DROP_CONNECTION:
     return "DROP CONNECTION";
+  case START_STREAMING_FOR_ARCHIVE:
+    return "START STREAMING FOR ARCHIVE";
   default:
     return "UNKNOWN";
   }
@@ -405,7 +407,7 @@ void BackupCatalog::startTransaction() {
     throw CCatalogIssue("catalog database not opened");
 
   rc = sqlite3_exec(this->db_handle,
-                    "BEGIN;",
+                    "BEGIN TRANSACTION EXCLUSIVE;",
                     NULL,
                     NULL,
                     NULL);
@@ -3496,6 +3498,19 @@ void BackupCatalog::open_rw() {
 
   rc = sqlite3_exec(this->db_handle,
                     "PRAGMA foreign_keys=ON;",
+                    NULL,
+                    NULL,
+                    &errmsg);
+
+  if (errmsg != NULL) {
+    ostringstream oss;
+    oss << "error setting SQLite Pragma: " << errmsg;
+    sqlite3_free(errmsg);
+    throw CCatalogIssue(oss.str());
+  }
+
+  rc = sqlite3_exec(this->db_handle,
+                    "PRAGMA journal_mode=WAL;",
                     NULL,
                     NULL,
                     &errmsg);

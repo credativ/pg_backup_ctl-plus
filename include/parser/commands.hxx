@@ -211,6 +211,18 @@ namespace credativ {
   };
 
   /*
+   * Implements a START STREAMING FOR ARCHIVE command handler.
+   */
+  class StartStreamingForArchiveCommand : public BaseCatalogCommand {
+  public:
+    StartStreamingForArchiveCommand(std::shared_ptr<BackupCatalog> catalog);
+    StartStreamingForArchiveCommand(std::shared_ptr<CatalogDescr> descr);
+    StartStreamingForArchiveCommand();
+
+    virtual void execute(bool noop);
+  };
+
+  /*
    * Implements a dummy command to be passed to background workers.
    *
    * This commmand is a wrapper around commands, that

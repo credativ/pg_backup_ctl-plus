@@ -138,6 +138,7 @@ namespace credativ {
                                                  [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
                                                  > -(with_profile) )
                                                | ( cmd_start_launcher )
+                                               | ( cmd_start_streaming )
                                                )
 
                         ); /* start rule end */
@@ -169,6 +170,15 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ]
           ^ no_case[lexeme[ lit("NODETACH") ]]
           [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ];
+
+        /*
+         * START STREAMING FOR ARCHIVE command
+         */
+        cmd_start_streaming = no_case[lexeme[ lit("STREAMING") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_STREAMING_FOR_ARCHIVE) ]
+          > no_case[ lexeme[ lit("FOR ARCHIVE") ] ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * CREATE, DROP, ALTER, START and LIST tokens...
@@ -429,6 +439,7 @@ namespace credativ {
         cmd_alter.name("ALTER start");
         cmd_start_command.name("START start");
         cmd_start_launcher.name("LAUNCHER");
+        cmd_start_streaming.name("STREAMING");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_create_connection.name("CREATE STREAMING CONNECTION");
@@ -474,6 +485,7 @@ namespace credativ {
                           cmd_alter_archive_opt,
                           cmd_start_basebackup,
                           cmd_start_launcher,
+                          cmd_start_streaming,
                           cmd_list_archive,
                           cmd_list_connection,
                           cmd_create_backup_profile,
@@ -662,6 +674,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case DROP_CONNECTION:
     result = make_shared<DropConnectionCatalogCommand>(this->catalogDescr);
+    break;
+
+  case START_STREAMING_FOR_ARCHIVE:
+    result = make_shared<StartStreamingForArchiveCommand>(this->catalogDescr);
     break;
 
   default:

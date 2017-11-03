@@ -1,5 +1,8 @@
 #include <xlogdefs.hxx>
 
+/* For PGconn */
+#include <libpq-fe.h>
+
 using namespace credativ;
 
 /* ****************************************************************************
@@ -36,6 +39,29 @@ void XLOGStreamMessage::basicCheckMemoryBuffer(MemoryBuffer &mybuffer) {
   if (this->what() != mybuffer[0])
     throw XLOGMessageFailure("buffer doesn't hold valid XLOGDataMessage data");
 
+}
+
+XLOGStreamMessage* XLOGStreamMessage::message(PGconn *pg_connection,
+                                              MemoryBuffer &srcbuffer) {
+
+  /*
+   * Empty buffer not allowed, return a null pointer
+   * in this case.
+   */
+  if (srcbuffer.getSize() <= 0)
+    return nullptr;
+
+  switch(srcbuffer[0]) {
+  case 'w':
+    {
+      XLOGStreamMessage *message = new XLOGDataStreamMessage(pg_connection);
+      *message << srcbuffer;
+      return message;
+    }
+  default:
+    /* unknown message type, bail out hard. */
+    throw XLOGMessageFailure("unknown message type: " + srcbuffer[0]);
+  }
 }
 
 /* ****************************************************************************
@@ -96,6 +122,13 @@ void XLOGDataStreamMessage::assign(MemoryBuffer &mybuffer) {
 
     delete xlogdatabytes;
   }
+}
+
+XLOGStreamMessage& XLOGDataStreamMessage::operator<<(MemoryBuffer &srcbuffer) {
+
+  this->assign(srcbuffer);
+  return *this;
+
 }
 
 /******************************************************************************

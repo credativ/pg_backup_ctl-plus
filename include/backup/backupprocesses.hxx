@@ -47,7 +47,11 @@ namespace credativ {
     ARCHIVER_START_POSITION,
     ARCHIVER_STREAMING,
     ARCHIVER_END_POSITION,
-    ARCHIVER_SHUTDOWN
+    ARCHIVER_SHUTDOWN,
+    ARCHIVER_STREAMING_TIMEOUT,
+    ARCHIVER_STREAMING_INTR,
+    ARCHIVER_STREAMING_ERROR,
+    ARCHIVER_STREAMING_NO_DATA
   } ArchiverState;
 
   /*
@@ -72,11 +76,52 @@ namespace credativ {
    * Implementation of class WALStreamerProcess
    */
   class WALStreamerProcess : public CPGBackupCtlBase {
+
   protected:
+
     ArchiverState current_state;
     PGconn *pgconn;
     StreamIdentification streamident;
+
+    /**
+     * Timeout for polling on WAL stream.
+     *
+     * Default is 10000ms
+     */
+    long timeout = 10000;
+
+    /**
+     * Receive buffer
+     */
+    MemoryBuffer receiveBuffer;
+
+    /**
+     * Send buffer.
+     */
+    MemoryBuffer sendBuffer;
+
+    /**
+     * Poll on receiving WAL stream.
+     *
+     * No connection checks done here, caller is assumed
+     * to have properly checked the PostgreSQL server connection
+     * to be available.
+     */
+    virtual ArchiverState receivePoll();
+
+    /**
+     * Handle receiving a buffer from current stream.
+     */
+    virtual ArchiverState handleReceive(char **buffer, int *bufferlen);
+
+    /*
+     * Calculates a timeval value suitable to
+     * be passed to select().
+     */
+    void timeoutSelectValue(timeval *timeoutptr);
+
   public:
+
     WALStreamerProcess(PGconn *prepared_connection,
                        StreamIdentification streamident);
     ~WALStreamerProcess();
@@ -85,6 +130,33 @@ namespace credativ {
      * Start streaming of XLOG records.
      */
     virtual void start();
+
+    /**
+     * Receive XLOG data from stream.
+     *
+     * Requires a successful call to start() to begin
+     * XLOG streaming. Returns FALSE if the WAL stream stopped,
+     * otherwise will enter a receive loop.
+     *
+     * The caller can check by the method reason(), wether
+     * the XLOG stream terminated somehow or we need to create a new log
+     * segment or et al. See reason() for more information.
+     */
+    virtual bool receive();
+
+    /**
+     * Returns an identifier indicating the
+     * current status of the XLOG stream.
+     */
+    ArchiverState reason();
+
+    /**
+     * finalizeSegment() finalizes the current XLOG segment file.
+     *
+     * If reason() returns ARCHIVER_END_POSITION we need to handle
+     * the end of archive condition accordingly.
+     */
+    virtual void finalizeSegment();
   };
 
   /*

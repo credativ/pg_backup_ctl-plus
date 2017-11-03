@@ -233,6 +233,10 @@ namespace credativ {
      */
     static long long duration_get_ms(std::chrono::milliseconds ms);
 
+    /**
+     * Returns a milliseconds duration.
+     */
+    static std::chrono::milliseconds ms_get_duration(long ms);
   };
 
 }

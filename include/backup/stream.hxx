@@ -81,21 +81,29 @@ namespace credativ {
      */
     bool identified = false;
 
-    /*
-     * Generate a slot name for an identified stream.
-     * Throws a StreamingExecutionFailure in case identification
-     * not available.
-     */
-    std::string generateSlotName();
   public:
+
     PGStream(const std::shared_ptr<CatalogDescr>& descr);
     ~PGStream();
 
-    /*
+    /**
      * If identified, holds information
      * from IDENTIFY SYSTEM
      */
     StreamIdentification streamident;
+
+    /**
+     * Generate a slot name for an identified stream and
+     * assigns the generated string to the internal streamident
+     * handle.
+     *
+     * Throws a StreamingExecutionFailure in case identification
+     * not available.
+     *
+     * This is just a helper method to assign a valid identifier.
+     * Someone might use the streamident object directly.
+     */
+    std::string generateSlotName(std::string archive_name);
 
     /**
      * Returns the server parameter value. Throws
@@ -215,10 +223,26 @@ namespace credativ {
     virtual std::shared_ptr<BaseBackupProcess> basebackup(std::shared_ptr<BackupProfileDescr> profile);
 
     /**
+     * Returns a WAL streaming handle. Stream should be already
+     * connected and identified.
+     */
+    virtual std::shared_ptr<WALStreamerProcess> walstreamer();
+
+    /**
      * Sends a streaming receiver update message to the
      * primary endpoint.
      */
     virtual void sendReceiverStatusUpdate();
+
+    /**
+     * Sets the internal PostgreSQL connection to non-blocking.
+     */
+    virtual void setNonBlocking();
+
+    /**
+     * Sets the internal PostgreSQL connection to blocking.
+     */
+    virtual void setBlocking();
   };
 
 }

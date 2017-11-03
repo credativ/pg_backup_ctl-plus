@@ -3,6 +3,11 @@
 #include <backupprocesses.hxx>
 #include <xlogdefs.hxx>
 
+/* Required for select() */
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 using namespace credativ;
 
 /******************************************************************************
@@ -29,6 +34,208 @@ WALStreamerProcess::~WALStreamerProcess() {
    */
 }
 
+ArchiverState WALStreamerProcess::reason() {
+  return this->current_state;
+}
+
+ArchiverState WALStreamerProcess::receivePoll() {
+
+  /*
+   * Polling code like src/bin/pg_basebackup/receivelog.c
+   * is implemented. See also
+   *
+   * https://www.postgresql.org/docs/10/static/libpq-example.html
+   *
+   * for an example.
+   */
+
+  int result;
+  fd_set input_mask;
+  int maxfd;
+  timeval select_timeout;
+  timeval *select_timeoutptr = NULL;
+
+  /*
+   * We need the PG socket to operate on.
+   */
+  int serversocket = PQsocket(this->pgconn);
+
+  if (serversocket < 0) {
+    std::ostringstream oss;
+    oss << "error polling on server connection: "
+        << PQerrorMessage(this->pgconn);
+    throw StreamingFailure(oss.str());
+  }
+
+  FD_ZERO(&input_mask);
+  FD_SET(serversocket, &input_mask);
+  maxfd = serversocket;
+  this->timeoutSelectValue(&select_timeout);
+
+  /*
+   * Calculate timeout value.
+   */
+  if (this->timeout > 0) {
+    select_timeoutptr = &select_timeout;
+  }
+
+  result = ::select(maxfd + 1, &input_mask, NULL, NULL, select_timeoutptr);
+
+  /*
+   * Checkout what happened to select() after returning.
+   */
+  if (result < 0) {
+    /*
+     * A negative return code here can also be originated
+     * from a EINTR, check. Otherwise we bail out hard.
+     */
+    if (errno == EINTR) {
+      /* Archiver stream is interrupted by signal */
+      return ARCHIVER_STREAMING_INTR;
+    }
+
+    /* ... else this is really an error. */
+    return ARCHIVER_STREAMING_ERROR;
+  }
+
+  if ( (result > 0)
+       && (FD_ISSET(serversocket, &input_mask)) ) {
+    /* data is available */
+    return ARCHIVER_STREAMING;
+  }
+
+  /* timeout on waiting for data */
+  return ARCHIVER_STREAMING_TIMEOUT;
+}
+
+void WALStreamerProcess::timeoutSelectValue(timeval *timeoutptr) {
+
+  if (timeoutptr == NULL) {
+    return;
+  } else {
+
+    timeoutptr->tv_sec = this->timeout / 1000L;
+    timeoutptr->tv_usec = (this->timeout % 1000L) / 1000L;
+
+  }
+
+}
+
+ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
+
+  /* Holds length of incoming buffer data */
+  int currlen = 0;
+  ArchiverState status = ARCHIVER_STREAMING_ERROR;
+
+  /* bufferlen should be not null! */
+  if (bufferlen == NULL) {
+    throw StreamingFailure("buffer length attribute cannot be NULL");
+  }
+
+  if (*buffer != NULL) {
+    PQfreemem(*buffer);
+  }
+
+  /* make sure buffer is NULL */
+  *buffer = NULL;
+
+  /* Get input data, if any */
+  *bufferlen = PQgetCopyData(this->pgconn, buffer, 1);
+
+  if (*bufferlen == 0) {
+
+    /* no data yet */
+    status = this->current_state = this->receivePoll();
+
+    /* check for errors, timeout et al. */
+    if (status != ARCHIVER_STREAMING) {
+      return status;
+    }
+
+    /* Consume input */
+    if (PQconsumeInput(this->pgconn) == 0) {
+
+      /*
+       * Okay, there's some trouble here, get the error
+       * and bail out hard.
+       */
+      status = this->current_state = ARCHIVER_STREAMING_ERROR;
+
+    }
+
+    /* Read data into buffer, again */
+    *bufferlen = PQgetCopyData(this->pgconn, buffer, 1);
+
+    /*
+     * If there's still zero bytes just return ARCHIVER_STREAMING_NO_DATA.
+     */
+    if (*bufferlen == 0) {
+      status = this->current_state = ARCHIVER_STREAMING_NO_DATA;
+    }
+
+  } else if (*bufferlen == -1) {
+
+    status = this->current_state = ARCHIVER_END_POSITION;
+
+  } else if (*bufferlen == -2) {
+
+    status = this->current_state = ARCHIVER_STREAMING_ERROR;
+
+  }
+
+  return status;
+}
+
+bool WALStreamerProcess::receive() {
+
+  bool can_continue = false;
+  char *buffer = NULL; /* temporary recv buffer, handle by libpq */
+  int bufferlen = 0;
+
+  /*
+   * If we're not in streaming state, handle the state
+   * accordingly.
+   */
+  if (this->current_state == ARCHIVER_STREAMING_ERROR) {
+    /* error condition on streaming connection, abort */
+    throw StreamingFailure("error on streaming connection");
+  }
+
+  if (this->current_state == ARCHIVER_STARTUP) {
+    throw StreamingFailure("attempt to stream from uninitialized streaming handle, call start() before");
+  }
+
+  if (this->current_state == ARCHIVER_END_POSITION) {
+    throw StreamingFailure("new log segment requested, use finalize() instead");
+  }
+
+  while (this->handleReceive(&buffer, &bufferlen) == ARCHIVER_STREAMING) {
+
+    XLOGStreamMessage *message = nullptr;
+
+    /*
+     * Interpret buffer, create a corresponding WAL message object.
+     */
+    this->receiveBuffer.allocate(bufferlen);
+    this->receiveBuffer.write(buffer, bufferlen, 0);
+
+    message = XLOGStreamMessage::message(this->pgconn,
+                                         this->receiveBuffer);
+
+    std::cout << "WAL MESSAGE KIND: " << message->what() << std::endl;
+  }
+
+  return can_continue;
+}
+
+void WALStreamerProcess::finalizeSegment() {
+
+  if (this->current_state != ARCHIVER_END_POSITION) {
+    throw StreamingFailure("cannot finalize current transaction log segment");
+  }
+
+}
+
 void WALStreamerProcess::start() {
 
   /*
@@ -36,7 +243,7 @@ void WALStreamerProcess::start() {
    *       holding the starting XLOG position and a valid replication
    *       slot identifier.
    */
-  std::ostringstream oss;
+  std::ostringstream query;
 
   /*
    * buffer for escaped identifiers.
@@ -44,6 +251,23 @@ void WALStreamerProcess::start() {
   char escapedLabel[MAXPGPATH];
   char escapedXlogPos[MAXPGPATH];
   int escape_error;
+
+  /*
+   * If the ArchiveState is already set to ARCHIVER_STREAMING, calling
+   * start() is supposed to be an error (we indeed already seem to
+   * have issued a start() command, so there's no reason to stack them here.
+   * Indicate the state of the WALStreamer to be not correct in this case
+   * and throw an error.
+   *
+   * Also, if the current_state is set to ARCHIVE_END_POSITION we need to
+   * handle a graceful streaming connection shutdown, so stop() is
+   * required before calling start(). Other states are just handled by
+   * receive().
+   */
+  if (this->current_state == ARCHIVER_STREAMING
+      || this->current_state == ARCHIVER_END_POSITION) {
+    throw StreamingFailure("invalid call to start() in archiver: already started");
+  }
 
   /*
    * XXX: slot_name and xlogpos are incorporated as
@@ -65,13 +289,34 @@ void WALStreamerProcess::start() {
                      this->streamident.xlogpos.length(),
                      &escape_error);
 
-  oss << "START_REPLICATION SLOT "
-      << escapedLabel
-      << " PHYSICAL "
-      << this->streamident.xlogpos
-      << " TIMELINE "
-      << this->streamident.timeline;
+  query << "START_REPLICATION SLOT "
+        << escapedLabel
+        << " PHYSICAL "
+        << this->streamident.xlogpos
+        << " TIMELINE "
+        << this->streamident.timeline
+        << ";";
 
+#ifdef __DEBUG__
+  std::cerr << "WALStreamer start() query: " << query.str() << std::endl;
+#endif
+
+  /*
+   * Fire the query ...
+   */
+  if (PQsendQuery(this->pgconn, query.str().c_str()) == 0) {
+    std::ostringstream oss;
+    oss << "START_REPLICATION command failed: "
+        << PQerrorMessage(this->pgconn);
+    throw StreamingFailure(oss.str());
+  }
+
+  /*
+   * If everything went smoothly, change internal state
+   * to ARCHIVER_STREAMING, which enables the caller
+   * to use receive()...
+   */
+  this->current_state = ARCHIVER_STREAMING;
 }
 
 /******************************************************************************

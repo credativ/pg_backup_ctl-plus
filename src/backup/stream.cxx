@@ -155,6 +155,26 @@ void PGStream::setPGConnection(PGconn *conn) {
   this->pgconn = conn;
 }
 
+void PGStream::setBlocking() {
+
+  if (this->connected()) {
+    PQsetnonblocking(this->pgconn, 0);
+  } else {
+    throw StreamingFailure("cannot set blocking mode: not connected to a PostgreSQL server");
+  }
+
+}
+
+void PGStream::setNonBlocking() {
+
+  if (this->connected()) {
+    PQsetnonblocking(this->pgconn, 1);
+  }
+  else {
+    throw StreamingFailure("cannot set non-blocking mode: not connected to a PostgreSQL server");
+  }
+}
+
 void PGStream::connect() {
 
   ConnStatusType cs;
@@ -174,7 +194,11 @@ void PGStream::connect() {
    *
    * XXX: maybe use libpq connection option parsing, looks safer.
    */
+
+#ifdef __DEBUG__
   cout << "DSN is " << this->descr->coninfo->dsn << endl;
+#endif
+
   if (this->descr->coninfo->dsn.length() > 0) {
     cout << "using database DSN for connection" << endl;
     conninfo << this->descr->coninfo->dsn
@@ -421,6 +445,13 @@ void PGStream::identify() {
   this->identified = true;
 }
 
+std::shared_ptr<WALStreamerProcess> PGStream::walstreamer() {
+
+  return std::make_shared<WALStreamerProcess>(this->pgconn,
+                                              this->streamident);
+
+}
+
 std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
 
   /*
@@ -437,7 +468,7 @@ std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupPr
                                              this->streamident.systemid);
 }
 
-std::string PGStream::generateSlotName() {
+std::string PGStream::generateSlotName(std::string archive_name) {
 
   if (!this->isIdentified()) {
     throw StreamingExecutionFailure("could not generate slot name: not identified",
@@ -446,9 +477,10 @@ std::string PGStream::generateSlotName() {
 
   std::ostringstream slot_name;
 
-  slot_name << "SLOT-pg_backup_ctl_stream_"
-            << this->streamident.id;
+  slot_name << "pg_backup_ctl_stream_"
+            << archive_name;
 
+  this->streamident.slot_name = slot_name.str();
   return slot_name.str();
 
 }
@@ -460,7 +492,6 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
   std::ostringstream query;
   ExecStatusType es;
   PGresult      *result;
-  std::string slot_name;
   std::shared_ptr<PhysicalReplicationSlot> slot;
 
   /*
@@ -474,19 +505,21 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
   /*
    * We need to be IDENTIFIED
    */
-  if (!this-!isIdentified()
+  if (!this->isIdentified()
       && !noident_ok) {
     throw StreamingExecutionFailure("could not create replication slot: not identified",
                                     PGRES_FATAL_ERROR);
   }
 
-  /*
-   * Assign the slot name to current ident
-   */
-  this->streamident.slot_name = this->generateSlotName();
+  if (this->streamident.slot_name.length() <= 0) {
+    throw StreamingFailure("replication slot name empty, use generateSlotName()");
+  }
+
+  slot = std::make_shared<PhysicalReplicationSlot>();
+  slot->status = REPLICATION_SLOT_ERROR;
 
   query << "CREATE_REPLICATION_SLOT "
-        << slot_name
+        << this->streamident.slot_name
         << " PHYSICAL";
 
   if (reserve_wal) {
@@ -504,39 +537,71 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
     if (sqlstate.compare(ERRCODE_DUPLICATE_OBJECT) == 0) {
       if (!existing_ok) {
         std::ostringstream oss;
-        oss << "replication slot " << slot_name
+        oss << "replication slot " << this->streamident.slot_name
             << " already exists";
+        PQclear(result);
         throw StreamingExecutionFailure(oss.str(), es,
                                         ERRCODE_DUPLICATE_OBJECT);
+      } else {
+        /* Flag this slot that it already exists */
+        slot->status = REPLICATION_SLOT_EXISTS;
       }
+    } else {
+      std::ostringstream oss;
+      oss << "cannot create replication slot "
+          << PQerrorMessage(this->pgconn);
+      PQclear(result);
+      throw StreamingExecutionFailure(oss.str(), es, sqlstate);
     }
+  } else {
+    /* everything seems ok, flag the slot descriptor accordingly. */
+    slot->status = REPLICATION_SLOT_OK;
   }
 
   /*
-   * If the query returned successfully, we get a single row result
-   * set with 4 cols.
+   * Since we also claim to support PostgreSQL 9.6, we must
+   * be careful here, since 9.6 servers don't reply to this command.
    */
-  if(PQntuples(result) != 1) {
-    throw StreamingExecutionFailure("cannot create replication slot: unexpected number of rows",
-                                    es,
-                                    sqlstate);
+  if (this->getServerVersion() < 90600) {
+    PQclear(result);
   }
 
-  if (PQnfields(result) < 3) {
-    throw StreamingExecutionFailure("connect create replication slot: unexpected number of columns",
-                                    es,
-                                    sqlstate);
+  /*
+   * If the slot status was previously set to REPLICATION_SLOT_EXISTS,
+   * we aren't going to bother here any longer. Reuse the existing slot.
+   *
+   * XXX: One might argue that we could possibly hijack another
+   *      slot accidently having the same name. Though, i believe
+   *      no one will use our internal identifier, but nevertheless, i agree,
+   *      this possibility exists.
+   */
+  if (slot->status == REPLICATION_SLOT_OK) {
+    /*
+     * If the query returned successfully, we get a single row result
+     * set with 4 cols.
+     */
+    if(PQntuples(result) != 1) {
+      throw StreamingExecutionFailure("cannot create replication slot: unexpected number of rows",
+                                      es,
+                                      sqlstate);
+    }
+
+    if (PQnfields(result) < 3) {
+      throw StreamingExecutionFailure("connect create replication slot: unexpected number of columns",
+                                      es,
+                                      sqlstate);
+    }
+
+    slot->slot_name = std::string(PQgetvalue(result, 0,
+                                             PQfnumber(result,
+                                                       "slot_name")));
+
+    if (this->isIdentified()) {
+      this->streamident.slot = slot;
+    }
   }
 
-  slot = std::make_shared<PhysicalReplicationSlot>();
-  slot->slot_name = std::string(PQgetvalue(result, 0,
-                                           PQfnumber(result,
-                                                     "slot_name")));
-
-  if (this->isIdentified()) {
-    this->streamident.slot = slot;
-  }
-
+  PQclear(result);
   return slot;
 
 }
