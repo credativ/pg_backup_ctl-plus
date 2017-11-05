@@ -86,9 +86,15 @@ completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_ar
                                              { "CATALOG", COMPL_KEYWORD, list_archive_ident_completion },
                                              { "", COMPL_EOL, NULL } };
 
+completion_word list_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                                         { "", COMPL_EOL, NULL } };
+
+completion_word list_connection_for_completion[] = { { "FOR", COMPL_KEYWORD, list_connection_archive_completion },
+                                                     { "", COMPL_EOL, NULL } };
+
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "BACKUP", COMPL_KEYWORD, list_backup_completion },
-                                      { "CONNECTION", COMPL_END, NULL },
+                                      { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion },
                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
@@ -106,8 +112,9 @@ completion_word start_basebackup_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start
 completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebackup_archive },
                                            { "", COMPL_EOL, NULL } };
 
-completion_word start_basebackup_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
+                                       { "STREAMING", COMPL_KEYWORD, start_basebackup_for },
+                                       { "", COMPL_EOL, NULL } };
 
 completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                                 { "", COMPL_EOL, NULL } };
@@ -125,7 +132,7 @@ completion_word alter_completion[] = { { "ARCHIVE", COMPL_KEYWORD, alter_archive
                                        { "", COMPL_EOL, NULL } };
 
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
-                                    { "START", COMPL_KEYWORD, start_basebackup_completion },
+                                    { "START", COMPL_KEYWORD, start_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
                                     { "VERIFY", COMPL_KEYWORD, verify_archive_completion },
                                     { "DROP", COMPL_KEYWORD, drop_completion },
