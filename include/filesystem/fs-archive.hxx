@@ -415,8 +415,8 @@ namespace credativ {
 
     /**
      * Calculates an encoded XLOG start position from the *last*
-     * XLOG segment file found in the archive directory. Throws
-     * a ArchiveLogDirectoryEmpty exception in case no logfile is present.
+     * XLOG segment file found in the archive directory. Returns
+     * an empty string in case no XLOG segments are found.
      *
      * walsegsize should be a valid segment size value, obtained
      * by a PGStream object instance. Note that we don't check
