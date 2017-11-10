@@ -232,6 +232,24 @@ filtering_ostream* CPGBackupCtlBase::prepareBinaryOutFile(boost::filesystem::pat
   return zipped;
 }
 
+/**
+ * C++ doesn't have this ready, see
+ *
+ * https://stackoverflow.com/questions/3418231/replace-part-of-a-string-with-another-string
+ *
+ * for discussion.
+ */
+void CPGBackupCtlBase::strReplaceAll(std::string& str, const std::string& from, const std::string& to) {
+  size_t start_pos = 0;
+  if(from.empty())
+    return;
+
+  while((start_pos = str.find(from, start_pos)) != std::string::npos) {
+    str.replace(start_pos, from.length(), to);
+    start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+  }
+}
+
 void CPGBackupCtlBase::prepareSyncedBinaryOutFile(boost::filesystem::path pathHandle,
                                                   SyncedBinaryOutFile& handle) {
 

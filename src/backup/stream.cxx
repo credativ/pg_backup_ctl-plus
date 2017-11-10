@@ -1,5 +1,12 @@
 #include <istream>
 
+/*
+ * For PGStream::generateSlotNameUUID() ...
+ */
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include <stream.hxx>
 
 using namespace credativ;
@@ -94,10 +101,18 @@ void StreamIdentification::reset() {
 
 std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
-  unsigned int hi = pos >> 32;
-  unsigned int lo = (unsigned int) lo;
+  std::string result = "";
+  std::ostringstream oss;
+  unsigned int hi, lo;
 
-  return hi + "/" + lo;
+  hi = (pos >> 32);
+  lo = pos;
+
+  oss << std::hex << hi << "/" << std::hex << lo;
+
+  /* make sure we have a copy */
+  result = oss.str();
+  return result;
 }
 
 XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
@@ -105,7 +120,7 @@ XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
   XLogRecPtr result;
   uint32     hi, lo;
 
-  if (sscanf(pos.c_str(), "", &hi, &lo) != 2) {
+  if (sscanf(pos.c_str(), "%X/%X", &hi, &lo) != 2) {
     std::ostringstream oss;
     oss << "could not parse XLOG location string: " << pos;
     throw StreamingFailure(oss.str());
@@ -230,6 +245,11 @@ void PGStream::connect() {
     PQfinish(this->pgconn);
     throw StreamingConnectionFailure(oss.str(), cs);
   }
+
+  /*
+   * Initialize streaming connection properties.
+   */
+  this->walSegmentSize = walSegmentSizeInternal();
 }
 
 void PGStream::disconnect() {
@@ -338,6 +358,98 @@ void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
 
 }
 
+unsigned long long PGStream::getWalSegmentSize() {
+  return this->walSegmentSize;
+}
+
+unsigned long long PGStream::walSegmentSizeInternal() {
+
+  if (!this->connected()) {
+    throw StreamingFailure("stream is not connected");
+  }
+
+  if (this->getServerVersion() < 10000000) {
+
+    /*
+     * Check out if we build against an older version of
+     * PostgreSQL (we support down to 9.6). 10 doesn't have
+     * configurable XLOG segment sizes during initdb, so make
+     * sure we use the right hardcoded setting here.
+     *
+     * Otherwise we use the hardcoded DEFAULT_XLOG_SEG_SIZE setting,
+     * which should always return the right segment size on newer
+     * PostgreSQL instances.
+     *
+     * Building against 9.6 isn't really recommened, but we
+     * try to support this, nevertheless.
+     */
+#if PG_VERSION_NUM < 110000
+    return XLOG_SEG_SIZE;
+#else
+    return DEFAULT_XLOG_SEG_SIZE;
+#endif
+  } else {
+
+    /*
+     * PostgreSQL 10 supports SHOW via the
+     * streaming replication protocol.
+     */
+    string walsegsizestr = this->getServerSetting("wal_segment_size");
+
+    /*
+     * The unit string returned by SHOW.
+     */
+    string unit;
+
+    /*
+     * XLOG segment size in bytes.
+     */
+    unsigned long long result = -1;
+
+    /*
+     * We need the segment size in bytes. SHOW returns
+     * a unit indicator, so we need to calculate the bytes
+     * according to that.
+     */
+    stringstream walsegsizestream(walsegsizestr);
+
+    /*
+     * Multiplier used to calculate correct segment size.
+     */
+    int multiplier = 1;
+
+    /*
+     * Use a stream to format input variables for calculation.
+     */
+    walsegsizestream >> result >> unit;
+
+    if (walsegsizestream.fail())
+      throw StreamingFailure("could not get XLOG segment size: conversion from SHOW command failed");
+
+    if (unit == "MB")
+      multiplier = 1024 * 1024;
+    else if (unit == "GB")
+      multiplier = 1024 * 1024 * 1024;
+
+    result *= multiplier;
+
+#if PG_VERSION_NUM >= 110000
+    if (!IsValidWalSegSize(result))
+      throw StreamingFailure("invalid XLOG segment size reported by server: " + result);
+#else
+    /*
+     * PostgreSQL < 11 doesn't have IsValidWalSegSize(), so we do
+     * a "not so smart" checking wether the reported segment size
+     * is a power of two.
+     */
+    if (( result % 2) != 0)
+      throw StreamingFailure("invalid XLOG segment size: needs to be a power of two");
+#endif
+
+    return result;
+  }
+}
+
 std::string PGStream::getServerSetting(std::string name) {
 
   ExecStatusType es;
@@ -347,6 +459,13 @@ std::string PGStream::getServerSetting(std::string name) {
 
   if (!this->connected()) {
     throw StreamingFailure("stream is not connected");
+  }
+
+  /*
+   * SHOW is supported since PostgreSQL 10.
+   */
+  if (this->getServerVersion() < 100000) {
+    throw StreamingFailure("SHOW requires a PostgreSQL server version >= 10.0");
   }
 
   query << "SHOW " << name << ";";
@@ -468,31 +587,43 @@ std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupPr
                                              this->streamident.systemid);
 }
 
-std::string PGStream::generateSlotName(std::string archive_name) {
+std::string PGStream::generateSlotNameUUID(std::string prefix) {
+
+  std::ostringstream slot_name;
+  boost::uuids::uuid my_uuid = boost::uuids::random_generator()();
+  std::string my_uuid_str;
 
   if (!this->isIdentified()) {
     throw StreamingExecutionFailure("could not generate slot name: not identified",
                                     PGRES_FATAL_ERROR);
   }
 
-  std::ostringstream slot_name;
+  slot_name << prefix << "_" << my_uuid;
+  my_uuid_str = slot_name.str();
 
-  slot_name << "pg_backup_ctl_stream_"
-            << archive_name;
+  CPGBackupCtlBase::strReplaceAll(my_uuid_str, "-", "_");
 
-  this->streamident.slot_name = slot_name.str();
-  return slot_name.str();
+#ifdef __DEBUG__
+  cerr << "generated SLOT name " << my_uuid_str << endl;
+#endif
+
+  this->streamident.slot_name = my_uuid_str;
+  return my_uuid_str;
 
 }
 
-std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot(bool reserve_wal,
-                                                                                 bool existing_ok,
-                                                                                 bool noident_ok) {
+void
+PGStream::createPhysicalReplicationSlot(std::shared_ptr<PhysicalReplicationSlot> slot) {
 
   std::ostringstream query;
   ExecStatusType es;
   PGresult      *result;
-  std::shared_ptr<PhysicalReplicationSlot> slot;
+
+  /*
+   * Have a valid slot handle?
+   */
+  if (slot == nullptr)
+    throw StreamingFailure("cannot create physical replication slot: invalid slot handle");
 
   /*
    * Connected?
@@ -506,38 +637,40 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
    * We need to be IDENTIFIED
    */
   if (!this->isIdentified()
-      && !noident_ok) {
+      && !slot->no_identok) {
     throw StreamingExecutionFailure("could not create replication slot: not identified",
                                     PGRES_FATAL_ERROR);
   }
 
   if (this->streamident.slot_name.length() <= 0) {
-    throw StreamingFailure("replication slot name empty, use generateSlotName()");
+    throw StreamingFailure("replication slot name empty, use generateSlotNameUUID() to generate one");
   }
 
-  slot = std::make_shared<PhysicalReplicationSlot>();
   slot->status = REPLICATION_SLOT_ERROR;
 
   query << "CREATE_REPLICATION_SLOT "
         << this->streamident.slot_name
         << " PHYSICAL";
 
-  if (reserve_wal) {
+  if (slot->reserve_wal) {
     query << " RESERVE_WAL";
   }
 
   result = PQexec(this->pgconn, query.str().c_str());
-  std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
 
   /*
    * Check state of the returned result. If the slot already exists
    * and existing_ok is set to TRUE, ignore the duplicate_object SQLSTATE.
    */
   if ((es = PQresultStatus(result)) != PGRES_TUPLES_OK) {
+
+    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
+
     if (sqlstate.compare(ERRCODE_DUPLICATE_OBJECT) == 0) {
-      if (!existing_ok) {
+      if (!slot->existing_ok) {
         std::ostringstream oss;
-        oss << "replication slot " << this->streamident.slot_name
+        oss << "replication slot "
+            << this->streamident.slot_name
             << " already exists";
         PQclear(result);
         throw StreamingExecutionFailure(oss.str(), es,
@@ -564,6 +697,7 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
    */
   if (this->getServerVersion() < 90600) {
     PQclear(result);
+    return;
   }
 
   /*
@@ -581,27 +715,30 @@ std::shared_ptr<PhysicalReplicationSlot> PGStream::createPhysicalReplicationSlot
      * set with 4 cols.
      */
     if(PQntuples(result) != 1) {
-      throw StreamingExecutionFailure("cannot create replication slot: unexpected number of rows",
-                                      es,
-                                      sqlstate);
+      PQclear(result);
+      throw StreamingFailure("cannot create replication slot: unexpected number of rows");
     }
 
     if (PQnfields(result) < 3) {
-      throw StreamingExecutionFailure("connect create replication slot: unexpected number of columns",
-                                      es,
-                                      sqlstate);
+      PQclear(result);
+      throw StreamingFailure("connect create replication slot: unexpected number of columns");
     }
 
-    slot->slot_name = std::string(PQgetvalue(result, 0,
-                                             PQfnumber(result,
-                                                       "slot_name")));
+#ifdef __DEBUG__
+    cerr << "CREATE_REPLICATION_SLOT result" << endl;
+#endif
+    slot->slot_name = std::string(PQgetvalue(result, 0, 0));
+    slot->consistent_point = std::string(PQgetvalue(result, 0, 1));
+#ifdef __DEBUG__
+    cerr << "CREATE_REPLICATION_SLOT result GOT IT" << endl;
+#endif
 
     if (this->isIdentified()) {
       this->streamident.slot = slot;
+      this->streamident.slot->slot_name = this->streamident.slot_name;
     }
   }
 
   PQclear(result);
-  return slot;
 
 }

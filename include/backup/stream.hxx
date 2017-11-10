@@ -77,10 +77,24 @@ namespace credativ {
     PGconn *pgconn;
 
     /*
+     * Property that holds the XLOG segment size.
+     *
+     * Only valid when calling getStreamingProperties before.
+     */
+    unsigned long long walSegmentSize = 0;
+
+    /*
      * Set to TRUE, if successfully identified.
      */
     bool identified = false;
 
+    /*
+     * Returns the XLOG segment size
+     * used by the current streaming connection.
+     *
+     * Requires a valid streaming connection.
+     */
+    virtual unsigned long long walSegmentSizeInternal();
   public:
 
     PGStream(const std::shared_ptr<CatalogDescr>& descr);
@@ -93,17 +107,27 @@ namespace credativ {
     StreamIdentification streamident;
 
     /**
+     * Returns the WAL segment size for
+     * an established streaming connection.
+     */
+    unsigned long long getWalSegmentSize();
+
+    /**
      * Generate a slot name for an identified stream and
      * assigns the generated string to the internal streamident
-     * handle.
+     * handle. The slot name is formatted by an UUID string
+     * with the specified prefix.
      *
      * Throws a StreamingExecutionFailure in case identification
      * not available.
      *
+     * The generated identifier is assigned to the internal streamident
+     * handle and its slot handle.
+     *
      * This is just a helper method to assign a valid identifier.
      * Someone might use the streamident object directly.
      */
-    std::string generateSlotName(std::string archive_name);
+    std::string generateSlotNameUUID(std::string prefix);
 
     /**
      * Returns the server parameter value. Throws
@@ -205,14 +229,16 @@ namespace credativ {
      * XXX: This might also be called in case the specified
      *      replication slot already exists. The SQLSTATE
      *      of the StreamingExecutionError can be examined to get
-     *      the error condition.
+     *      the error condition. Also, the status of the slot handle
+     *      is set to REPLICATION_SLOT_EXISTS.
      *
-     * The identifier of the replication slot is auto-generated.
+     * The identifier of the replication slot must be specified before
+     * calling createPhysicalReplicationSlot(). See generateSlotNameUUID for
+     * a method to use. Otherwise you should pass a valid identifier
+     * via slot->slot_name.
      */
-    virtual std::shared_ptr<PhysicalReplicationSlot>
-    createPhysicalReplicationSlot(bool reserve_wal,
-                                  bool existing_ok,
-                                  bool noident_ok);
+    virtual void
+    createPhysicalReplicationSlot(std::shared_ptr<PhysicalReplicationSlot> slot);
 
     /**
      * Starts streaming a basebackup. Stream should be

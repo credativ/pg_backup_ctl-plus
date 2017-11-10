@@ -214,10 +214,42 @@ namespace credativ {
    * Implements a START STREAMING FOR ARCHIVE command handler.
    */
   class StartStreamingForArchiveCommand : public BaseCatalogCommand {
+  private:
+    /**
+     * PostgreSQL Streaming handle.
+     */
+    PGStream *pgstream = nullptr;
+
+    /**
+     * Catalog handle we operate on. Note that we
+     * don't use the properties of our own instance here, since
+     * we need the properties stored within the catalog. Since this Command
+     * instance is required to retain its own identity, we maintain
+     * a private copy of the CatalogDescr retrieved from the
+     * catalog database.
+     */
+    std::shared_ptr<CatalogDescr> temp_descr = nullptr;
+
+    /**
+     * Helper function to update current status and XLOG position of stream.
+     */
+    virtual void updateStreamCatalogStatus();
+
+    /**
+     * Prepare internal stream handle
+     */
+    virtual void prepareStream();
+
+    /**
+     * Finalize stream and shutdown.
+     */
+    virtual void finalizeStream();
+
   public:
     StartStreamingForArchiveCommand(std::shared_ptr<BackupCatalog> catalog);
     StartStreamingForArchiveCommand(std::shared_ptr<CatalogDescr> descr);
     StartStreamingForArchiveCommand();
+    ~StartStreamingForArchiveCommand();
 
     virtual void execute(bool noop);
   };

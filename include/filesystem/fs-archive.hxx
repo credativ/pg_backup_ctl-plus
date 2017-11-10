@@ -2,6 +2,7 @@
 #define __FS_ARCHIVE__
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
+#include <boost/regex.hpp>
 #include <string>
 #include <unordered_map>
 
@@ -30,7 +31,11 @@ using namespace boost::filesystem;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
 
+
 namespace credativ {
+
+  /* Forwarded class definitions */
+  class ArchiveLogDirectory;
 
   typedef struct XLOGLocation {
     string startXLOG;
@@ -83,6 +88,8 @@ namespace credativ {
     virtual size_t write(const char *buf, size_t len) = 0;
     virtual size_t read(char *buf, size_t len) = 0;
     virtual void remove() = 0;
+    virtual size_t size();
+    virtual off_t lseek(off_t offset, int whence) = 0;
 
   };
 
@@ -134,6 +141,11 @@ namespace credativ {
      * this object.
      */
     virtual int getFileno();
+
+    /*
+     * Seek into the file.
+     */
+    virtual off_t lseek(off_t offset, int whence);
 
   };
 
@@ -205,6 +217,7 @@ namespace credativ {
     virtual FILE *getFileHandle();
     virtual void remove();
     virtual void rename(path& newname);
+    virtual off_t lseek(off_t offset, int whence);
 
     /*
      * Extended methods.
@@ -250,7 +263,7 @@ namespace credativ {
     virtual size_t read(char *buf, size_t len);
     virtual void fsync();
     virtual void rename(path& newname);
-
+    virtual off_t lseek(off_t offset, int whence);
     virtual void remove();
 
     /*
@@ -337,6 +350,11 @@ namespace credativ {
      */
     virtual path getArchiveDir();
 
+    /**
+     * Returns a handle to the Archive Log Directory.
+     */
+    virtual std::shared_ptr<ArchiveLogDirectory> logdirectory();
+
     /*
      * Returns a file belonging to this directory.
      */
@@ -363,6 +381,20 @@ namespace credativ {
   };
 
   /*
+   * Describes types of WAL segment files that
+   * can be live within a log/ directory represented
+   * by an ArchiveLogDirectory instance.
+   */
+  typedef enum {
+    WAL_SEGMENT_COMPLETE,
+    WAL_SEGMENT_PARTIAL,
+    WAL_SEGMENT_COMPLETE_COMPRESSED,
+    WAL_SEGMENT_PARTIAL_COMPRESSED, /* NOTE: XLOG segments are gzipped only! */
+    WAL_SEGMENT_INVALID_FILENAME,
+    WAL_SEGMENT_UNKNOWN
+  } WALSegmentFileStatus;
+
+  /*
    * Specialized class for archive log directories.
    *
    * This is a specialized descendant class of BackupDirectory,
@@ -376,10 +408,56 @@ namespace credativ {
 
     virtual ~ArchiveLogDirectory();
 
-    /*
+    /**
      * Returns the path to the archive log segment files.
      */
     virtual path getPath();
+
+    /**
+     * Calculates an encoded XLOG start position from the *last*
+     * XLOG segment file found in the archive directory. Throws
+     * a ArchiveLogDirectoryEmpty exception in case no logfile is present.
+     *
+     * walsegsize should be a valid segment size value, obtained
+     * by a PGStream object instance. Note that we don't check
+     * the value passed by the caller (but if the caller used PGStream.getWalSegmentSize()
+     * the check is actually already performed).
+     *
+     * The returned XLOG start position starts either by the *end*
+     * of the last completed XLOG segment found or at the beginning
+     * of the last partial segment.
+     */
+    virtual std::string getXlogStartPosition(unsigned int &timelineID,
+                                             unsigned int &segmentNumber,
+                                             unsigned long long xlogsegsize);
+
+    /**
+     * Determines the type of the specified XLOG segment file.
+     *
+     * The specified path handle must be a valid and existing XLOG segment file.
+     * Depending on the state of the file, the function returns
+     * a WALSegmentFileStatus indicating the status of the segment file.
+     *
+     * If the specified path handle cannot be resolved to an existing
+     * XLOG segment file, the method returns WAL_SEGMENT_UNKNOWN.
+     *
+     * NOTE: The method doesn't perform any permission checks on the segment
+     *       file, this needs to be done by the caller if needed.
+     *
+     *       If the specified file name is not a valid XLOG segment
+     *       filename, WAL_SEGMENT_INVALID_FILENAME is returned.
+     *
+     */
+    virtual WALSegmentFileStatus determineXlogSegmentStatus(path segmentFile);
+
+    /**
+     * Returns the size of the specified ArchiveLogDirectory
+     * file entry. The specified path handle must be a valid
+     * existing file in the log/ directory.
+     */
+    virtual unsigned long long getXlogSegmentSize(path segmentFile,
+                                                  unsigned long long xlogsegsize,
+                                                  WALSegmentFileStatus status);
   };
 
   /*
@@ -505,6 +583,7 @@ namespace credativ {
     virtual bool isOpen();
     virtual void rename(path& newname);
     virtual void remove();
+    virtual off_t lseek(off_t offset, int whence);
   };
 
   /*

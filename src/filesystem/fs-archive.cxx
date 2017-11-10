@@ -5,7 +5,6 @@
 #include <string>
 #include <boost/range/adaptors.hpp>
 #include <boost/range/iterator_range.hpp>
-#include <boost/regex.hpp>
 
 #include <fs-archive.hxx>
 
@@ -136,6 +135,306 @@ ArchiveLogDirectory::~ArchiveLogDirectory() {}
 
 path ArchiveLogDirectory::getPath() {
   return this->log;
+}
+
+/*
+ * This code is highly adopted by PostgreSQL's receivewal.c, though
+ * we made some special assumptions here for pg_backup_ctl++.
+ *
+ * Nothing magic, but it seems we can reuse a proven algorithm.
+ *
+ * See src/bin/pg_basebackup/receivewal.c in the PostgreSQL sources
+ * for details.
+ */
+string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
+                                                 unsigned int &segmentNumber,
+                                                 unsigned long long xlogsegsize) {
+
+  /* Type of segment found */
+  WALSegmentFileStatus filestatus = WAL_SEGMENT_UNKNOWN;
+
+  /* XLogRecPtr result to return */
+  string result = "";
+
+  /* Found XLog filename */
+  string xlogfilename = "";
+
+  /* real, uncompressed file size */
+  unsigned long long fileSize = 0;
+
+  /*
+   * First check if logdir is a valid handle.
+   */
+  if (!exists(this->log)) {
+    throw CArchiveIssue("could not read from archive log directory: \""
+                        + this->log.string()
+                        + "\"log doesn't exist");
+  }
+
+  timelineID = 0;
+  segmentNumber = 0;
+
+  /*
+   * Loop through the archive log directory, examing each
+   * file there and check wether it might be a XLOG segment file.
+   *
+   * If something found, extract a XLogRecPtr from its name and store
+   * it.
+   */
+  for (auto& entry : boost::make_iterator_range(directory_iterator(this->log), {})) {
+
+    std::string direntname = entry.path().filename().string();
+
+    unsigned int current_tli = 0;
+    unsigned int current_segno = 0;
+    WALSegmentFileStatus current_status = WAL_SEGMENT_UNKNOWN;
+
+    current_status = determineXlogSegmentStatus(entry.path());
+
+    switch (current_status) {
+    case WAL_SEGMENT_COMPLETE:
+    case WAL_SEGMENT_COMPLETE_COMPRESSED:
+    case WAL_SEGMENT_PARTIAL:
+    case WAL_SEGMENT_PARTIAL_COMPRESSED:
+      {
+        /* XLOG segment file, save its name */
+        xlogfilename = direntname;
+        break;
+      }
+    case WAL_SEGMENT_UNKNOWN:
+    case WAL_SEGMENT_INVALID_FILENAME:
+      /*
+       * We don't care about any files not really a segment
+       * file. It's strange that we found them in the log/ directory,
+       * but don't bother here
+       */
+      continue;
+    }
+
+    /*
+     * Looks like we haven't found anything ???
+     */
+    if (xlogfilename.length() <= 0) {
+      timelineID = 0;
+      segmentNumber = 0;
+      return "";
+    }
+
+    /* Determine Timeline and segment number of current xlog segment */
+    XLogFromFileName(xlogfilename.c_str(), &current_tli, &current_segno);
+
+    /* Get the *real* uncompressed file size */
+    fileSize = this->getXlogSegmentSize(entry.path(),
+                                        xlogsegsize,
+                                        current_status);
+
+#ifdef __DEBUG_XLOG__
+    cerr << "xlog file=" << xlogfilename << " "
+         << "tli=" << timelineID << " "
+         << "segmentNumber=" << segmentNumber << " "
+         << "size=" << fileSize
+         << endl;
+#endif
+
+    if (fileSize != xlogsegsize) {
+#ifdef __DEBUG_XLOG__
+      cerr << "invalid file size ("
+           << fileSize
+           << "bytes) in segment "
+           << direntname
+           << ": skipping"
+           << endl;
+#endif
+      continue;
+    }
+
+    /*
+     * Remember current segment number and TLI
+     * in case its going forward.
+     *
+     * We employ exactly the same algorithm than receivewal.c,
+     * extract the position from the end of the *last* wal
+     * segment file found in the archive. If the highest one wasn't completed,
+     * we start streaming from the beginning of the partial segment we've
+     * found.
+     *
+     * See src/bin/pg_basebackup/pg_receivewal.c::FindStreamingStart()
+     * for details.
+     */
+    if ((current_segno > segmentNumber)
+        || (current_segno == segmentNumber && current_tli > timelineID)
+        || (current_segno == segmentNumber && current_tli == timelineID
+            && (filestatus == WAL_SEGMENT_PARTIAL
+                || filestatus == WAL_SEGMENT_PARTIAL_COMPRESSED)
+            && (current_status != WAL_SEGMENT_PARTIAL
+                || current_status != WAL_SEGMENT_PARTIAL_COMPRESSED) ) ) {
+
+#ifdef __DEBUG__XLOG__
+      cerr << "HI TLI " << current_tli << " SEGNO "
+           << current_segno << " STATUS "
+           << current_status << endl;
+#endif
+
+      segmentNumber = current_segno;
+      timelineID    = current_tli;
+      filestatus    = current_status;
+
+    }
+
+  }
+
+  /* If something found, calculate the XLogRecPtr */
+  if (segmentNumber > 0) {
+
+    XLogRecPtr recptr;
+    std::ostringstream recptrstr;
+    unsigned int hi;
+    unsigned int lo;
+
+    /*
+     * The starting pointer is either
+     *
+     * a) the next segment after a completed one, or
+     * b) beginning of the current partial segment.
+     *
+     * Calculate offset into XLOG end (or start)
+     */
+#if PG_VERSION_NUM >= 110000
+    XLogSegNoOffsetToRecPtr(segmentNumber, 0, recptr, xlogsegsize);
+    recptr -= XLogSegmentOffset(recptr, xlogsegsize);
+#else
+    XLogSegNoOffsetToRecPtr(segmentNumber, 0, recptr);
+    recptr -= recptr % XLOG_SEG_SIZE;
+#endif
+
+    /* Format as string and set return value */
+    result = PGStream::encodeXLOGPos(recptr);
+
+  }
+
+  return result;
+}
+
+WALSegmentFileStatus ArchiveLogDirectory::determineXlogSegmentStatus(path segmentFile) {
+
+  /*
+   * We need to try hard here to get the
+   * correct filenames in. We have to distinguish between
+   *
+   * a) completed uncompressed WAL segments (filter_complete)
+   * b) completed compressed WAL segments (filter_complete_compressed)
+   * c) partial uncompressed WAL segments (filter_partial)
+   * d) partial compressed WAL segments (filter_partial_compressed)
+   */
+  WALSegmentFileStatus filestatus = WAL_SEGMENT_UNKNOWN;
+
+  const regex filter_complete("[0-9A-F]*");
+  const regex filter_complete_compressed("[0-9A-F]*.gz");
+  const regex filter_partial("[0-9A-F]*.partial");
+  const regex filter_partial_compressed("[0-9A-F]*.partial.gz");
+
+  /*
+   * For filename filtering...
+   */
+  boost::smatch what;
+
+  /*
+   * Filename as string, used for regex evaluation
+   */
+  string xlogfilename = segmentFile.filename().string();
+
+  if (!is_regular_file(segmentFile))
+    return filestatus;
+
+  /* Apply XLOG segment filename filters */
+  if (regex_match(xlogfilename, what, filter_complete)) {
+    filestatus = WAL_SEGMENT_COMPLETE;
+  } else if (regex_match(xlogfilename, what, filter_complete_compressed)) {
+    filestatus = WAL_SEGMENT_COMPLETE_COMPRESSED;
+  } else if (regex_match(xlogfilename, what, filter_partial)) {
+    filestatus = WAL_SEGMENT_PARTIAL;
+  } else if (regex_match(xlogfilename, what, filter_partial_compressed)) {
+    filestatus = WAL_SEGMENT_PARTIAL_COMPRESSED;
+  } else {
+    /* Seems not a correctly named XLOG segment file. */
+    filestatus = WAL_SEGMENT_INVALID_FILENAME;
+  }
+
+  return filestatus;
+}
+
+unsigned long long ArchiveLogDirectory::getXlogSegmentSize(path segmentFile,
+                                                           unsigned long long xlogsegsize,
+                                                           WALSegmentFileStatus status) {
+
+  unsigned long long fileSize = 0;
+
+  switch(status) {
+
+    /* Size of uncompressed WAL segments are easy */
+  case WAL_SEGMENT_COMPLETE:
+  case WAL_SEGMENT_PARTIAL:
+    {
+      fileSize = file_size(segmentFile);
+      break;
+    }
+  case WAL_SEGMENT_COMPLETE_COMPRESSED:
+  case WAL_SEGMENT_PARTIAL_COMPRESSED:
+    {
+      /*
+       * Since we have to deal with gzipped segment files
+       * only, we can rely on the last 4 bytes, which is used
+       * by gzip to stored the uncompressed size (ISIZE member).
+       *
+       * We can't use the compressed physical size here, since this
+       * is not a reliable check.
+       */
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
+      /*
+       * IMPORTANT: We can't use CompressedArchiveFile
+       *            here, since it reads compressed data!
+       */
+      ArchiveFile xlogseg(segmentFile);
+      char buf[4];
+      int read_result;
+      xlogseg.open();
+
+      /*
+       * No need to error check here, ArchiveFile
+       * already throws an exception in this case.
+       */
+      xlogseg.lseek(-4, SEEK_END);
+
+      if (xlogseg.read(buf, sizeof(buf)) != 1) {
+        xlogseg.close();
+        throw CArchiveIssue("short read on segment file "
+                            + segmentFile.string()
+                            + ": cannot retrieve uncompressed size ("
+                            + strerror(errno));
+      }
+
+      xlogseg.close();
+      read_result = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | (buf[0]);
+      fileSize = read_result;
+#else
+      /*
+       * Huh, we are here although we don't have zlib support
+       * compiled in. Error out hard, since this is something
+       * we can't really deal with.
+       */
+      throw CArchiveIssue("attempt to read compressed archive files without zlib support");
+#endif
+      break;
+    }
+  default:
+    /* We don't handle here WAL_SEGMENT_UNKNOWN
+     * and WAL_SEGMENT_INVALID_FILENAME
+     */
+    fileSize = 0;
+  }
+
+  /* ... done */
+  return fileSize;
 }
 
 /******************************************************************************
@@ -352,12 +651,16 @@ void BackupDirectory::fsync(path syncPath) {
 
 }
 
+shared_ptr<ArchiveLogDirectory> BackupDirectory::logdirectory() {
+  return make_shared<ArchiveLogDirectory>(this->handle);
+}
+
 shared_ptr<BackupDirectory> CPGBackupCtlFS::getArchiveDirectoryDescr(string directory) {
   return make_shared<BackupDirectory>(path(directory));
 }
 
 path BackupDirectory::logdir() {
-  return this->base / this->log;
+  return this->log;
 }
 
 path BackupDirectory::basedir() {
@@ -399,8 +702,6 @@ int CPGBackupCtlFS::readBackupHistory() {
 
   int countBackups = 0;
   path logDir      = this->archivePath / "log";
-
-  const std::string target_path( this->archiveDir + "/log" );
 
   /* filter for backup history files, should also match *.gz */
   const regex my_filter( "[0-9A-F].*.backup.*" );
@@ -550,6 +851,10 @@ bool BackupFile::exists() {
   return (this->available = boost::filesystem::exists(status(this->handle)));
 }
 
+size_t BackupFile::size() {
+  return file_size(this->handle);
+}
+
 /******************************************************************************
  * Implementation of ArchiveFile
  *****************************************************************************/
@@ -567,6 +872,36 @@ ArchiveFile::~ArchiveFile() {
     this->fp = NULL;
     this->opened = false;
   }
+
+}
+
+off_t ArchiveFile::lseek(off_t offset, int whence) {
+
+  int rc;
+
+  /*
+   * Valid file handle required.
+   */
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+    oss << "cannot seek in file "
+        << this->handle.string()
+        << ": not opened";
+    throw CArchiveIssue(oss.str());
+  }
+
+  rc = ::fseek(this->fp, offset, whence);
+
+  if (rc < 0) {
+    std::ostringstream oss;
+    oss << "could not seek in file "
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  return rc;
 
 }
 
@@ -923,6 +1258,36 @@ FILE *ZSTDArchiveFile::getFileHandle() {
   return this->fp;
 }
 
+off_t ZSTDArchiveFile::lseek(off_t offset, int whence) {
+
+  int rc;
+
+  /*
+   * Valid file handle required.
+   */
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+    oss << "cannot seek in file "
+        << this->handle.string()
+        << ": not opened";
+    throw CArchiveIssue(oss.str());
+  }
+
+  rc = ::fseek(this->fp, offset, whence);
+
+  if (rc < 0) {
+    std::ostringstream oss;
+    oss << "could not seek in file "
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  return rc;
+
+}
+
 bool ZSTDArchiveFile::isCompressed() {
   return true;
 }
@@ -1181,6 +1546,36 @@ void CompressedArchiveFile::setOpenMode(std::string mode) {
 void CompressedArchiveFile::setCompressionLevel(int level) {
 
   throw CArchiveIssue("overriding default compression level (9) not yet supported");
+
+}
+
+off_t CompressedArchiveFile::lseek(off_t offset, int whence) {
+
+  int rc;
+
+  /*
+   * Valid file handle required.
+   */
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+    oss << "cannot seek in file "
+        << this->handle.string()
+        << ": not opened";
+    throw CArchiveIssue(oss.str());
+  }
+
+  rc = ::fseek(this->fp, offset, whence);
+
+  if (rc < 0) {
+    std::ostringstream oss;
+    oss << "could not seek in file "
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  return rc;
 
 }
 
@@ -1482,6 +1877,12 @@ void BackupHistoryFile::remove() {
 void BackupHistoryFile::setOpenMode(std::string mode) {
 
   throw CArchiveIssue("backup history file can only be opened read-only");
+
+}
+
+off_t BackupHistoryFile::lseek(off_t offset, int whence) {
+
+  throw CArchiveIssue("seeking in a backup history file not supported");
 
 }
 

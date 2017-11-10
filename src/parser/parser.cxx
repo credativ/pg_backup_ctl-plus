@@ -529,7 +529,7 @@ PGBackupCtlCommand::~PGBackupCtlCommand() {}
 
 CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
 
-  shared_ptr<CatalogDescr> descr(nullptr);
+  shared_ptr<CatalogDescr> descr = nullptr;
   CatalogTag result = EMPTY_DESCR;
 
   /*

@@ -237,6 +237,12 @@ namespace credativ {
      * Returns a milliseconds duration.
      */
     static std::chrono::milliseconds ms_get_duration(long ms);
+
+    /**
+     * Replace string occurence "from" to "to" in "str".
+     *
+     */
+    void strReplaceAll(std::string& str, const std::string& from, const std::string& to);
   };
 
 }

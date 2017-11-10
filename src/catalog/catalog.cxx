@@ -96,9 +96,6 @@ std::vector<std::string>BackupCatalog::procsCatalogCols =
     "state"
   };
 
-const char * STREAM_BASEBACKUP = "BASEBACKUP";
-const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
-
 PushableCols::PushableCols() {}
 PushableCols::~PushableCols() {}
 
@@ -1735,7 +1732,7 @@ int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileD
   return result;
 }
 
-int BackupCatalog::SQLbindStreamAttributes(shared_ptr<StreamIdentification> ident,
+int BackupCatalog::SQLbindStreamAttributes(StreamIdentification &ident,
                                            std::vector<int> affectedAttributes,
                                            sqlite3_stmt *stmt,
                                            Range range) {
@@ -1756,56 +1753,56 @@ int BackupCatalog::SQLbindStreamAttributes(shared_ptr<StreamIdentification> iden
     switch(colId) {
 
     case SQL_STREAM_ID_ATTNO:
-      sqlite3_bind_int(stmt, result, ident->id);
+      sqlite3_bind_int(stmt, result, ident.id);
       break;
 
     case SQL_STREAM_ARCHIVE_ID_ATTNO:
-      sqlite3_bind_int(stmt, result, ident->archive_id);
+      sqlite3_bind_int(stmt, result, ident.archive_id);
       break;
 
     case SQL_STREAM_STYPE_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->stype.c_str(),
+                        ident.stype.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_SLOT_NAME_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->slot_name.c_str(),
+                        ident.slot_name.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_SYSTEMID_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->systemid.c_str(),
+                        ident.systemid.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_TIMELINE_ATTNO:
-      sqlite3_bind_int(stmt, result, ident->timeline);
+      sqlite3_bind_int(stmt, result, ident.timeline);
       break;
 
     case SQL_STREAM_XLOGPOS_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->xlogpos.c_str(),
+                        ident.xlogpos.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_DBNAME_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->dbname.c_str(),
+                        ident.dbname.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_STATUS_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->status.c_str(),
+                        ident.status.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
     case SQL_STREAM_REGISTER_DATE_ATTNO:
       sqlite3_bind_text(stmt, result,
-                        ident->create_date.c_str(),
+                        ident.create_date.c_str(),
                         -1, SQLITE_STATIC);
       break;
 
@@ -2390,7 +2387,7 @@ void BackupCatalog::abortBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr
 
 void BackupCatalog::updateStream(int streamid,
                                  std::vector<int> affectedColumns,
-                                 std::shared_ptr<StreamIdentification> streamident) {
+                                 StreamIdentification &streamident) {
 
   int rc;
   sqlite3_stmt *stmt;
@@ -2423,6 +2420,10 @@ void BackupCatalog::updateStream(int streamid,
     updateSQL << BackupCatalog::SQLgetUpdateColumnTarget(SQL_STREAM_ENTITY,
                                                          affectedColumns[boundCols])
               << (boundCols + 1);
+
+    if (boundCols < affectedColumns.size() -1 ) {
+      updateSQL << ", ";
+    }
 
   }
 
@@ -2457,7 +2458,7 @@ void BackupCatalog::updateStream(int streamid,
   /*
    * Don't forget to bind values to the UPDATE WHERE clause...
    */
-  sqlite3_bind_int(stmt, boundCols, streamident->id);
+  sqlite3_bind_int(stmt, boundCols, streamid);
 
   /*
    * Execute the UPDATE
@@ -2770,6 +2771,7 @@ void BackupCatalog::registerStream(int archive_id,
 
   int rc;
   sqlite3_stmt *stmt;
+  string ts_created = CPGBackupCtlBase::current_timestamp();
 
   if (!this->available()) {
     throw CCatalogIssue("could not register stream: database not opened");
@@ -2777,8 +2779,8 @@ void BackupCatalog::registerStream(int archive_id,
 
   rc = sqlite3_prepare_v2(this->db_handle,
                           "INSERT INTO stream("
-                          "archive_id, stype, systemid, timeline, xlogpos, dbname, status, create_date)"
-                          " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
+                          "archive_id, stype, systemid, timeline, xlogpos, dbname, status, create_date, slot_name)"
+                          " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
                           -1,
                           &stmt,
                           NULL);
@@ -2798,12 +2800,21 @@ void BackupCatalog::registerStream(int archive_id,
   sqlite3_bind_int(stmt, 4, streamident.timeline);
   sqlite3_bind_text(stmt, 5, streamident.xlogpos.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, streamident.dbname.c_str(), -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 7, STREAM_PROGRESS_IDENTIFIED, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 7,
+                    StreamIdentification::STREAM_PROGRESS_IDENTIFIED,
+                    -1,
+                    SQLITE_STATIC);
 
   /*
    * Set the creation date of this stream.
    */
-  sqlite3_bind_text(stmt, 8, CPGBackupCtlBase::current_timestamp().c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 8, ts_created.c_str(), -1, SQLITE_STATIC);
+
+  /*
+   * ... and finally the name of the replication slot belonging
+   * to this stream.
+   */
+  sqlite3_bind_text(stmt, 9, streamident.slot_name.c_str(), -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
 
@@ -3288,10 +3299,10 @@ BackupCatalog::dropCatalogConnection(std::string archive_name, std::string type)
 
 }
 
-std::vector<std::shared_ptr<StreamIdentification>>
-BackupCatalog::getStreams(std::string archive_name) {
+void
+BackupCatalog::getStreams(std::string archive_name,
+                          std::vector<std::shared_ptr<StreamIdentification>> &result) {
 
-  std::vector<std::shared_ptr<StreamIdentification>> result;
   std::vector<int> streamRows;
   sqlite3_stmt *stmt;
   int rc;

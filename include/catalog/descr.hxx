@@ -67,10 +67,25 @@ namespace credativ {
    * State of base backup stream.
    */
   struct PhysicalReplicationSlot {
+
+    /*
+     * Fields normally initialized by calling
+     * PGStream::createPhysicalReplicationSlot(). Please note
+     * that this is also version dependent!
+     */
     std::string slot_name;
     std::string consistent_point;
+
+    /* Unused fields atm */
     std::string snapshot_name;
     std::string output_plugin;
+
+    /*
+     * Settings for the replication slot.
+     */
+    bool reserve_wal = false;
+    bool existing_ok = false;
+    bool no_identok  = false;
 
     /*
      * Flag indicating that the slot
@@ -122,6 +137,12 @@ namespace credativ {
    */
   class StreamIdentification : public PushableCols {
   public:
+
+    static constexpr const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
+    static constexpr const char * STREAM_PROGRESS_STREAMING = "STREAMING";
+    static constexpr const char * STREAM_PROGRESS_SHUTDOWN = "SHUTDOWN";
+    static constexpr const char * STREAM_PROGRESS_FAILED = "FAILED";
+
     unsigned long long id = -1; /* internal catalog stream id */
     int archive_id = -1; /* used to reflect assigned archive */
     std::string stype;
@@ -210,11 +231,13 @@ namespace credativ {
     std::string label;
     bool compression = false;
     std::string directory;
-    // std::string pghost = "";
-    // int    pgport = -1;
-    // std::string pguser = "";
-    // std::string pgdatabase = "";
-    // std::string dsn;
+
+    /**
+     * Connection identifier used by the descriptor instance.
+     *
+     * NOTE: We can have multiple connection definitions for an archive,
+     *       but usually we use only one at a time.
+     */
     std::shared_ptr<ConnectionDescr> coninfo = std::make_shared<ConnectionDescr>();
 
     /*

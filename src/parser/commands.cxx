@@ -392,9 +392,280 @@ StartStreamingForArchiveCommand::StartStreamingForArchiveCommand(std::shared_ptr
 
 }
 
-void StartStreamingForArchiveCommand::execute(bool noop) {
+StartStreamingForArchiveCommand::~StartStreamingForArchiveCommand() {
 
-  std::shared_ptr<CatalogDescr> temp_descr = nullptr;
+  if (this->pgstream != nullptr) {
+
+    if (this->pgstream->connected())
+      this->pgstream->disconnect();
+
+    delete this->pgstream;
+  }
+
+}
+
+void StartStreamingForArchiveCommand::prepareStream() {
+
+  /*
+   * Calling BackupCatalog::getStreams() gets us a list
+   * of currently registered streams. We are specifically
+   * looking for an existing ConnectionDescr::CONNECTION_TYPE_STREAMER
+   * stream handle.
+   */
+  std::shared_ptr<StreamIdentification> myStream = nullptr;
+  bool result = false;
+  std::vector<std::shared_ptr<StreamIdentification>> streamList;
+
+  this->catalog->getStreams(this->archive_name, streamList);
+
+  for (auto &stream : streamList) {
+
+    cerr << "FOUND a stream handle" << endl;
+
+    if (stream->stype == ConnectionDescr::CONNECTION_TYPE_STREAMER) {
+      /* Looks like we found one */
+      myStream = stream;
+    }
+
+  }
+
+  /*
+   * Default settings for slot initialization.
+   */
+  pgstream->streamident.slot = std::make_shared<PhysicalReplicationSlot>();
+  pgstream->streamident.slot->reserve_wal = true;
+  pgstream->streamident.slot->existing_ok = true;
+  pgstream->streamident.slot->no_identok  = false;
+
+  if (myStream == nullptr) {
+
+    /*
+     * The requested stream doesn't exist, we need to create a new one.
+     * We use a generated UUID identifier for this, generateSlotNameUUID()
+     * will do the legwork for us. Note that we need an identified connection
+     * handle before, which is done in the command handler before calling
+     * us.
+     */
+    pgstream->generateSlotNameUUID(this->archive_name);
+
+    /*
+     * Replication slot for this archive required.
+     * We do not care if the slot already exists, but we want
+     * a slot to reserve WAL.
+     */
+    pgstream->createPhysicalReplicationSlot(pgstream->streamident.slot);
+
+    /*
+     * It might occur that we didn't find registered stream, but
+     * the replication slot already exists. We treat this condition
+     * as an error and exit, but before that we mark the stream as failed.
+     */
+    if (pgstream->streamident.slot->status == REPLICATION_SLOT_EXISTS) {
+      std::ostringstream oss;
+
+      oss << "Replication slot "
+          << pgstream->streamident.slot_name
+          << " exists. This usually means someone has created a slot with the same identifier";
+
+      /* Now throw the error */
+      throw StreamingFailure(oss.str());
+    }
+
+    /*
+     * Looks good.
+     *
+     * Register the stream into the catalog.
+     * This also sets the state of the new stream descriptor
+     * to STREAM_PROGRESS_IDENTIFIED.
+     */
+    this->catalog->registerStream(this->id,
+                                  ConnectionDescr::CONNECTION_TYPE_STREAMER,
+                                  pgstream->streamident);
+
+  } else {
+
+    /*
+     * We've found a registered stream. This usually means, the associated
+     * replication slot belonging to this catalog stream already exists
+     * on the source database. We are going to create it anyways but ignore
+     * any duplicate in this case (NOTE: We could attempt a separate
+     * database connection and lookup the slot via pg_stat_replication_slots,
+     * but we don't have this facility yet).
+     *
+     * Copy over some of the static properties for the current instantiated
+     * StreamIdentification, but not everything! For example xlogpos have
+     * already changed, the same with status and create_date.
+     *
+     * Also check the systemid, we need to be carefully if something
+     * has changed here.
+     *
+     */
+
+    if (!pgstream->streamident.systemid.compare(myStream->systemid)) {
+      std::ostringstream oss;
+
+      oss << "current systemid "
+          << pgstream->streamident.systemid
+          << " does not match systemid "
+          << myStream->systemid
+          << " from catalog ";
+      throw StreamingFailure(oss.str());
+    }
+
+    pgstream->streamident.id = myStream->id;
+    pgstream->streamident.stype = myStream->stype;
+
+
+    pgstream->streamident.slot_name = myStream->slot_name;
+    pgstream->createPhysicalReplicationSlot(pgstream->streamident.slot);
+
+    if (pgstream->streamident.slot->status == REPLICATION_SLOT_EXISTS) {
+
+      cerr
+        << "replication slot "
+        << pgstream->streamident.slot_name
+        << " exists, trying to reuse it"
+        << endl;
+
+      /*
+       * The slot already exist, we should use the last reported XLOG
+       * position from the catalog.
+       *
+       * XXX: Please note that the WALStreamerProcess should examine
+       *      the on-disk archive as well. This happens when we find
+       *      a live catalog stream entry which wasn't cleanly marked
+       *      STREAM_PROGRESS_SHUTDOWN. In other cases, we can rely
+       *      on the catalog position.
+       */
+
+      /*
+       * If the stream was marked for shutdown, we rely
+       * on the last reported XLOG position there.
+       */
+      if (myStream->status == StreamIdentification::STREAM_PROGRESS_SHUTDOWN) {
+
+#ifdef __DEBUG__
+        cout << "using xlog position "
+             << myStream->xlogpos
+             << " timeline "
+             << myStream->timeline
+             << " from catalog"
+             << endl;
+#endif
+
+        pgstream->streamident.xlogpos  = myStream->xlogpos;
+        pgstream->streamident.timeline = myStream->timeline;
+      }
+
+      /*
+       * If the encountered stream is still marked
+       * STREAM_PROGRESS_STREAMING, we might have an uncleanly
+       * stopped WALStreamerProcess or another stream is already
+       * active here. The latter shouldn't happen, since we check
+       * this before arriving here, so we need to properly initialize
+       * the XLOG start position from the archive, we can't trust
+       * what we actually have in the catalogs.
+       *
+       * We should obtain a valid XLOG start position either
+       * from the archive or PGStream::identify(), assign this to
+       * the catalog stream descriptor. Since we have a
+       * REPLICATION_SLOT_EXISTS here, this means that the slot
+       * already existed, so scan the log archive and all
+       * segments there to obtain the latest XLogRecPtr
+       * from the latest completed log.
+       *
+       * TBD
+       */
+      if (myStream->status == StreamIdentification::STREAM_PROGRESS_STREAMING
+          || myStream->status == StreamIdentification::STREAM_PROGRESS_IDENTIFIED) {
+
+        std::shared_ptr<BackupDirectory> archivedir
+          = CPGBackupCtlFS::getArchiveDirectoryDescr(this->temp_descr->directory);
+        std::shared_ptr<ArchiveLogDirectory> logdir = archivedir->logdirectory();
+
+        unsigned int new_tli = 0;
+        unsigned int new_segno = 0;
+        std::string xlogpos;
+
+#ifdef __DEBUG__
+        cerr << "not a clean streamer shutdown, trying to get xlog position from log archive" << endl;
+#endif
+
+        xlogpos = logdir->getXlogStartPosition(new_tli,
+                                               new_segno,
+                                               pgstream->getWalSegmentSize());
+
+        if (xlogpos.length() <= 0) {
+          /*
+           * Oops, we couldn't extract a valid XLOG record from the archive.
+           * This usually means the archive didn't anything interesting, so
+           * we just assume the archive is empty and we start from the beginning.
+           *
+           * In this case, just rely on the XLOG position reported
+           * by IDENTIFY_SYSTEM.
+           *
+           * XXX: Report this somehow to the user.
+           */
+          myStream->xlogpos = pgstream->streamident.xlogpos;
+          myStream->timeline = pgstream->streamident.timeline;
+        } else {
+          /*
+           * We could extract a new XLogRecPtr from the archive.
+           */
+#ifdef __DEBUG__
+          cerr << "new XLOG start position determined by archive: "
+               << xlogpos
+               << endl;
+#endif
+          pgstream->streamident.xlogpos = xlogpos;
+          pgstream->streamident.timeline = new_tli;
+          myStream->xlogpos = xlogpos;
+          myStream->timeline = new_tli;
+        }
+
+      }
+
+    } else if (pgstream->streamident.slot->status == REPLICATION_SLOT_OK) {
+
+      /*
+       * The replication slot was created before. We are going
+       * to start streaming by using the last reported xlog
+       * position from the system.
+       *
+       * StreamIdentification::xlogpos will be already initialized
+       * by PGStream::identify(), so nothing special to be done here for now.
+       */
+    }
+
+    /*
+     * Update the slot to reflect current state.
+     */
+    this->updateStreamCatalogStatus();
+
+  }
+}
+
+void StartStreamingForArchiveCommand::updateStreamCatalogStatus() {
+
+  std::vector<int> affectedAttrs;
+
+  affectedAttrs.clear();
+  affectedAttrs.push_back(SQL_STREAM_XLOGPOS_ATTNO);
+  affectedAttrs.push_back(SQL_STREAM_STATUS_ATTNO);
+
+  this->catalog->updateStream(pgstream->streamident.id,
+                              affectedAttrs,
+                              pgstream->streamident);
+
+}
+
+void StartStreamingForArchiveCommand::finalizeStream() {
+
+  this->updateStreamCatalogStatus();
+
+}
+
+void StartStreamingForArchiveCommand::execute(bool noop) {
 
   /*
    * Die hard in case no catalog available.
@@ -408,7 +679,10 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
   }
 
   /*
-   * Don't employ transactions here, since we just read.
+   * IMPORTANT:
+   *
+   * Don't employ transactions here! Status updates will
+   * be lost otherwise!
    */
 
   /*
@@ -428,6 +702,14 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     throw CCatalogIssue(oss.str());
   }
 
+  /*
+   * Assign archive id to ourselves. We don't have
+   * our internal ID ready yet, but for further catalog
+   * actions this is required.
+   */
+  this->id = temp_descr->id;
+
+  /* prepare stream and start streaming */
   try {
 
     /*
@@ -468,31 +750,50 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      * connection handle and go further.
      */
     std::shared_ptr<WALStreamerProcess> walstreamer = nullptr;
-    PGStream pgstream(temp_descr);
-    pgstream.connect();
+
+    this->pgstream = new PGStream(temp_descr);
+    pgstream->connect();
 
     /*
      * Identify system
      */
-    pgstream.identify();
+    pgstream->identify();
+
+#ifdef __DEBUG__
+    cerr << "IDENTIFICATION (TLI/XLOGPOS) "
+         << pgstream->streamident.timeline
+         << "/"
+         << pgstream->streamident.xlogpos
+         << " XLOG_SEG_SIZE "
+         << pgstream->getWalSegmentSize()
+         << " SYSID "
+         << pgstream->streamident.systemid
+         << endl;
+#endif
 
     /*
-     * Set correct archive_id and stream connection
-     * identification. Also we need an identifier
-     * for the replication slot.
+     * Before calling prepareStream() we need to
+     * set the archive_id to the Stream Identification. This
+     * will engage the stream with the archive information.
      */
-    pgstream.streamident.archive_id = temp_descr->coninfo->archive_id;
-    pgstream.generateSlotName(temp_descr->archive_name);
+    pgstream->streamident.stype = ConnectionDescr::CONNECTION_TYPE_STREAMER;
+    pgstream->streamident.archive_id = temp_descr->coninfo->archive_id;
+    pgstream->streamident.status = StreamIdentification::STREAM_PROGRESS_IDENTIFIED;
 
     /*
-     * Replication slot for this archive required.
-     * We do not care if the slot already exists.
+     * Now prepare the stream.
      */
-    pgstream.createPhysicalReplicationSlot(true, true, false);
+    prepareStream();
 
-    walstreamer = pgstream.walstreamer();
+    walstreamer = pgstream->walstreamer();
     walstreamer->start();
     walstreamer->receive();
+
+    /*
+     * Usually receive() above will catch us in a loop,
+     * if we arrive here this means we need to exit safely.
+     */
+    finalizeStream();
 
   } catch(CPGBackupCtlFailure &e) {
     throw e;

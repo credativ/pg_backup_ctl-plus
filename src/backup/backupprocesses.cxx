@@ -148,7 +148,8 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
     status = this->current_state = this->receivePoll();
 
     /* check for errors, timeout et al. */
-    if (status != ARCHIVER_STREAMING) {
+    if ( (status != ARCHIVER_STREAMING)
+         || (status != ARCHIVER_STREAMING_INTR) ) {
       return status;
     }
 
@@ -179,6 +180,7 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
   } else if (*bufferlen == -2) {
 
+    /* Oops, something went wrong here */
     status = this->current_state = ARCHIVER_STREAMING_ERROR;
 
   }
@@ -209,6 +211,8 @@ bool WALStreamerProcess::receive() {
     throw StreamingFailure("new log segment requested, use finalize() instead");
   }
 
+  cerr << "entering WAL streaming receive() " << endl;
+
   while (this->handleReceive(&buffer, &bufferlen) == ARCHIVER_STREAMING) {
 
     XLOGStreamMessage *message = nullptr;
@@ -225,6 +229,9 @@ bool WALStreamerProcess::receive() {
     std::cout << "WAL MESSAGE KIND: " << message->what() << std::endl;
   }
 
+  if (this->current_state == ARCHIVER_STREAMING_ERROR) {
+    cerr << "failure on PQgetCopyData(): " << PQerrorMessage(this->pgconn) << endl;
+  }
   return can_continue;
 }
 
