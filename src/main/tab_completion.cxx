@@ -77,20 +77,23 @@ completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_ID
 completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
                                                     { "", COMPL_EOL, NULL } };
 
+completion_word list_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                                         { "", COMPL_EOL, NULL } };
+
+completion_word list_connection_for_completion[] = { { "FOR", COMPL_KEYWORD, list_connection_archive_completion },
+                                                     { "", COMPL_EOL, NULL } };
+
+completion_word create_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion},
+                                                   { "", COMPL_EOL, NULL } };
+
 completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
-                                        { "STREAMING CONNECTION", COMPL_KEYWORD, NULL },
+                                        { "STREAMING", COMPL_KEYWORD, create_connection_completion },
                                         { "BACKUP PROFILE", COMPL_KEYWORD, NULL },
                                         { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_archive_ident_completion },
                                              { "CATALOG", COMPL_KEYWORD, list_archive_ident_completion },
                                              { "", COMPL_EOL, NULL } };
-
-completion_word list_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                                         { "", COMPL_EOL, NULL } };
-
-completion_word list_connection_for_completion[] = { { "FOR", COMPL_KEYWORD, list_connection_archive_completion },
-                                                     { "", COMPL_EOL, NULL } };
 
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "BACKUP", COMPL_KEYWORD, list_backup_completion },
@@ -119,7 +122,17 @@ completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_base
 completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                                 { "", COMPL_EOL, NULL } };
 
+completion_word drop_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                                         { "", COMPL_EOL, NULL } };
+
+completion_word drop_connection_from_completion[] = { { "FROM", COMPL_KEYWORD, drop_connection_archive_completion },
+                                                    { "", COMPL_EOL, NULL } };
+
+completion_word drop_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, drop_connection_from_completion },
+                                                 { "", COMPL_EOL, NULL } };
+
 completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+                                      { "STREAMING", COMPL_KEYWORD, drop_connection_completion },
                                       { "", COMPL_EOL, NULL } };
 
 completion_word alter_archive_set_completion[] = { { "SET", COMPL_KEYWORD, param_start_completion },

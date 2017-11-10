@@ -303,7 +303,7 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
 
         /*
-         * DROP STREAMING CONNECTION ON ARCHIVE <archive name>
+         * DROP STREAMING CONNECTION FROM ARCHIVE <archive name>
          */
         cmd_drop_connection = no_case[ lexeme[ lit("STREAMING") ]]
           [ boost::bind(&CatalogDescr::setConnectionType, &cmd, ConnectionDescr::CONNECTION_TYPE_STREAMER) ]
