@@ -259,6 +259,9 @@ void WALStreamerProcess::start() {
   char escapedXlogPos[MAXPGPATH];
   int escape_error;
 
+  /* Result from START_REPLICATION command */
+  PGresult *res;
+
   /*
    * If the ArchiveState is already set to ARCHIVER_STREAMING, calling
    * start() is supposed to be an error (we indeed already seem to
@@ -311,12 +314,21 @@ void WALStreamerProcess::start() {
   /*
    * Fire the query ...
    */
-  if (PQsendQuery(this->pgconn, query.str().c_str()) == 0) {
+  res = PQexec(this->pgconn, query.str().c_str());
+
+  if (PQresultStatus(res) != PGRES_COPY_BOTH) {
+
     std::ostringstream oss;
     oss << "START_REPLICATION command failed: "
         << PQerrorMessage(this->pgconn);
+
+    /* Don't leak result set */
+    PQclear(res);
     throw StreamingFailure(oss.str());
+
   }
+
+  PQclear(res);
 
   /*
    * If everything went smoothly, change internal state
