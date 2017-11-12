@@ -724,14 +724,8 @@ PGStream::createPhysicalReplicationSlot(std::shared_ptr<PhysicalReplicationSlot>
       throw StreamingFailure("connect create replication slot: unexpected number of columns");
     }
 
-#ifdef __DEBUG__
-    cerr << "CREATE_REPLICATION_SLOT result" << endl;
-#endif
     slot->slot_name = std::string(PQgetvalue(result, 0, 0));
     slot->consistent_point = std::string(PQgetvalue(result, 0, 1));
-#ifdef __DEBUG__
-    cerr << "CREATE_REPLICATION_SLOT result GOT IT" << endl;
-#endif
 
     if (this->isIdentified()) {
       this->streamident.slot = slot;
