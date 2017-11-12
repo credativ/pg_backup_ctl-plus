@@ -221,6 +221,16 @@ namespace credativ {
     PGStream *pgstream = nullptr;
 
     /**
+     * Internal handle for archive directory.
+     */
+    std::shared_ptr<BackupDirectory> archivedir = nullptr;
+
+    /**
+     * Internal ArchiveLogDirectory handle.
+     */
+    std::shared_ptr<ArchiveLogDirectory> logdir = nullptr;
+
+    /**
      * Catalog handle we operate on. Note that we
      * don't use the properties of our own instance here, since
      * we need the properties stored within the catalog. Since this Command

@@ -579,10 +579,6 @@ void StartStreamingForArchiveCommand::prepareStream() {
       if (myStream->status == StreamIdentification::STREAM_PROGRESS_STREAMING
           || myStream->status == StreamIdentification::STREAM_PROGRESS_IDENTIFIED) {
 
-        std::shared_ptr<BackupDirectory> archivedir
-          = CPGBackupCtlFS::getArchiveDirectoryDescr(this->temp_descr->directory);
-        std::shared_ptr<ArchiveLogDirectory> logdir = archivedir->logdirectory();
-
         unsigned int new_tli = 0;
         unsigned int new_segno = 0;
         std::string xlogpos;
@@ -708,6 +704,16 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
    * actions this is required.
    */
   this->id = temp_descr->id;
+
+  /*
+   * Prepare directory handles.
+   */
+  this->archivedir
+    = CPGBackupCtlFS::getArchiveDirectoryDescr(this->temp_descr->directory);
+  this->logdir = archivedir->logdirectory();
+
+  /* Make sure target directories exists */
+  this->archivedir->create();
 
   /* prepare stream and start streaming */
   try {
