@@ -65,7 +65,7 @@ size_t MemoryBuffer::write(const char *buf, size_t bufsize, size_t off) {
    */
   if (off >= this->getSize()) {
     ostringstream oss;
-    oss << "offset into memory buffer("
+    oss << "write offset into memory buffer("
         << off
         << ") exceeds size("
         << this->getSize()
@@ -99,7 +99,7 @@ size_t MemoryBuffer::read(char *buf, size_t readsz, size_t off) {
    */
   if (off >= this->getSize()) {
     ostringstream oss;
-    oss << "offset into memory buffer("
+    oss << "read offset into memory buffer("
         << off
         << ") exceeds size("
         << this->getSize()
