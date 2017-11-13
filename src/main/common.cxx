@@ -64,7 +64,13 @@ size_t MemoryBuffer::write(const char *buf, size_t bufsize, size_t off) {
    * Sanity check, off cannot be larger than size
    */
   if (off >= this->getSize()) {
-    throw CPGBackupCtlFailure("offset into memory buffer exceeds size");
+    ostringstream oss;
+    oss << "offset into memory buffer("
+        << off
+        << ") exceeds size("
+        << this->getSize()
+        << ")";
+    throw CPGBackupCtlFailure(oss.str());
   }
 
   /*
@@ -92,7 +98,13 @@ size_t MemoryBuffer::read(char *buf, size_t readsz, size_t off) {
    * Sanity check, off cannot be larger than size
    */
   if (off >= this->getSize()) {
-    throw CPGBackupCtlFailure("offset into memory buffer exceeds size");
+    ostringstream oss;
+    oss << "offset into memory buffer("
+        << off
+        << ") exceeds size("
+        << this->getSize()
+        << ")";
+    throw CPGBackupCtlFailure(oss.str());
   }
 
   /*
