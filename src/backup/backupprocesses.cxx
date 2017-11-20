@@ -144,12 +144,12 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
   if (*bufferlen == 0) {
 
-    /* no data yet */
+    /* no data yet, poll on input from WAL sender */
     status = this->current_state = this->receivePoll();
 
     /* check for errors, timeout et al. */
     if ( (status != ARCHIVER_STREAMING)
-         || (status != ARCHIVER_STREAMING_INTR) ) {
+         && (status != ARCHIVER_STREAMING_INTR) ) {
       return status;
     }
 
@@ -188,6 +188,124 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
   return status;
 }
 
+std::string WALStreamerProcess::xlogpos() {
+
+  if (this->current_state != ARCHIVER_STREAMING_ERROR)
+    return this->streamident.xlogpos;
+  else
+    throw StreamingFailure("attempt to query xlog position from wal streamer not in streaming state");
+
+}
+
+void WALStreamerProcess::setArchiveLogDir(std::shared_ptr<BackupDirectory> archiveLogDir) {
+
+  this->archiveLogDir = archiveLogDir;
+
+}
+
+void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
+
+  char msgType;
+  /*
+   * message shouldn't be a nullptr...
+   */
+  if (message == nullptr)
+    return;
+
+  msgType = message->what();
+
+  /*
+   * WAL data (XLOGDataStreamMessage object) message should update xlogpos
+   */
+  switch(msgType) {
+  case 'w':
+    {
+      XLogRecPtr serverpos;
+
+      this->streamident.xlogpos
+        = PGStream::encodeXLOGPos(dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGStartPos());
+
+#ifdef __DEBUG_XLOG__
+      std::cerr << "NEW XLOG POS " << this->streamident.xlogpos << std::endl;
+#endif
+
+      /* get server position, reported by the connected WAL sender */
+      serverpos = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+
+#ifdef __DEBUG_XLOG__
+      std::cerr << "SERVER XLOG POS "
+                << PGStream::encodeXLOGPos(serverpos)
+                << std::endl;
+#endif
+      this->streamident.server_position = serverpos;
+
+      /*
+       * archiveLogDir holds the handler which should
+       * be applied to each WAL record.
+       */
+      if (this->archiveLogDir != nullptr) {
+      }
+
+      /*
+       * Update XLOG write position and, if flushed, also
+       * the flush position.
+       *
+       * XXX: Flush currenty the same as the current write position
+       *      Need to implement WAL file handling to get that right.
+       */
+      this->streamident.write_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+      this->streamident.flush_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+
+      break;
+    }
+
+  case 'k':
+    {
+      PrimaryFeedbackMessage *pm = dynamic_cast<PrimaryFeedbackMessage *>(message);
+
+#ifdef __DEBUG_XLOG__
+      std::cerr << "primary feedback message" << std::endl;
+#endif
+
+      if (pm->responseRequested()) {
+        /*
+         * Create a receiver status update message.
+         */
+        ReceiverStatusUpdateMessage *rm = new ReceiverStatusUpdateMessage(this->pgconn);
+
+        /*
+         * Set properties to report required properties to primary.
+         */
+        rm->setStatus(this->streamident.write_position,
+                      this->streamident.flush_position,
+                      this->streamident.apply_position);
+
+        /* ... and send 'em over */
+        try {
+          std::cerr << " ... sending status update to primary " << std::endl;
+          rm->send();
+        } catch (XLOGMessageFailure &e) {
+          delete rm;
+          throw e;
+        }
+
+      }
+
+      break;
+    }
+  default:
+    {
+      /* unhandled message type */
+#ifdef __DEBUG_XLOG__
+      std::cerr << "unhandled message type " << msgType << std::endl;
+#endif
+      break;
+    }
+
+  } /* switch...msgType */
+
+}
+
 bool WALStreamerProcess::receive() {
 
   bool can_continue = false;
@@ -224,14 +342,47 @@ bool WALStreamerProcess::receive() {
     this->receiveBuffer.write(buffer, bufferlen, 0);
 
     message = XLOGStreamMessage::message(this->pgconn,
-                                         this->receiveBuffer);
+                                         this->receiveBuffer,
+                                         this->streamident.wal_segment_size);
 
-    std::cout << "WAL MESSAGE KIND: " << message->what() << std::endl;
+    try {
+      if (message != nullptr) {
+
+        this->handleMessage(message);
+
+      }
+    } catch(CPGBackupCtlFailure &e) {
+      if (message != nullptr)
+        delete message;
+
+      throw e;
+    }
+
+    delete message;
+
   }
 
+  /*
+   * Internal handleReceive() loop exited, check
+   * further actions depending on current state.
+   */
+  if (this->current_state == ARCHIVER_STREAMING_NO_DATA) {
+    cerr << "no data, continue ... " << endl;
+    can_continue = true;
+  }
   if (this->current_state == ARCHIVER_STREAMING_ERROR) {
     cerr << "failure on PQgetCopyData(): " << PQerrorMessage(this->pgconn) << endl;
+    can_continue = false;
   }
+
+  /*
+   * Handle end-of-copy conditions.
+   */
+  if (this->current_state == ARCHIVER_END_POSITION) {
+    cerr << "end of WAL stream detected" << endl;
+    can_continue = true;
+  }
+
   return can_continue;
 }
 

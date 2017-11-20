@@ -7,7 +7,7 @@
 /* pg_backup_ctl++ headers */
 #include <descr.hxx>
 #include <backup.hxx>
-//#include <fs-archive.hxx>
+#include <xlogdefs.hxx>
 
 /* PostgreSQL client API */
 #include <libpq-fe.h>
@@ -84,6 +84,11 @@ namespace credativ {
     StreamIdentification streamident;
 
     /**
+     * Internal directory handle to safe WAL data.
+     */
+    std::shared_ptr<BackupDirectory> archiveLogDir = nullptr;
+
+    /**
      * Timeout for polling on WAL stream.
      *
      * Default is 10000ms
@@ -157,6 +162,25 @@ namespace credativ {
      * the end of archive condition accordingly.
      */
     virtual void finalizeSegment();
+
+    /**
+     * Assigns a directory handle to a WALStreamerProcess instance.
+     */
+    virtual void setArchiveLogDir(std::shared_ptr<BackupDirectory> archiveLogDir);
+
+    /**
+     * Returns the current encoded XLOG position, if active.
+     */
+    virtual std::string xlogpos();
+
+    /**
+     * Handles XLOG data messages.
+     *
+     * Iff the WALStreamer has a BackupDirectory object
+     * assigned, this will also safe the WAL stream to disk, according
+     * to the object type specified here (see fs-archive.hxx for details).
+     */
+    virtual void handleMessage(XLOGStreamMessage *message);
   };
 
   /*

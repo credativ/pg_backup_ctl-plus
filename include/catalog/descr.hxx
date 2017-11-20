@@ -154,6 +154,27 @@ namespace credativ {
     std::string status;
     std::string create_date;
 
+    /**
+     * Runtime variable wal_segment_size, transports
+     * the configured wal_segment_size during streaming
+     * operation.
+     *
+     * Usually this gets initialized by instantiating
+     * a PGStream object and establish a streaming connnection
+     * (e.g. PGStream::connect()).
+     */
+    unsigned long long wal_segment_size = -1;
+
+    /*
+     * Runtime streaming properties. Those usually
+     * get instrumented for example by a WALStreamerProcess
+     * instance.
+     */
+    XLogRecPtr flush_position = InvalidXLogRecPtr;
+    XLogRecPtr write_position = InvalidXLogRecPtr;
+    XLogRecPtr apply_position = InvalidXLogRecPtr;
+    XLogRecPtr server_position = InvalidXLogRecPtr;
+
     /*
      * Additional properties, those aren't necessarily
      * initialized. Use them with care.

@@ -1,5 +1,7 @@
 #include <xlogdefs.hxx>
 
+/* For PostgreSQL FE routines */
+#include <postgres_fe.h>
 /* For PGconn */
 #include <libpq-fe.h>
 
@@ -17,6 +19,16 @@ XLOGStreamMessage::XLOGStreamMessage(PGconn *prepared_connection) {
 
 }
 
+XLOGStreamMessage::XLOGStreamMessage(PGconn *prepared_connection,
+                                     unsigned long long wal_segment_size) {
+
+  this->connection = prepared_connection;
+  this->requestResponse = false;
+  this->kind = '\0';
+
+  this->setWALSegmentSize(wal_segment_size);
+}
+
 XLOGStreamMessage::~XLOGStreamMessage() {}
 
 unsigned char XLOGStreamMessage::what() {
@@ -25,9 +37,31 @@ unsigned char XLOGStreamMessage::what() {
 
 }
 
+unsigned long long XLOGStreamMessage::getWALSegmentSize() {
+  return this->wal_segment_size;
+}
+
+void XLOGStreamMessage::setWALSegmentSize(unsigned long long wal_segment_size) {
+
+  if (wal_segment_size <= 0
+      && (wal_segment_size % 2) != 0) {
+    throw XLOGMessageFailure("invalid WAL segment size in message: "
+                             + wal_segment_size);
+  }
+
+  this->wal_segment_size = wal_segment_size;
+
+}
+
 void XLOGStreamMessage::wantsResponse() {
 
   this->requestResponse = true;
+
+}
+
+bool XLOGStreamMessage::responseRequested() {
+
+  return this->requestResponse;
 
 }
 
@@ -42,19 +76,29 @@ void XLOGStreamMessage::basicCheckMemoryBuffer(MemoryBuffer &mybuffer) {
 }
 
 XLOGStreamMessage* XLOGStreamMessage::message(PGconn *pg_connection,
-                                              MemoryBuffer &srcbuffer) {
+                                              MemoryBuffer &srcbuffer,
+                                              unsigned long long wal_segment_size) {
 
   /*
    * Empty buffer not allowed, return a null pointer
    * in this case.
    */
-  if (srcbuffer.getSize() <= 0)
+  if (srcbuffer.getSize() <= 0) {
     return nullptr;
+  }
 
   switch(srcbuffer[0]) {
   case 'w':
     {
-      XLOGStreamMessage *message = new XLOGDataStreamMessage(pg_connection);
+      XLOGStreamMessage *message = new XLOGDataStreamMessage(pg_connection,
+                                                             wal_segment_size);
+      *message << srcbuffer;
+      return message;
+    }
+  case 'k':
+    {
+      PrimaryFeedbackMessage *message = new PrimaryFeedbackMessage(pg_connection,
+                                                                   wal_segment_size);
       *message << srcbuffer;
       return message;
     }
@@ -62,6 +106,9 @@ XLOGStreamMessage* XLOGStreamMessage::message(PGconn *pg_connection,
     /* unknown message type, bail out hard. */
     throw XLOGMessageFailure("unknown message type: " + srcbuffer[0]);
   }
+
+  /* normally not reached */
+  return nullptr;
 }
 
 /* ****************************************************************************
@@ -75,11 +122,32 @@ XLOGDataStreamMessage::XLOGDataStreamMessage(PGconn *prepared_connection)
 
 }
 
+XLOGDataStreamMessage::XLOGDataStreamMessage(PGconn *prepared_connection,
+                                             unsigned long long wal_segment_size)
+  : XLOGStreamMessage(prepared_connection, wal_segment_size) {
+
+  this->kind = 'w';
+
+}
+
 XLOGDataStreamMessage::~XLOGDataStreamMessage() {}
+
+XLogRecPtr XLOGDataStreamMessage::getXLOGStartPos() {
+
+  return this->xlogstartpos;
+
+}
+
+XLogRecPtr XLOGDataStreamMessage::getXLOGServerPos() {
+
+  return this->xlogserverpos;
+
+}
 
 void XLOGDataStreamMessage::assign(MemoryBuffer &mybuffer) {
 
   char bytes[8];
+  XLogRecPtr xlog_pos;
 
   /*
    * Perform some basic checks.
@@ -100,12 +168,14 @@ void XLOGDataStreamMessage::assign(MemoryBuffer &mybuffer) {
    * NOTE: Skip the first byte, since this is the message type identifier.
    * The next 8 bytes corresponds to the XLOG start position.
    */
-  mybuffer.read((char *)&bytes, 8, 1);
-  this->xlogstartpos = (long long)(bytes);
+  mybuffer.read(bytes, 8, 1);
+  memcpy(&xlog_pos, bytes, 8);
+  this->xlogstartpos = SWAP_UINT64(xlog_pos);
 
   /* XLOG server position */
   mybuffer.read((char *)&bytes, 8, 9);
-  this->xlogserverpos = (long long)(bytes);
+  memcpy(&xlog_pos, bytes, 8);
+  this->xlogserverpos = SWAP_UINT64(xlog_pos);
 
   /* XLOG timestamp */
   mybuffer.read((char *)&bytes, 8, 17);
@@ -141,6 +211,13 @@ FeedbackMessage::FeedbackMessage(PGconn *prepared_connection)
   /* No special handling here, since abstract */
 }
 
+FeedbackMessage::FeedbackMessage(PGconn *prepared_connection,
+                                 unsigned long long wal_segment_size)
+  : XLOGStreamMessage(prepared_connection, wal_segment_size) {
+
+  /* No special handling here, since abstract */
+}
+
 FeedbackMessage::~FeedbackMessage() {}
 
 /*****************************************************************************
@@ -154,14 +231,81 @@ ReceiverStatusUpdateMessage::ReceiverStatusUpdateMessage(PGconn *prepared_connec
 
 }
 
+ReceiverStatusUpdateMessage::ReceiverStatusUpdateMessage(PGconn *prepared_connection,
+                                                         unsigned long long wal_segment_size)
+  : FeedbackMessage(prepared_connection, wal_segment_size) {
+
+  this->kind = 'r';
+
+}
+
 ReceiverStatusUpdateMessage::~ReceiverStatusUpdateMessage() {}
 
 void ReceiverStatusUpdateMessage::send() {
 
+  char replydata[34];
+
+  /* status message type byte */
+  replydata[0] = this->kind;
+
+  /* recv/write location */
+  uint64_hton_sendbuf(&replydata[1], this->xlogPos_written);
+
+  /* flush location, if requested */
+  if (report_flush_position) {
+    uint64_hton_sendbuf(&replydata[9], this->xlogPos_flushed);
+  } else {
+    uint64_hton_sendbuf(&replydata[9], InvalidXLogRecPtr);
+  }
+
+  /* apply location, no used here yet */
+  uint64_hton_sendbuf(&replydata[17], InvalidXLogRecPtr);
+
+  /* client local time, in microseconds */
+  uint64_hton_sendbuf(&replydata[25], this->current_time_us);
+
+  /* Request primary status keepalive, if required */
+  if (this->responseRequested())
+    replydata[33] = 1;
+  else
+    replydata[33] = 0;
+
+  if (PQputCopyData(this->connection, replydata, sizeof(replydata)) <= 0
+      || PQflush(this->connection)) {
+    std::ostringstream oss;
+    oss << "could not send status update message to primary: "
+        << PQerrorMessage(this->connection);
+    this->requestResponse = false;
+    this->report_flush_position = false;
+    throw XLOGMessageFailure(oss.str());
+  }
+
   /*
    * Finally reset primary status request flag.
    */
+  this->report_flush_position = false;
   this->requestResponse = false;
+}
+
+void ReceiverStatusUpdateMessage::reportFlushPosition() {
+
+  this->report_flush_position = true;
+
+}
+
+void
+ReceiverStatusUpdateMessage::setStatus(XLogRecPtr written,
+                                       XLogRecPtr flushed,
+                                       XLogRecPtr applied) {
+
+  this->xlogPos_written = written;
+  this->xlogPos_flushed = flushed;
+  this->xlogPos_applied = applied;
+
+  auto current_us
+    = std::chrono::duration_cast<std::chrono::microseconds>(CPGBackupCtlBase::current_hires_time_point().time_since_epoch());
+  this->current_time_us = current_us.count();
+
 }
 
 /*****************************************************************************
@@ -175,7 +319,25 @@ HotStandbyFeedbackMessage::HotStandbyFeedbackMessage(PGconn *prepared_connection
 
 }
 
+HotStandbyFeedbackMessage::HotStandbyFeedbackMessage(PGconn *prepared_connection,
+                                                     unsigned long long wal_segment_size)
+  : FeedbackMessage(prepared_connection, wal_segment_size) {
+
+  this->kind = 'h';
+
+}
+
 HotStandbyFeedbackMessage::~HotStandbyFeedbackMessage() {}
+
+void HotStandbyFeedbackMessage::send() {
+
+  throw XLOGMessageFailure("not implemend yet");
+
+  if (this->connection == NULL
+      && (PQstatus(this->connection) != CONNECTION_OK))
+    throw XLOGMessageFailure("attempt to send status reply to disconnected server");
+
+}
 
 /*****************************************************************************
  * PrimaryFeedbackMessage
@@ -188,7 +350,33 @@ PrimaryFeedbackMessage::PrimaryFeedbackMessage(PGconn *prepared_connection)
   this->kind = 'k';
 }
 
+PrimaryFeedbackMessage::PrimaryFeedbackMessage(PGconn *prepared_connection,
+                                               unsigned long long wal_segment_size)
+  : XLOGStreamMessage(prepared_connection, wal_segment_size) {
+
+  this->requestResponse = false;
+  this->kind = 'k';
+
+}
+
 PrimaryFeedbackMessage::~PrimaryFeedbackMessage() {}
+
+PrimaryFeedbackMessage& PrimaryFeedbackMessage::operator<<(MemoryBuffer &srcbuffer) {
+
+  this->assign(srcbuffer);
+  return *this;
+
+}
+
+virtual XLogRecPtr PrimaryFeedbackMessage::getXLOGServerPos() {
+
+  return this->xlogserverendpos;
+
+}
+
+virtual std::string PrimaryFeedbackMessage::getServerTime() {
+
+}
 
 void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
 
@@ -203,7 +391,7 @@ void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
    * Enough room for a primary status message ?
    */
   if (mybuffer.getSize() < 18) {
-    throw XLOGMessageFailure("input buffer doesn't look like a primary status message");
+    throw XLOGMessageFailure("input buffer does not look like a primary status message");
   }
 
   /*
@@ -224,7 +412,9 @@ void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
    * If the server wants a response, the last byte indicates
    * this by setting it to '1'.
    */
-  if (mybuffer[17] = '1')
+
+  if (mybuffer[17] = '1') {
     this->wantsResponse();
+  }
 
 }

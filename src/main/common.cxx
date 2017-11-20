@@ -407,8 +407,20 @@ std::chrono::milliseconds CPGBackupCtlBase::calculate_duration_ms(high_resolutio
 
 }
 
-long long CPGBackupCtlBase::duration_get_ms(std::chrono::milliseconds ms) {
+std::chrono::microseconds CPGBackupCtlBase::calculate_duration_us(high_resolution_clock::time_point start,
+                                                                  high_resolution_clock::time_point stop) {
+
+  auto result = duration_cast<std::chrono::microseconds>(stop - start);
+  return result;
+
+}
+
+uint64 CPGBackupCtlBase::duration_get_ms(std::chrono::milliseconds ms) {
   return ms.count();
+}
+
+uint64 CPGBackupCtlBase::duration_get_us(std::chrono::microseconds us) {
+  return us.count();
 }
 
 string CPGBackupCtlBase::ptime_to_str(ptime input) {

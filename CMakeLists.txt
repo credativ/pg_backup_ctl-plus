@@ -92,6 +92,19 @@ ELSE()
 ENDIF()
 
 ##
+## Check endianess of target system
+##
+include(TestBigEndian)
+TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+if(IS_BIG_ENDIAN)
+  message(STATUS "detected big endian machine")
+  set(PG_BACKUP_CTL_BIG_ENDIAN "#define PG_BACKUP_CTL_BIG_ENDIAN 1")
+else()
+  message(STATUS "detected little endian machine")
+  set(PG_BACKUP_CTL_BIG_ENDIAN "#undef PG_BACKUP_CTL_BIG_ENDIAN")
+endif()
+
+##
 ## We need popt
 ##
 find_package (popt REQUIRED)
@@ -130,6 +143,8 @@ if (libpq_FOUND)
    include_directories(${pgsql_INCLUDE_SERVER})
    message("linking PostgreSQL libpq ${libpq_LIBRARIES}")
    target_link_libraries (pgbckctl-common ${libpq_LIBRARIES})
+else()
+   message(FATAL_ERROR "libpq development header and PostgreSQL server includes required")
 endif(libpq_FOUND)
 
 ##

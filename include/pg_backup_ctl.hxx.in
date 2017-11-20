@@ -23,4 +23,9 @@
  */
 @PG_BACKUP_CTL_HAS_ZSTD@
 
+/*
+ * Endianess of target platform
+ */
+@PG_BACKUP_CTL_BIG_ENDIAN@
+
 #endif

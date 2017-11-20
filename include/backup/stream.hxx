@@ -144,6 +144,19 @@ namespace credativ {
     static XLogRecPtr decodeXLOGPos(std::string pos) ;
 
     /**
+     * Helper function to return XLOG position offset into
+     * WAL stream.
+     */
+    virtual int XLOGOffset(XLogRecPtr pos);
+
+    /**
+     * Helper function to return XLOG position offset
+     * into WAL stream, static version.
+     */
+    static int XLOGOffset(XLogRecPtr pos,
+                          unsigned long long wal_segment_size);
+
+    /**
      * Helper function to encode a given XLogRecPtr value.
      *
      * Returns the string representation of the given position.

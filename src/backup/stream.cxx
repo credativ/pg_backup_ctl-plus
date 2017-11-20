@@ -99,6 +99,29 @@ void StreamIdentification::reset() {
  * Implementation of PGStream
  ******************************************************************************/
 
+int PGStream::XLOGOffset(XLogRecPtr pos) {
+
+#if PG_VERSION_NUM >= 110000
+  return XLogSegmentOffset(PGStream::decodeXLOGPos(this->streamident.xlogpos),
+                           this->walSegmentSize);
+#else
+  return pos % this->walSegmentSize;
+#endif
+
+}
+
+int PGStream::XLOGOffset(XLogRecPtr pos,
+                         unsigned long long wal_segment_size) {
+
+#if PG_VERSION_NUM >= 110000
+  return XLogSegmentOffset(pos, wal_segment_size);
+#else
+  return pos % wal_segment_size;
+#endif
+
+}
+
+
 std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
   std::string result = "";
@@ -277,7 +300,7 @@ void PGStream::sendReceiverStatusUpdate() {
 
   ExecStatusType es;
   PGresult *result;
-  
+
 }
 
 void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
@@ -446,6 +469,7 @@ unsigned long long PGStream::walSegmentSizeInternal() {
       throw StreamingFailure("invalid XLOG segment size: needs to be a power of two");
 #endif
 
+    this->streamident.wal_segment_size = result;
     return result;
   }
 }

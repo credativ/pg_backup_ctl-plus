@@ -793,7 +793,19 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
     walstreamer = pgstream->walstreamer();
     walstreamer->start();
-    walstreamer->receive();
+
+    /*
+     * Enter infinite loop as long as receive() tells
+     * us that we can continue.
+     */
+    while (1) {
+
+      if (!walstreamer->receive()) {
+      }
+
+    }
+
+    cerr << "recv aborted, WAL streamer state " << walstreamer->reason() << endl;
 
     /*
      * Usually receive() above will catch us in a loop,

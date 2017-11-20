@@ -30,6 +30,44 @@
 
 #define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
 
+/**
+ * Plattform specific code
+ */
+#define UINT64CONST(x) (x##UL)
+
+static
+inline uint64 uint64_to_host_byteorder(uint64 x) {
+  return
+    ((x << 56) & UINT64CONST(0xff00000000000000)) |
+    ((x << 40) & UINT64CONST(0x00ff000000000000)) |
+    ((x << 24) & UINT64CONST(0x0000ff0000000000)) |
+    ((x << 8) & UINT64CONST(0x000000ff00000000)) |
+    ((x >> 8) & UINT64CONST(0x00000000ff000000)) |
+    ((x >> 24) & UINT64CONST(0x0000000000ff0000)) |
+    ((x >> 40) & UINT64CONST(0x000000000000ff00)) |
+    ((x >> 56) & UINT64CONST(0x00000000000000ff));
+}
+
+#ifndef PG_BACKUP_CTL_BIG_ENDIAN
+
+#define SWAP_UINT64(val) uint64_to_host_byteorder((val))
+
+#else
+#define SWAP_UINT64(val) (val)
+
+#endif
+
+static inline void
+uint64_hton_sendbuf(char *buf, uint64 val) {
+
+  uint64 nbo_val = SWAP_UINT64(val);
+  memcpy(buf, &nbo_val, sizeof(nbo_val));
+
+}
+
+/*
+ * Common objects starts here.
+ */
 namespace credativ {
 
   /**
@@ -218,10 +256,16 @@ namespace credativ {
     static std::string current_timestamp(bool asFilename = false);
 
     /**
-     * Calculates a duration of high resolution time points.
+     * Calculates a duration of high resolution time points in milliseconds.
      */
     static std::chrono::milliseconds calculate_duration_ms(std::chrono::high_resolution_clock::time_point start,
                                                            std::chrono::high_resolution_clock::time_point stop);
+
+    /**
+     * Calculates a duration of high resolution time points in microseconds.
+     */
+    static std::chrono::microseconds calculate_duration_us(high_resolution_clock::time_point start,
+                                                           high_resolution_clock::time_point stop);
 
     /**
      * Returns a high resolution time point
@@ -231,7 +275,12 @@ namespace credativ {
     /**
      * Extracts the number of milliseconds from the given duration.
      */
-    static long long duration_get_ms(std::chrono::milliseconds ms);
+    static uint64 duration_get_ms(std::chrono::milliseconds ms);
+
+    /**
+     * Extracts the number of microseconds from the given duration.
+     */
+    static uint64 duration_get_us(std::chrono::microseconds us);
 
     /**
      * Returns a milliseconds duration.
