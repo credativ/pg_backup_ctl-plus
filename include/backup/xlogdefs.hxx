@@ -198,6 +198,14 @@ namespace credativ {
      * current WAL stream ends.
      */
     virtual XLogRecPtr getXLOGServerPos();
+
+    /**
+     * Returns the server time reported by a keepalive message.
+     *
+     * The returned timestamp is formatted as a ANSI (ISO 8601 compliant)
+     * timestamp string.
+     */
+    virtual std::string getServerTime();
   };
 
   class ReceiverStatusUpdateMessage : protected FeedbackMessage {

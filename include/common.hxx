@@ -264,8 +264,8 @@ namespace credativ {
     /**
      * Calculates a duration of high resolution time points in microseconds.
      */
-    static std::chrono::microseconds calculate_duration_us(high_resolution_clock::time_point start,
-                                                           high_resolution_clock::time_point stop);
+    static std::chrono::microseconds calculate_duration_us(std::chrono::high_resolution_clock::time_point start,
+                                                           std::chrono::high_resolution_clock::time_point stop);
 
     /**
      * Returns a high resolution time point

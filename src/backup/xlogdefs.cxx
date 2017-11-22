@@ -368,15 +368,13 @@ PrimaryFeedbackMessage& PrimaryFeedbackMessage::operator<<(MemoryBuffer &srcbuff
 
 }
 
-virtual XLogRecPtr PrimaryFeedbackMessage::getXLOGServerPos() {
+XLogRecPtr PrimaryFeedbackMessage::getXLOGServerPos() {
 
   return this->xlogserverendpos;
 
 }
 
-virtual std::string PrimaryFeedbackMessage::getServerTime() {
-
-}
+std::string PrimaryFeedbackMessage::getServerTime() {}
 
 void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
 
