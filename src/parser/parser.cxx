@@ -160,7 +160,7 @@ namespace credativ {
                 ^ portnumber
                 [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
               |
-              ( no_case[ lexeme[ lit("DSN") ]] > '=' > dsn_connection_string
+              ( no_case[ lexeme[ lit("DSN") ]] > lit("=") > dsn_connection_string
                 [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
 
         /*
@@ -334,18 +334,18 @@ namespace credativ {
          * Property clauses
          */
         property_string = lexeme [ +(graph - (",;[]{} ")) ];
-        hostname = no_case[lexeme[ lit("PGHOST") ]] > "=" > property_string;
-        database = no_case[lexeme[ lit("PGDATABASE") ]] > "=" > property_string;
-        username = no_case[lexeme[ lit("PGUSER") ]] > "=" > property_string;
-        directory = no_case[lexeme[ lit("DIRECTORY") ]] > "=" > directory_string;
-        portnumber = no_case[lexeme[ lit("PGPORT") ]] > "=" > +(char_("0-9"));
+        hostname = no_case[lexeme[ lit("PGHOST") ]] > -lit("=") > property_string;
+        database = no_case[lexeme[ lit("PGDATABASE") ]] > -lit("=") > property_string;
+        username = no_case[lexeme[ lit("PGUSER") ]] > -lit("=") > property_string;
+        directory = no_case[lexeme[ lit("DIRECTORY") ]] > -lit("=") > directory_string;
+        portnumber = no_case[lexeme[ lit("PGPORT") ]] > -lit("=") > +(char_("0-9"));
 
         /*
          * Rule to read in COMPRESSION=<BACKUP_COMPRESSION_TYPE>
          */
         profile_compression_option =
           no_case[lexeme[ lit("COMPRESSION") ]]
-          > "="
+          > -lit("=")
           > (no_case[lexeme[ lit("GZIP") ]]
              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_GZIP) ]
              | no_case[lexeme[ lit("NONE") ]]
@@ -357,7 +357,7 @@ namespace credativ {
          * CREATE BACKUP PROFILE ...  MAX_RATE=<kbps>
          */
         profile_max_rate_option = no_case[lexeme[ lit("MAX_RATE") ]]
-          > "="
+          > -lit("=")
           > +(char_("0-9"));
 
         /*
@@ -367,7 +367,7 @@ namespace credativ {
          * label.
          */
         profile_backup_label_option = no_case[lexeme[ lit("LABEL") ]]
-          > "="
+          > -lit("=")
           > directory_string
           [boost::bind(&CatalogDescr::setProfileBackupLabel, &cmd, ::_1)];
 
@@ -375,7 +375,7 @@ namespace credativ {
          * CREATE BACKUP PROFILE ... WAL=<INCLUDED|EXCLUDED>
          */
         profile_wal_option = no_case[lexeme[ lit("WAL") ]]
-          > "="
+          > -lit("=")
           > (no_case[lexeme[ lit("INCLUDED") ]]
              [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, true) ]
              |
@@ -387,7 +387,7 @@ namespace credativ {
          * CREATE BACKUP PROFILE ... CHECKPOINT=FAST|DELAYED
          */
         profile_checkpoint_option = no_case[lexeme[ lit("CHECKPOINT") ]]
-          > "="
+          > -lit("=")
           > (no_case[lexeme[ lit("FAST") ]]
              [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, true) ]
              | no_case[lexeme[ lit("DELAYED") ]]
@@ -398,7 +398,7 @@ namespace credativ {
          * CREATE BACKUP PROFILE ... WAIT_FOR_WAL=TRUE|FALSE
          */
         profile_wait_for_wal_option = no_case[lexeme[ lit("WAIT_FOR_WAL") ]]
-          > "="
+          > -lit("=")
           > (no_case[lexeme[ lit("TRUE") ]]
              [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, true) ]
              | no_case[lexeme[ lit("FALSE") ]]

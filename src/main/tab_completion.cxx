@@ -23,7 +23,7 @@
 #endif
 
 /* charakters that are breaking words into pieces */
-#define WORD_BREAKS		"\t\n@$><=;|&{() "
+#define WORD_BREAKS "\t\n@$><=;|&{() "
 
 /*
  * Completion tags, used to identify completion token type.
@@ -86,9 +86,45 @@ completion_word list_connection_for_completion[] = { { "FOR", COMPL_KEYWORD, lis
 completion_word create_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion},
                                                    { "", COMPL_EOL, NULL } };
 
+/*
+ * Forwarded declaration for param completion list of CREATE BACKUP PROFILE
+ * Please note that the initialization of those completion tokens
+ * are done during runtime in init_readline() !
+ */
+completion_word create_bck_prof_param_full[7] ;
+
+completion_word create_bck_prof_wfw_setting[] = { { "TRUE", COMPL_KEYWORD, NULL },
+                                                  { "FALSE", COMPL_KEYWORD, NULL },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_chkpt_setting[] = { { "FAST", COMPL_KEYWORD, create_bck_prof_param_full + 5 },
+                                                    { "DELAYED", COMPL_KEYWORD, create_bck_prof_param_full + 5 },
+                                                    { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_wal_setting[] = { { "INCLUDED", COMPL_KEYWORD, create_bck_prof_param_full + 4 },
+                                                  { "EXCLUDED", COMPL_KEYWORD, create_bck_prof_param_full + 4 },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_label_string[] = { { "<label string>", COMPL_IDENTIFIER, create_bck_prof_param_full + 3 },
+                                                   { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_max_rate[] = { { "<max rate in bytes>", COMPL_IDENTIFIER, create_bck_prof_param_full + 2 },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_compr_type[] = { { "GZIP", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
+                                                 { "NONE", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
+                                                 { "ZSTD", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_bck_prof_param_full },
+                                                       { "", COMPL_EOL, NULL } };
+
+completion_word create_backup_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, create_bck_prof_ident_completion },
+                                                       { "", COMPL_EOL, NULL } };
+
 completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
                                         { "STREAMING", COMPL_KEYWORD, create_connection_completion },
-                                        { "BACKUP PROFILE", COMPL_KEYWORD, NULL },
+                                        { "BACKUP", COMPL_KEYWORD, create_backup_profile_completion },
                                         { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_archive_ident_completion },
@@ -285,6 +321,33 @@ char **keyword_completion(const char *input, int start, int end) {
 }
 
 void init_readline() {
+
+  /*
+   * Full completion tokens for parameter list for CREATE BACKUP PROFILE
+   * Since we need to specify the parameters in a proper order, we
+   * change the offset into this completion array to the right position
+   * (see the detail in e.g. create_bck_prof_compr_type[]). Problem is, that
+   * we just can't forward a static array initialization, so we initialize
+   * the elements here!
+   *
+   * IMPORTANT: If you change the number of elements here, make sure you
+   *            match them in the forward declaration above!
+   */
+  completion_word create_bck_prof_w0 = { "COMPRESSION", COMPL_KEYWORD, create_bck_prof_compr_type };
+  completion_word create_bck_prof_w1 = { "MAX_RATE", COMPL_KEYWORD, create_bck_prof_max_rate };
+  completion_word create_bck_prof_w2 = { "LABEL", COMPL_KEYWORD, create_bck_prof_label_string };
+  completion_word create_bck_prof_w3 = { "WAL", COMPL_KEYWORD, create_bck_prof_wal_setting };
+  completion_word create_bck_prof_w4 = { "CHECKPOINT", COMPL_KEYWORD, create_bck_prof_chkpt_setting};
+  completion_word create_bck_prof_w5 = { "WAIT_FOR_WAL", COMPL_KEYWORD, create_bck_prof_wfw_setting };
+  completion_word create_bck_prof_w6 = { "", COMPL_EOL, NULL } ;
+
+  create_bck_prof_param_full[0] = create_bck_prof_w0;
+  create_bck_prof_param_full[1] = create_bck_prof_w1;
+  create_bck_prof_param_full[2] = create_bck_prof_w2;
+  create_bck_prof_param_full[3] = create_bck_prof_w3;
+  create_bck_prof_param_full[4] = create_bck_prof_w4;
+  create_bck_prof_param_full[5] = create_bck_prof_w5;
+  create_bck_prof_param_full[6] = create_bck_prof_w6;
 
   /* XXX: what about specific append settings?
    *
