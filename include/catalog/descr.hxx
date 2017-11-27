@@ -170,6 +170,7 @@ namespace credativ {
      * get instrumented for example by a WALStreamerProcess
      * instance.
      */
+    int write_pos_start_offset = 0; /* starting offset into current XLogSegment */
     XLogRecPtr flush_position = InvalidXLogRecPtr;
     XLogRecPtr write_position = InvalidXLogRecPtr;
     XLogRecPtr apply_position = InvalidXLogRecPtr;

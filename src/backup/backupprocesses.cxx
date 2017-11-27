@@ -240,13 +240,6 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
       this->streamident.server_position = serverpos;
 
       /*
-       * archiveLogDir holds the handler which should
-       * be applied to each WAL record.
-       */
-      if (this->archiveLogDir != nullptr) {
-      }
-
-      /*
        * Update XLOG write position and, if flushed, also
        * the flush position.
        *
@@ -255,6 +248,44 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
        */
       this->streamident.write_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
       this->streamident.flush_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+
+#if PG_VERSION_NUM < 110000
+      this->streamident.write_pos_start_offset += this->streamident.write_position % XLOG_SEG_SIZE;
+#else
+      this->streamident.write_pos_start_offset += XLogSegmentOffset(this->streamident.write_position,
+                                                                    this->streamident.wal_segment_size);
+#endif
+
+      /*
+       * archiveLogDir holds the handler which should
+       * be applied to each WAL record.
+       */
+      if (this->archiveLogDir != nullptr) {
+
+        XLogSegNo segment_number;
+        char      xlogfilename[MAXPGPATH];
+
+        /*
+         * Write to the archive handle, but only in case
+         * we have a valid byte chunk.
+         */
+#if PG_VERSION_NUM < 110000
+        XLByteToSeg(this->streamident.write_pos_start_offset,
+                    segment_number);
+        XLogFileName(xlogfilename,
+                     this->streamident.timeline,
+                     segment_number);
+#else
+        XLByteToSeg(this->streamident.write_pos_start_offset,
+                    segment_number,
+                    this->streamident.wal_segment_size);
+        XLogFileName(xlogfilename,
+                     this->streamident.write_pos_start_offset,
+                     segment_number,
+                     this->streamident.wal_segment_size);
+#endif
+        std::cerr << "Write to XLOG segment " << xlogfilename << std::endl;
+      }
 
       break;
     }
@@ -377,6 +408,10 @@ bool WALStreamerProcess::receive() {
 
   /*
    * Handle end-of-copy conditions.
+   *
+   * This could either a controlled shutdown
+   * of the server or we reached the end of the current
+   * timeline.
    */
   if (this->current_state == ARCHIVER_END_POSITION) {
     cerr << "end of WAL stream detected" << endl;

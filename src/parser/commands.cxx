@@ -791,7 +791,15 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      */
     prepareStream();
 
+    /*
+     * Create a walstreamer handle.
+     */
     walstreamer = pgstream->walstreamer();
+
+    /*
+     * We want the walstreamer to stream into our directory.
+     */
+    walstreamer->setArchiveLogDir(this->logdir);
     walstreamer->start();
 
     /*
