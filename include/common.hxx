@@ -32,9 +32,9 @@
 
 /**
  * Plattform specific code
+ *
+ * NOTE: UINT64CONST define comes from postgres c.h
  */
-#define UINT64CONST(x) (x##UL)
-
 static
 inline uint64 uint64_to_host_byteorder(uint64 x) {
   return
