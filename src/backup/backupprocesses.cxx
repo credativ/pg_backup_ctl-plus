@@ -21,6 +21,13 @@ WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection,
   this->pgconn        = prepared_connection;
   this->streamident   = streamident;
 
+  /*
+   * prepared_connection needs to be a connected
+   * libpq connection, otherwise we have to error out.
+   */
+  if (!((this->pgconn != NULL)
+        && (PQstatus(this->pgconn) == CONNECTION_OK)))
+    throw StreamingFailure("WAL stream not connected");
 }
 
 WALStreamerProcess::~WALStreamerProcess() {
@@ -176,6 +183,10 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
   } else if (*bufferlen == -1) {
 
+    /*
+     * Indicate end-of-stream, either shutdown
+     * or end of current timeline
+     */
     status = this->current_state = ARCHIVER_END_POSITION;
 
   } else if (*bufferlen == -2) {
@@ -414,11 +425,172 @@ bool WALStreamerProcess::receive() {
    * timeline.
    */
   if (this->current_state == ARCHIVER_END_POSITION) {
-    cerr << "end of WAL stream detected" << endl;
-    can_continue = true;
+    PGresult *pgres = this->handleEndOfStream();
+
+    if (this->current_state == ARCHIVER_TIMELINE_SWITCH) {
+      cerr << "end of WAL stream detected, timeline switch" << endl;
+
+      /*
+       * This is a timeline switch. Handle it accordingly.
+       */
+      this->endOfStreamTimelineSwitch(pgres,
+                                      this->streamident.timeline,
+                                      this->streamident.xlogpos);
+      can_continue = true;
+
+    } else if (this->current_state == ARCHIVER_SHUTDOWN) {
+      cerr << "end of WAL stream detected, stream disconnected" << endl;
+
+      /*
+       * Server side has terminated, schedule own shutdown accordingly.
+       */
+      can_continue = false;
+    }
   }
 
   return can_continue;
+}
+
+void WALStreamerProcess::endOfStreamTimelineSwitch(PGresult *result,
+                                                   unsigned int& timeline,
+                                                   std::string& xlogpos) {
+
+  if (this->current_state != ARCHIVER_TIMELINE_SWITCH) {
+    throw StreamingFailure("timeline switch requested on unsupported state in streaming connection");
+  }
+
+  if (result == NULL) {
+    throw StreamingFailure("could not get timeline switch data from streaming connection: result is undefined");
+  }
+
+  /*
+   * Get timeline and xlogpos from the next timeline.
+   */
+  if (PQnfields(result) < 2
+      || PQntuples(result) != 1) {
+    std::ostringstream oss;
+    oss << "unexpected result after timeline switch: got "
+        << "columns " << PQnfields(result) << " expected " << 2 << ", "
+        << "tuples " << PQntuples(result) << "expected " << 1;
+    throw StreamingFailure(oss.str());
+  }
+
+  /*
+   * Read timeline
+   */
+  timeline = CPGBackupCtlBase::strToInt(PQgetvalue(result, 0, 0));
+
+  /*
+   * The XLOG position returned by the result set is encoded. We just
+   * return the encoded position, the caller is responsible to encode it
+   * into a proper representation.
+   */
+  xlogpos = PQgetvalue(result, 0, 1);
+
+  /* and we're done */
+
+}
+
+PGresult *WALStreamerProcess::handleEndOfStream() {
+
+  PGresult *result = NULL;
+
+  if (this->current_state != ARCHIVER_END_POSITION) {
+    throw CPGBackupCtlFailure("could not call endOfStream() on unterminated WAL stream");
+  }
+
+  result = PQgetResult(this->pgconn);
+
+  /*
+   * Check wether we are still in COPY IN mode.
+   */
+  if (result != NULL && (PQresultStatus(result) == PGRES_COPY_IN)) {
+    /*
+     * Finalize the COPY IN mode on our side. Iff the server is
+     * still alive this will succeed.
+     *
+     * We need to ackknowledge this case in order to get the
+     * timeline switch, if any in progress.
+     *
+     * end() will set the internal Archiver state to ARCHIVER_SHUTDOWN
+     * in case of success, but we need to check if we really want
+     * to have a shutdown or to continue. This is indicated by
+     * a PGRES_TUPLES_OK or PGRES_COMMAND_OK return flag
+     * by the returned PGresult object. Check that and set the
+     * flag accordingly.
+     *
+     * PGGRES_TUPLES_OK means that the server had acknowledged our
+     * end of stream message, but just want to switch its timeline
+     *
+     * PGRES_COMMAND_OK is set in case the server is commanded to
+     * shutdown.
+     *
+     * Set the archiver state according to the examined results above.
+     *
+     * NOTE: end() may throw an exception in case the COPY stream
+     *       couldn't be terminated properly.
+     */
+    try {
+
+      this->end();
+
+      if (this->current_state != ARCHIVER_SHUTDOWN) {
+
+        /*
+         * end() should have send a successful end of stream
+         * message to the connected server. If not succeeded, we
+         * will be in a undetermined state, so die the hard way
+         */
+        throw StreamingFailure("unrecognized status after shutdown attempt, giving up");
+
+      }
+      if (PQresultStatus(result) == PGRES_TUPLES_OK) {
+        this->current_state = ARCHIVER_TIMELINE_SWITCH;
+        return result;
+      }
+      else if (PQresultStatus(result) == PGRES_COMMAND_OK) {
+        this->current_state = ARCHIVER_SHUTDOWN;
+        return result;
+      }
+      else {
+        /* This means we have on error, so terminate
+         * the stream nevertheless.
+         */
+        std::ostringstream oss;
+        oss << "error during end of stream condition: "
+            << PQresultErrorMessage(result);
+        PQclear(result);
+        result = NULL;
+        this->current_state = ARCHIVER_STREAMING_ERROR;
+        throw StreamingFailure(oss.str());
+      }
+
+    } catch(StreamingFailure &e) {
+      PQclear(result);
+      result = NULL;
+      this->current_state = ARCHIVER_STREAMING_ERROR;
+      throw e;
+    }
+  }
+}
+
+void WALStreamerProcess::end() {
+
+  ArchiverState result = ARCHIVER_SHUTDOWN;
+
+  if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
+
+    std::ostringstream oss;
+
+    oss << "could not terminate COPY in progress: "
+        << PQerrorMessage(this->pgconn);
+    this->current_state = ARCHIVER_STREAMING_ERROR;
+    throw StreamingFailure(oss.str());
+
+  }
+
+  this->current_state = ARCHIVER_SHUTDOWN;
+
 }
 
 void WALStreamerProcess::finalizeSegment() {

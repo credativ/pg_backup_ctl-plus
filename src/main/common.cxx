@@ -163,6 +163,12 @@ MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& out) {
 
 }
 
+MemoryBuffer& MemoryBuffer::operator=(char *& out) {
+
+  out = this->memory_buffer;
+
+}
+
 std::ostream& MemoryBuffer::operator<<(std::ostream& out) {
 
   out << std::string(this->memory_buffer);

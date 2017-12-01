@@ -1862,6 +1862,7 @@ size_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
 
 size_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
 
+
 }
 
 size_t BackupHistoryFile::read(char *buf, size_t len) {

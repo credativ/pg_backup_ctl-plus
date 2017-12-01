@@ -47,6 +47,7 @@ namespace credativ {
     ARCHIVER_START_POSITION,
     ARCHIVER_STREAMING,
     ARCHIVER_END_POSITION,
+    ARCHIVER_TIMELINE_SWITCH,
     ARCHIVER_SHUTDOWN,
     ARCHIVER_STREAMING_TIMEOUT,
     ARCHIVER_STREAMING_INTR,
@@ -119,6 +120,23 @@ namespace credativ {
      */
     virtual ArchiverState handleReceive(char **buffer, int *bufferlen);
 
+    /**
+     * Internal helper method to read a timeline switch
+     * message after indicated a end-of-stream condition
+     * on the current stream handle. See handleEndOfStream() for
+     * details.
+     */
+    virtual void endOfStreamTimelineSwitch(PGresult *result,
+                                           unsigned int& timeline,
+                                           std::string& xlogpos);
+
+    /*
+     * Handle end-of-stream conditions. This could either
+     * be a shutdown, or we've changed the timeline
+     * on the server.
+     */
+    virtual PGresult *handleEndOfStream();
+
     /*
      * Calculates a timeval value suitable to
      * be passed to select().
@@ -181,6 +199,14 @@ namespace credativ {
      * to the object type specified here (see fs-archive.hxx for details).
      */
     virtual void handleMessage(XLOGStreamMessage *message);
+
+    /**
+     * Ends a copy stream in progress.
+     *
+     * This sends a end-of-copy message to the connected
+     * streaming server.
+     */
+    virtual void end();
   };
 
   /*

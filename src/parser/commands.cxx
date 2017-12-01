@@ -594,7 +594,7 @@ void StartStreamingForArchiveCommand::prepareStream() {
         if (xlogpos.length() <= 0) {
           /*
            * Oops, we couldn't extract a valid XLOG record from the archive.
-           * This usually means the archive didn't anything interesting, so
+           * This usually means the archive didn't have anything interesting, so
            * we just assume the archive is empty and we start from the beginning.
            *
            * In this case, just rely on the XLOG position reported
@@ -800,13 +800,14 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      * We want the walstreamer to stream into our directory.
      */
     walstreamer->setArchiveLogDir(this->logdir);
-    walstreamer->start();
 
     /*
      * Enter infinite loop as long as receive() tells
      * us that we can continue.
      */
     while (1) {
+
+      walstreamer->start();
 
       if (!walstreamer->receive()) {
       }

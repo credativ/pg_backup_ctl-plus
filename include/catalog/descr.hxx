@@ -148,7 +148,7 @@ namespace credativ {
     std::string stype;
     std::string slot_name;
     std::string systemid;
-    int         timeline;
+    unsigned int timeline;
     std::string xlogpos;
     std::string dbname;
     std::string status;

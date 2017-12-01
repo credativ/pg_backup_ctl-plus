@@ -148,6 +148,14 @@ namespace credativ {
     std::ostream& operator<<(std::ostream& out);
     MemoryBuffer& operator=(MemoryBuffer &out);
     char& operator[](int index);
+
+    /*
+     * Assignment operator for char * = MemoryBuffer
+     * This doesn't copy the internal buffer, just
+     * the pointer! The caller is responsible to properly
+     * maintain the copied pointer.
+     */
+    MemoryBuffer& operator=(char *& out);
   };
 
   /**
