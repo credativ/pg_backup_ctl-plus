@@ -160,7 +160,7 @@ namespace credativ {
                 ^ portnumber
                 [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
               |
-              ( no_case[ lexeme[ lit("DSN") ]] > lit("=") > dsn_connection_string
+              ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
                 [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
 
         /*
@@ -265,7 +265,7 @@ namespace credativ {
                 ^ portnumber
                 [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
               |
-              ( no_case[ lexeme[ lit("DSN") ]] > '=' > dsn_connection_string
+              ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
                 [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
 
         /*
@@ -291,7 +291,7 @@ namespace credativ {
                   [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
                   /* alternative DSN syntax */
                   | ( no_case[ lexeme[ lit("DSN") ] ]
-                      > '='
+                      > -lit("=")
                       > dsn_connection_string
                       [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1)] )
                   ) /* hostname / DSN alternative */
