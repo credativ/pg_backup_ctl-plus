@@ -152,6 +152,11 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
   if (*bufferlen == 0) {
 
     /* no data yet, poll on input from WAL sender */
+    if (buffer != NULL) {
+      PQfreemem(*buffer);
+      *buffer = NULL;
+    }
+
     status = this->current_state = this->receivePoll();
 
     /* check for errors, timeout et al. */
@@ -351,8 +356,9 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 bool WALStreamerProcess::receive() {
 
   bool can_continue = false;
-  char *buffer = NULL; /* temporary recv buffer, handle by libpq */
+  char *buffer = NULL; /* temporary recv buffer, handled by libpq */
   int bufferlen = 0;
+  ArchiverState reason;
 
   /*
    * If we're not in streaming state, handle the state
@@ -373,9 +379,33 @@ bool WALStreamerProcess::receive() {
 
   cerr << "entering WAL streaming receive() " << endl;
 
-  while (this->handleReceive(&buffer, &bufferlen) == ARCHIVER_STREAMING) {
+  reason = this->handleReceive(&buffer, &bufferlen);
+  while (reason != ARCHIVER_END_POSITION
+         || reason != ARCHIVER_SHUTDOWN
+         || reason != ARCHIVER_STREAMING_ERROR
+         || reason != ARCHIVER_TIMELINE_SWITCH
+         || reason != ARCHIVER_STARTUP
+         || reason != ARCHIVER_START_POSITION) {
 
     XLOGStreamMessage *message = nullptr;
+
+    /*
+     * If not streaming, don't try to handle XLOG messages.
+     */
+    if (reason != ARCHIVER_STREAMING) {
+
+      /*
+       * Before trying next, local copy buffer ...
+       */
+      if (buffer != NULL) {
+        PQfreemem(buffer);
+        buffer = NULL;
+      }
+
+      /* ..next try */
+      reason = this->handleReceive(&buffer, &bufferlen);
+      continue;
+    }
 
     /*
      * Interpret buffer, create a corresponding WAL message object.
@@ -383,9 +413,21 @@ bool WALStreamerProcess::receive() {
     this->receiveBuffer.allocate(bufferlen);
     this->receiveBuffer.write(buffer, bufferlen, 0);
 
+    /*
+     * Free copy buffers, they are copied over
+     * into our local receive buffer, so we don't
+     * need them anymore.
+     */
+    if (buffer != NULL) {
+      PQfreemem(buffer);
+      buffer = NULL;
+    }
+
     message = XLOGStreamMessage::message(this->pgconn,
                                          this->receiveBuffer,
                                          this->streamident.wal_segment_size);
+
+    std::cerr << "write XLOG message " << std::endl;
 
     try {
       if (message != nullptr) {
@@ -402,6 +444,9 @@ bool WALStreamerProcess::receive() {
 
     delete message;
 
+    /* ..next try */
+    reason = this->handleReceive(&buffer, &bufferlen);
+
   }
 
   /*
@@ -414,6 +459,10 @@ bool WALStreamerProcess::receive() {
   }
   if (this->current_state == ARCHIVER_STREAMING_ERROR) {
     cerr << "failure on PQgetCopyData(): " << PQerrorMessage(this->pgconn) << endl;
+    // std::ostringstream oss;
+    // oss << "could not shutdown streaming connection properly: "
+    //     << PQerrorMessage(this->pgconn);
+    // throw StreamingFailure(oss.str());
     can_continue = false;
   }
 
@@ -428,7 +477,6 @@ bool WALStreamerProcess::receive() {
     PGresult *pgres = this->handleEndOfStream();
 
     if (this->current_state == ARCHIVER_TIMELINE_SWITCH) {
-      cerr << "end of WAL stream detected, timeline switch" << endl;
 
       /*
        * This is a timeline switch. Handle it accordingly.
@@ -436,10 +484,10 @@ bool WALStreamerProcess::receive() {
       this->endOfStreamTimelineSwitch(pgres,
                                       this->streamident.timeline,
                                       this->streamident.xlogpos);
+      PQclear(pgres);
       can_continue = true;
 
     } else if (this->current_state == ARCHIVER_SHUTDOWN) {
-      cerr << "end of WAL stream detected, stream disconnected" << endl;
 
       /*
        * Server side has terminated, schedule own shutdown accordingly.
@@ -449,6 +497,14 @@ bool WALStreamerProcess::receive() {
   }
 
   return can_continue;
+}
+
+XLogRecPtr WALStreamerProcess::getCurrentXLOGPos() {
+  return this->streamident.write_position;
+}
+
+unsigned int WALStreamerProcess::getCurrentTimeline() {
+  return this->streamident.timeline;
 }
 
 void WALStreamerProcess::endOfStreamTimelineSwitch(PGresult *result,
@@ -539,7 +595,7 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
         /*
          * end() should have send a successful end of stream
          * message to the connected server. If not succeeded, we
-         * will be in a undetermined state, so die the hard way
+         * will be in an undetermined state, so die the hard way
          */
         throw StreamingFailure("unrecognized status after shutdown attempt, giving up");
 
@@ -576,9 +632,7 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
 
 void WALStreamerProcess::end() {
 
-  ArchiverState result = ARCHIVER_SHUTDOWN;
-
-  if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
+   if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
 
     std::ostringstream oss;
 
@@ -1116,11 +1170,16 @@ void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> 
       memset(zerochunk, 0, sizeof(zerochunk));
 
       this->stepInfo.file->write(zerochunk, sizeof(zerochunk));
+      PQfreemem(copybuf);
       break;
     }
 
     /*
      * ... else write the chunk to the file.
+     *
+     * NOTE: We don't need to free the copy buffer here,
+     *       since we go through the next loop where PQfreemem()
+     *       will do this when necessary.
      */
     this->stepInfo.file->write(copybuf, rc);
   }

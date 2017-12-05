@@ -807,9 +807,70 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      */
     while (1) {
 
+      MemoryBuffer timelineHistory;
+      string historyFilename;
+
+      /*
+       * Get the timeline history file content, but only if we
+       * are on a timeline greater than 1. The first timeline
+       * never writes a history file, thus ignore it.
+       */
+      if (walstreamer->getCurrentTimeline() > 1) {
+        pgstream->timelineHistoryFileContent(timelineHistory,
+                                             historyFilename,
+                                             walstreamer->getCurrentTimeline());
+#ifdef __DEBUG_XLOG_
+        std::cerr << "got history file " << historyFilename
+                  << " and its content" << std::endl;
+#endif
+      }
+
       walstreamer->start();
 
       if (!walstreamer->receive()) {
+
+        ArchiverState reason = walstreamer->reason();
+
+        /*
+         * Receive exited for some reason. Check out why.
+         * We need to check of mostly three reasons here:
+         *
+         * 1) The connected upstream disconnected the stream for some reason,
+         *    so we need to shutdown.
+         * 2) We are instructed to shutdown. This is not that different
+         *    from 1).
+         * 3) The stream changed its timeline. Handle this and restart
+         *    the stream.
+         */
+        if (reason == ARCHIVER_TIMELINE_SWITCH) {
+
+#ifdef __DEBUG_XLOG_
+          std::cerr << "timeline switch detected" << std::endl;
+#endif
+          /*
+           * The walstreamer already did all the necessary legwork
+           * to properly shutdown the stream, so that we can go forward.
+           *
+           * The next step is to retrieve the new timeline history file and
+           * then restart the stream.
+           *
+           * We don't do this here, the next loop will retrieve
+           * the timeline history file content and restart the stream.
+           */
+          continue;
+
+        } else if (reason == ARCHIVER_SHUTDOWN) {
+
+#ifdef __DEBUG_XLOG_
+          std::cerr << "preparing WAL streamer for shutdown" << std::endl;
+#endif
+          break;
+
+        } else {
+
+          /* oops, this is unexpected here */
+          std::cerr << "unexpected WAL streamer state: " << reason << std::endl;
+        }
       }
 
     }

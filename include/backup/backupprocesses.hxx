@@ -150,6 +150,28 @@ namespace credativ {
     ~WALStreamerProcess();
 
     /**
+     * Returns the current xlog position of the WAL Streamer.
+     *
+     * This is *not* the current position the WAL Streamer is streaming on,
+     * but its write position, so you get the current position where
+     * the WAL Streamer was last seen to write to.
+     *
+     * NOTE: when not in streaming mode, the reported location might
+     *       be just garbage (that said, you can trust this information
+     *       only when entered ARCHIVER_STREAMING and the first bytes
+     *       has arrived). A WAL Streamer instance might initialize
+     *       the current write location only if it starts to receive
+     *       bytes.
+     */
+    XLogRecPtr getCurrentXLOGPos();
+
+    /**
+     * Returns the current timeline a WAL Streamer instance
+     * is streaming from.
+     */
+    unsigned int getCurrentTimeline();
+
+    /**
      * Start streaming of XLOG records.
      */
     virtual void start();
