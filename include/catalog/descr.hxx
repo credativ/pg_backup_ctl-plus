@@ -201,6 +201,16 @@ namespace credativ {
     XLogRecPtr xlogposDecoded();
     std::string xlogposEncoded();
 
+    /**
+     * Updates the internal write position segment
+     * to XLOG segment start boundary.
+     *
+     * Please note that calling this method is only legit if you have
+     * set the write_position and WAL segment size (which
+     * might be hard coded if compiled against PostgreSQL < 11).
+     */
+    int updateStartSegmentWriteOffset();
+
   };
 
   /*

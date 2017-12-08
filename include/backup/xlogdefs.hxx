@@ -62,7 +62,7 @@ namespace credativ {
     XLOGStreamMessage(PGconn *prepared_connection);
     XLOGStreamMessage(PGconn *prepared_connection,
                       unsigned long long wal_segment_size);
-    ~XLOGStreamMessage();
+    virtual ~XLOGStreamMessage();
 
     virtual void assign(MemoryBuffer &mybuffer) {};
 
@@ -123,7 +123,7 @@ namespace credativ {
     XLOGDataStreamMessage(PGconn *prepared_connection);
     XLOGDataStreamMessage(PGconn *prepared_connection,
                           unsigned long long wal_segment_size);
-    ~XLOGDataStreamMessage();
+    virtual ~XLOGDataStreamMessage();
 
     /**
      * Assign a byte buffer to this message, interpreting
@@ -160,7 +160,7 @@ namespace credativ {
     FeedbackMessage(PGconn *prepared_connection);
     FeedbackMessage(PGconn *prepared_connection,
                     unsigned long long wal_segment_size);
-    ~FeedbackMessage();
+    virtual ~FeedbackMessage();
 
     virtual void send() {};
   };
@@ -180,7 +180,7 @@ namespace credativ {
     PrimaryFeedbackMessage(PGconn *prepared_connection);
     PrimaryFeedbackMessage(PGconn *prepared_connection,
                            unsigned long long wal_segment_size);
-    ~PrimaryFeedbackMessage();
+    virtual ~PrimaryFeedbackMessage();
 
     /**
      * Reads the buffer and assigns all properties
@@ -219,7 +219,7 @@ namespace credativ {
     ReceiverStatusUpdateMessage(PGconn *prepared_connection);
     ReceiverStatusUpdateMessage(PGconn *prepared_connection,
                                 unsigned long long wal_segment_size);
-    ~ReceiverStatusUpdateMessage();
+    virtual ~ReceiverStatusUpdateMessage();
 
     /**
      * Sends a receiver status update to the inherited
@@ -254,7 +254,7 @@ namespace credativ {
     HotStandbyFeedbackMessage(PGconn *prepared_connection);
     HotStandbyFeedbackMessage(PGconn *prepared_connection,
                               unsigned long long wal_segment_size);
-    ~HotStandbyFeedbackMessage();
+    virtual ~HotStandbyFeedbackMessage();
 
     /**
      * Sends a hot standby feedback message to

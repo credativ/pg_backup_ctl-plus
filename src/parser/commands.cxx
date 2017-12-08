@@ -515,7 +515,6 @@ void StartStreamingForArchiveCommand::prepareStream() {
     pgstream->streamident.id = myStream->id;
     pgstream->streamident.stype = myStream->stype;
 
-
     pgstream->streamident.slot_name = myStream->slot_name;
     pgstream->createPhysicalReplicationSlot(pgstream->streamident.slot);
 
@@ -633,12 +632,29 @@ void StartStreamingForArchiveCommand::prepareStream() {
        */
     }
 
-    /*
-     * Update the slot to reflect current state.
-     */
-    this->updateStreamCatalogStatus();
-
   }
+
+  /*
+   * When starting up, we choose the write_position to
+   * be identical with the previously locates xlogpos
+   * start position.
+   */
+  pgstream->streamident.write_position = PGStream::decodeXLOGPos(pgstream->streamident.xlogpos);
+
+  /*
+   * Update the write offset of the stream identification to
+   * reflect the new starting position for the current XLOG
+   * file.
+   */
+  pgstream->streamident.updateStartSegmentWriteOffset();
+
+  cerr << "pgstream start write offset " << pgstream->streamident.write_pos_start_offset << endl;
+
+  /*
+   * Update the slot to reflect current state.
+   */
+  this->updateStreamCatalogStatus();
+
 }
 
 void StartStreamingForArchiveCommand::updateStreamCatalogStatus() {

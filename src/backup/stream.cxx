@@ -58,6 +58,19 @@ XLogRecPtr StreamIdentification::xlogposDecoded() {
   return PGStream::decodeXLOGPos(this->xlogpos);
 }
 
+int StreamIdentification::updateStartSegmentWriteOffset() {
+
+#if PG_VERSION_NUM < 110000
+  this->write_pos_start_offset
+    += this->write_position % XLOG_SEG_SIZE;
+#else
+  this->.write_pos_start_offset
+    += XLogSegmentOffset(this->write_position,
+                         this->wal_segment_size);
+#endif
+
+}
+
 std::string StreamIdentification::xlogposEncoded() {
   return this->xlogpos;
 }
@@ -98,6 +111,10 @@ void StreamIdentification::reset() {
 /******************************************************************************
  * Implementation of PGStream
  ******************************************************************************/
+
+int PGStream::compiledPGVersionNum() {
+  return PG_VERSION_NUM;
+}
 
 int PGStream::XLOGOffset(XLogRecPtr pos) {
 
@@ -586,6 +603,7 @@ void PGStream::identify() {
     = CPGBackupCtlBase::current_timestamp();
 
   this->identified = true;
+  PQclear(result);
 }
 
 std::shared_ptr<WALStreamerProcess> PGStream::walstreamer() {

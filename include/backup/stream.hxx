@@ -150,6 +150,12 @@ namespace credativ {
     virtual int XLOGOffset(XLogRecPtr pos);
 
     /**
+     * PostgreSQL version number this library
+     * was linked against.
+     */
+    static int compiledPGVersionNum();
+
+    /**
      * Helper function to return XLOG position offset
      * into WAL stream, static version.
      */

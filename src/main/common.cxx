@@ -32,7 +32,7 @@ MemoryBuffer::MemoryBuffer() {
 MemoryBuffer::~MemoryBuffer() {
 
   if (this->memory_buffer != NULL) {
-    delete this->memory_buffer;
+    delete [] this->memory_buffer;
   }
 
 }
@@ -44,7 +44,7 @@ size_t MemoryBuffer::getSize() {
 void MemoryBuffer::allocate(size_t size) {
 
   if (this->memory_buffer != NULL) {
-    delete this->memory_buffer;
+    delete [] this->memory_buffer;
     this->memory_buffer = NULL;
     this->size          = 0;
   }

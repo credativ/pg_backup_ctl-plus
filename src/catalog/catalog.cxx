@@ -3480,6 +3480,8 @@ void BackupCatalog::checkCatalog() {
             << version
             << ", catalog magic "
             << this->getCatalogMagic()
+            << " linked against PostgreSQL "
+            << PGStream::compiledPGVersionNum()
             << std::endl;
 #endif
 

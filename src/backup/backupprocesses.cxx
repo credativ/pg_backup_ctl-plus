@@ -264,13 +264,7 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
        */
       this->streamident.write_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
       this->streamident.flush_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
-
-#if PG_VERSION_NUM < 110000
-      this->streamident.write_pos_start_offset += this->streamident.write_position % XLOG_SEG_SIZE;
-#else
-      this->streamident.write_pos_start_offset += XLogSegmentOffset(this->streamident.write_position,
-                                                                    this->streamident.wal_segment_size);
-#endif
+      this->streamident.updateStartSegmentWriteOffset();
 
       /*
        * archiveLogDir holds the handler which should
@@ -286,17 +280,19 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
          * we have a valid byte chunk.
          */
 #if PG_VERSION_NUM < 110000
-        XLByteToSeg(this->streamident.write_pos_start_offset,
+        XLByteToSeg(this->streamident.write_position,
                     segment_number);
+
         XLogFileName(xlogfilename,
                      this->streamident.timeline,
                      segment_number);
 #else
-        XLByteToSeg(this->streamident.write_pos_start_offset,
+        XLByteToSeg(this->streamident.write_position,
                     segment_number,
                     this->streamident.wal_segment_size);
+
         XLogFileName(xlogfilename,
-                     this->streamident.write_pos_start_offset,
+                     this->streamident.timeline,
                      segment_number,
                      this->streamident.wal_segment_size);
 #endif

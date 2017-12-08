@@ -190,7 +190,7 @@ void XLOGDataStreamMessage::assign(MemoryBuffer &mybuffer) {
     mybuffer.read(xlogdatabytes, this->xlogdata.getSize(), 25);
     this->xlogdata.write(xlogdatabytes, this->xlogdata.getSize(), 0);
 
-    delete xlogdatabytes;
+    delete [] xlogdatabytes;
   }
 }
 
