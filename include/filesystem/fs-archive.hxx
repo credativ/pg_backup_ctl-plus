@@ -91,6 +91,11 @@ namespace credativ {
     virtual size_t size();
     virtual off_t lseek(off_t offset, int whence) = 0;
 
+    /**
+     * Returns the filename.
+     */
+    virtual std::string getFileName();
+
   };
 
   class ArchiveFile : public BackupFile {
@@ -458,6 +463,7 @@ namespace credativ {
     virtual unsigned long long getXlogSegmentSize(path segmentFile,
                                                   unsigned long long xlogsegsize,
                                                   WALSegmentFileStatus status);
+
   };
 
   /*

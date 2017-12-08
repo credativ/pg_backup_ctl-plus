@@ -855,6 +855,10 @@ size_t BackupFile::size() {
   return file_size(this->handle);
 }
 
+std::string BackupFile::getFileName() {
+  return this->handle.string();
+}
+
 /******************************************************************************
  * Implementation of ArchiveFile
  *****************************************************************************/

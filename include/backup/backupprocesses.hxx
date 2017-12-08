@@ -90,6 +90,15 @@ namespace credativ {
     std::shared_ptr<BackupDirectory> archiveLogDir = nullptr;
 
     /**
+     * Current archive file to stream to. Only set
+     * when a BackupDirectory handle was assigned and
+     * streaming was started. nullptr also indicates
+     * after a started stream, that no WAL segment file
+     * was allocated yet.
+     */
+    std::shared_ptr<BackupFile> logFile = nullptr;
+
+    /**
      * Timeout for polling on WAL stream.
      *
      * Default is 10000ms

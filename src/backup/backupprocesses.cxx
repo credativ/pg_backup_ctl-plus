@@ -296,7 +296,36 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
                      segment_number,
                      this->streamident.wal_segment_size);
 #endif
+
+#ifdef __DEBUG_XLOG_
         std::cerr << "Write to XLOG segment " << xlogfilename << std::endl;
+#endif
+        /*
+         * If we haven't already allocated a WAL segment file, do so.
+         */
+        if ((this->logFile == nullptr)) {
+          this->logFile = this->archiveLogDir->walfile(std::string(xlogfilename),
+                                                       BACKUP_COMPRESS_TYPE_NONE);
+          this->logFile->setOpenMode("wb");
+          this->logFile->open();
+        }
+
+        if (this->logFile->getFileName() != std::string(xlogfilename)) {
+
+          /*
+           * Close current xlog.
+           */
+          this->logFile->fsync();
+          this->logFile->close();
+
+          /*
+           * Open new segment.
+           */
+          this->logFile = this->archiveLogDir->walfile(std::string(xlogfilename),
+                                                       BACKUP_COMPRESS_TYPE_NONE);
+          this->logFile->setOpenMode("wb");
+          this->logFile->open();
+        }
       }
 
       break;
