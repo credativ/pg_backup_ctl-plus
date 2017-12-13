@@ -21,6 +21,7 @@ namespace credativ {
   class StreamingBaseBackupDirectory;
   class StreamBaseBackup;
   class BackupFile;
+  class TransactionLogBackup;
 
   /*
    * State of base backup stream.
@@ -85,18 +86,9 @@ namespace credativ {
     StreamIdentification streamident;
 
     /**
-     * Internal directory handle to safe WAL data.
+     * Internal transaction log backup handler.
      */
-    std::shared_ptr<BackupDirectory> archiveLogDir = nullptr;
-
-    /**
-     * Current archive file to stream to. Only set
-     * when a BackupDirectory handle was assigned and
-     * streaming was started. nullptr also indicates
-     * after a started stream, that no WAL segment file
-     * was allocated yet.
-     */
-    std::shared_ptr<BackupFile> logFile = nullptr;
+    std::shared_ptr<TransactionLogBackup> backupHandler = nullptr;
 
     /**
      * Timeout for polling on WAL stream.
@@ -215,7 +207,7 @@ namespace credativ {
     /**
      * Assigns a directory handle to a WALStreamerProcess instance.
      */
-    virtual void setArchiveLogDir(std::shared_ptr<BackupDirectory> archiveLogDir);
+    virtual void setBackupHandler(std::shared_ptr<TransactionLogBackup> backupHandler);
 
     /**
      * Returns the current encoded XLOG position, if active.

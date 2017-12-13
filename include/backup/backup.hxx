@@ -4,11 +4,13 @@
 #include <descr.hxx>
 #include <BackupCatalog.hxx>
 #include <fs-archive.hxx>
+#include <xlogdefs.hxx>
 
 namespace credativ {
 
   class BackupFile;
   class BackupDirectory;
+  class ArchiveLogDirectory;
 
   /*
    * Generic base class to implement backup
@@ -72,7 +74,12 @@ namespace credativ {
   class TransactionLogBackup : public Backup {
   private:
 
-    /*
+    /**
+     * Directory handler for wal backup directory.
+     */
+    std::shared_ptr<ArchiveLogDirectory> logDirectory = nullptr;
+
+    /**
      * Internal stack of allocated and pending
      * transaction log segments. This allows to
      * stack actions on transaction log segments until
@@ -81,20 +88,111 @@ namespace credativ {
      */
     std::vector<std::shared_ptr<TransactionLogListItem>> fileList;
 
+    /**
+     * Cashed size of WAL segment files. Someone
+     * isn't allowed to call initialize() on a TransactionLogBackup
+     * handle until this value is initialized correctly.
+     */
+    uint32 wal_segment_size = 0;
+
   public:
     TransactionLogBackup(const std::shared_ptr<CatalogDescr> & descr);
     virtual ~TransactionLogBackup();
 
     virtual bool isInitialized();
+
+    /**
+     * Initializes a transaction log backup object
+     * for file operations. This is required to start
+     * any operations on WAL segment files maintained by
+     * a transaction log backup handler.
+     */
     virtual void initialize();
+
+    /**
+     * Should be called if the caller wants to have
+     * the archive directory structure a transaction log
+     * backup belongs to created.
+     */
     virtual void create();
+
+    /**
+     * Sync and flush all pending file operations to disk.
+     *
+     * NOTE:
+     *
+     * After calling finalize() you don't need to call initialize() again, in
+     * this case the transaction log backup handle remains fully initialized.
+     * finalize() just flushes and sync all open and stacked file operations
+     * and cleans the pending operations list. Effectively, calling
+     * initialize() again after finalize() is a no-op here.
+     */
     virtual void finalize();
     virtual std::string backupDirectoryString();
 
+    /**
+     * Generate a new filename for a WAL segment based
+     * on the specified WAL location.
+     */
+    std::string walfilename(unsigned int timeline,
+                            XLogRecPtr position);
+
+    /**
+     * Stack a new file into the transaction log backup handler.
+     */
     virtual std::shared_ptr<BackupFile> stackFile(std::string name);
+
+    /**
+     * Write a XLOG data message into transaction log backup.
+     *
+     * Returns the XLOG position it has written the message up to.
+     * In case the write() failed, an InvalidXLogRecPtr is returned.
+     */
+    virtual XLogRecPtr write(XLOGDataStreamMessage *message,
+                             unsigned int timeline);
 
     virtual void sync_pending();
     virtual void flush_pending();
+
+    /**
+     * Returns the current allocated WAL segment file. A nullptr
+     * is returned in case nothing is allocated at the moment.
+     */
+    virtual std::shared_ptr<BackupFile> current_segment_file();
+
+    /**
+     * Finalizes the current transaction log segment file. We need
+     * to work harder here, since it's renamed from its partial
+     * suffix into its final name.
+     *
+     * If forceWalSegSz is set to true, the method will check
+     * if the current WAL file has its current seek location
+     * positioned at the end of the configured WAL segment size. If
+     * that condition is not met, an error will be thrown.
+     */
+    virtual void finalizeCurrentWALFile(bool forceWalSegSz);
+
+    /**
+     * Sets the expected size of WAL segment files. This is required
+     * before calling initialize(), and after that the caller isn't allowed
+     * to change this value anymore.
+     *
+     * NOTE: After calling finalize() you might be able to change
+     *       this value again, but it's unwise to change
+     *       that for an existing transaction log backup to a different
+     *       value before (well, this isn't easily doable within
+     *       an existing PostgreSQL PGDATA anyways ...).
+     *
+     * IMPORTANT:
+     *
+     * setWalSegmentSize() here doesn't do any validation on the
+     * passed size, instead you should use PGStream::getWalSegmentSize()
+     * to set the size properly. Starting with PostgreSQL 11 you can't
+     * rely on any hard wired sizes here, since the source instance
+     * might be initdb'ed with a user defined size, so you need
+     * to get the correct size from there anyways.
+     */
+    virtual void setWalSegmentSize(uint32 wal_segment_size);
   };
 
   /*

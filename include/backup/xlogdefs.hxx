@@ -141,7 +141,7 @@ namespace credativ {
 
     /*
      * Getter method for xlogstartpos (current starting XLOG position
-     * of the current data message in the stream.
+     * of the current data message in the stream).
      */
     virtual XLogRecPtr getXLOGStartPos();
 
@@ -151,6 +151,21 @@ namespace credativ {
      */
     virtual XLogRecPtr getXLOGServerPos();
 
+    /**
+     * Returns a char * pointer to the message buffer.
+     * The caller is responsible to maintain this copied
+     * pointer carefully, since we *DO NOT* copy the
+     * message bytes over into a new one. Thus, the lifetime
+     * of the returned pointer is bound to the object lifetime
+     * of a XLOGDataStreamMessage instance.
+     */
+    virtual char *buffer();
+
+    /**
+     * Returns the size of the data block of
+     * a XLOGDataStreamMessage.
+     */
+    virtual size_t dataBufferSize();
   };
 
   class FeedbackMessage : public XLOGStreamMessage {

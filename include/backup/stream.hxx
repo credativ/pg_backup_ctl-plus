@@ -81,7 +81,7 @@ namespace credativ {
      *
      * Only valid when calling getStreamingProperties before.
      */
-    unsigned long long walSegmentSize = 0;
+    uint32 walSegmentSize = 0;
 
     /*
      * Set to TRUE, if successfully identified.
@@ -94,7 +94,7 @@ namespace credativ {
      *
      * Requires a valid streaming connection.
      */
-    virtual unsigned long long walSegmentSizeInternal();
+    virtual uint32 walSegmentSizeInternal();
   public:
 
     PGStream(const std::shared_ptr<CatalogDescr>& descr);
@@ -110,7 +110,7 @@ namespace credativ {
      * Returns the WAL segment size for
      * an established streaming connection.
      */
-    unsigned long long getWalSegmentSize();
+    uint32 getWalSegmentSize();
 
     /**
      * Generate a slot name for an identified stream and
@@ -160,7 +160,7 @@ namespace credativ {
      * into WAL stream, static version.
      */
     static int XLOGOffset(XLogRecPtr pos,
-                          unsigned long long wal_segment_size);
+                          uint32 wal_segment_size);
 
     /**
      * Helper function to encode a given XLogRecPtr value.

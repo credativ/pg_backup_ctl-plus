@@ -149,13 +149,14 @@ namespace credativ {
     MemoryBuffer& operator=(MemoryBuffer &out);
     char& operator[](int index);
 
-    /*
-     * Assignment operator for char * = MemoryBuffer
-     * This doesn't copy the internal buffer, just
-     * the pointer! The caller is responsible to properly
-     * maintain the copied pointer.
+    /**
+     * Returns a pointer of the internally maintained
+     * byte buffer. The caller is responsible to maintain
+     * it carefully, since its lifetime is bound to the
+     * lifetime of its object instance. Any call to an uninitialized
+     * pointer will cause a CPGBackupCtlFailure exception!
      */
-    MemoryBuffer& operator=(char *& out);
+    virtual char * ptr();
   };
 
   /**

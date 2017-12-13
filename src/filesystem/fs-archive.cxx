@@ -856,7 +856,15 @@ size_t BackupFile::size() {
 }
 
 std::string BackupFile::getFileName() {
+  return this->handle.filename().string();
+}
+
+std::string BackupFile::getFilePath() {
   return this->handle.string();
+}
+
+off_t BackupFile::current_position() {
+  return this->currpos;
 }
 
 /******************************************************************************
@@ -905,6 +913,7 @@ off_t ArchiveFile::lseek(off_t offset, int whence) {
     throw CArchiveIssue(oss.str());
   }
 
+  this->currpos = ftell(this->fp);
   return rc;
 
 }
@@ -1081,6 +1090,9 @@ size_t ArchiveFile::read(char *buf, size_t len) {
 
   }
 
+  if (result > 0)
+    this->currpos += result;
+
   return result;
 
 }
@@ -1108,6 +1120,12 @@ size_t ArchiveFile::write(const char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
 
   }
+
+  /*
+   * Update internal offset
+   */
+  if (result > 0)
+    this->currpos += result;
 
   return result;
 
@@ -1148,6 +1166,7 @@ void ArchiveFile::close() {
 
   fclose(this->fp);
   this->fp = NULL;
+  this->currpos = 0;
 
 }
 
@@ -1288,6 +1307,7 @@ off_t ZSTDArchiveFile::lseek(off_t offset, int whence) {
     throw CArchiveIssue(oss.str());
   }
 
+  this->currpos = ftell(this->fp);
   return rc;
 
 }
@@ -1384,6 +1404,9 @@ size_t ZSTDArchiveFile::write(const char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
   }
 
+  if (rc > 0)
+    this->currpos += rc;
+
   return rc;
 }
 
@@ -1403,6 +1426,7 @@ void ZSTDArchiveFile::close() {
 
     fclose(this->fp);
     this->fp = NULL;
+    this->currpos = 0;
 
     this->opened = false;
   }
@@ -1494,6 +1518,9 @@ size_t ZSTDArchiveFile::read(char *buf, size_t len) {
 
   }
 
+  if (rc > 0)
+    this->currpos += rc;
+
   return rc;
 }
 
@@ -1579,6 +1606,7 @@ off_t CompressedArchiveFile::lseek(off_t offset, int whence) {
     throw CArchiveIssue(oss.str());
   }
 
+  this->currpos = ::ftell(this->fp);
   return rc;
 
 }
@@ -1727,6 +1755,9 @@ size_t CompressedArchiveFile::write(const char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
   }
 
+  if (wbytes > 0)
+    this->currpos += wbytes;
+
   return wbytes;
 }
 
@@ -1768,6 +1799,9 @@ size_t CompressedArchiveFile::read(char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
 
   }
+
+  if (rbytes > 0)
+    this->currpos += rbytes;
 
   return rbytes;
 }
@@ -1812,6 +1846,7 @@ void CompressedArchiveFile::close() {
 
     this->zh = NULL;
     this->fp = NULL;
+    this->currpos = 0;
 
   } else {
     std::ostringstream oss;

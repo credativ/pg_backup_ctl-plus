@@ -213,15 +213,16 @@ std::string WALStreamerProcess::xlogpos() {
 
 }
 
-void WALStreamerProcess::setArchiveLogDir(std::shared_ptr<BackupDirectory> archiveLogDir) {
+void WALStreamerProcess::setBackupHandler(std::shared_ptr<TransactionLogBackup> backupHandler) {
 
-  this->archiveLogDir = archiveLogDir;
+  this->backupHandler = backupHandler;
 
 }
 
 void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 
   char msgType;
+
   /*
    * message shouldn't be a nullptr...
    */
@@ -236,17 +237,19 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
   switch(msgType) {
   case 'w':
     {
+      XLOGDataStreamMessage *datamsg = dynamic_cast<XLOGDataStreamMessage *>(message);
       XLogRecPtr serverpos;
+      char *datablock;
 
       this->streamident.xlogpos
-        = PGStream::encodeXLOGPos(dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGStartPos());
+        = PGStream::encodeXLOGPos(datamsg->getXLOGStartPos());
 
 #ifdef __DEBUG_XLOG__
       std::cerr << "NEW XLOG POS " << this->streamident.xlogpos << std::endl;
 #endif
 
       /* get server position, reported by the connected WAL sender */
-      serverpos = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+      serverpos = datamsg->getXLOGServerPos();
 
 #ifdef __DEBUG_XLOG__
       std::cerr << "SERVER XLOG POS "
@@ -262,71 +265,26 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
        * XXX: Flush currenty the same as the current write position
        *      Need to implement WAL file handling to get that right.
        */
-      this->streamident.write_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
-      this->streamident.flush_position = dynamic_cast<XLOGDataStreamMessage *>(message)->getXLOGServerPos();
+      this->streamident.write_position = datamsg->getXLOGServerPos();
+      this->streamident.flush_position = datamsg->getXLOGServerPos();
       this->streamident.updateStartSegmentWriteOffset();
 
       /*
-       * archiveLogDir holds the handler which should
-       * be applied to each WAL record.
+       * Our backup handler does all the necessary work
+       * to spool the transaction logs into the archive.
        */
-      if (this->archiveLogDir != nullptr) {
-
-        XLogSegNo segment_number;
-        char      xlogfilename[MAXPGPATH];
+      if (this->backupHandler != nullptr) {
 
         /*
-         * Write to the archive handle, but only in case
-         * we have a valid byte chunk.
+         * Everything should be in shape so far. A current
+         * WAL segment file should be allocated and we can go
+         * forward and spool the XLOG message data block into that
+         * current WAL file. Though, we must take care for
+         * a WAL segment boundary, in that case we have to switch to
+         * new WAL segment file, again.
          */
-#if PG_VERSION_NUM < 110000
-        XLByteToSeg(this->streamident.write_position,
-                    segment_number);
-
-        XLogFileName(xlogfilename,
-                     this->streamident.timeline,
-                     segment_number);
-#else
-        XLByteToSeg(this->streamident.write_position,
-                    segment_number,
-                    this->streamident.wal_segment_size);
-
-        XLogFileName(xlogfilename,
-                     this->streamident.timeline,
-                     segment_number,
-                     this->streamident.wal_segment_size);
-#endif
-
-#ifdef __DEBUG_XLOG_
-        std::cerr << "Write to XLOG segment " << xlogfilename << std::endl;
-#endif
-        /*
-         * If we haven't already allocated a WAL segment file, do so.
-         */
-        if ((this->logFile == nullptr)) {
-          this->logFile = this->archiveLogDir->walfile(std::string(xlogfilename),
-                                                       BACKUP_COMPRESS_TYPE_NONE);
-          this->logFile->setOpenMode("wb");
-          this->logFile->open();
-        }
-
-        if (this->logFile->getFileName() != std::string(xlogfilename)) {
-
-          /*
-           * Close current xlog.
-           */
-          this->logFile->fsync();
-          this->logFile->close();
-
-          /*
-           * Open new segment.
-           */
-          this->logFile = this->archiveLogDir->walfile(std::string(xlogfilename),
-                                                       BACKUP_COMPRESS_TYPE_NONE);
-          this->logFile->setOpenMode("wb");
-          this->logFile->open();
-        }
-      }
+        this->streamident.flush_position = this->backupHandler->write(datamsg, this->streamident.timeline);
+      } /* if ... archiveLogDir != nullptr */
 
       break;
     }

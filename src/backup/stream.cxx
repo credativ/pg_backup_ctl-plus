@@ -128,7 +128,7 @@ int PGStream::XLOGOffset(XLogRecPtr pos) {
 }
 
 int PGStream::XLOGOffset(XLogRecPtr pos,
-                         unsigned long long wal_segment_size) {
+                         uint32 wal_segment_size) {
 
 #if PG_VERSION_NUM >= 110000
   return XLogSegmentOffset(pos, wal_segment_size);
@@ -398,11 +398,11 @@ void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
 
 }
 
-unsigned long long PGStream::getWalSegmentSize() {
+uint32 PGStream::getWalSegmentSize() {
   return this->walSegmentSize;
 }
 
-unsigned long long PGStream::walSegmentSizeInternal() {
+uint32 PGStream::walSegmentSizeInternal() {
 
   if (!this->connected()) {
     throw StreamingFailure("stream is not connected");
@@ -444,7 +444,7 @@ unsigned long long PGStream::walSegmentSizeInternal() {
     /*
      * XLOG segment size in bytes.
      */
-    unsigned long long result = -1;
+    uint32 result = -1;
 
     /*
      * We need the segment size in bytes. SHOW returns

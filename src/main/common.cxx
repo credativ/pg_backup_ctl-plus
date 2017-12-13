@@ -163,9 +163,12 @@ MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& out) {
 
 }
 
-MemoryBuffer& MemoryBuffer::operator=(char *& out) {
+char * MemoryBuffer::ptr() {
 
-  out = this->memory_buffer;
+  if (this->memory_buffer == NULL)
+    throw CPGBackupCtlFailure("attempt to access internal NULL pointer in memory buffer");
+
+  return this->memory_buffer;
 
 }
 

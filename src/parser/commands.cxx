@@ -722,7 +722,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
   this->id = temp_descr->id;
 
   /*
-   * Prepare directory handles.
+   * Prepare directory and backup handles.
    */
   this->archivedir
     = CPGBackupCtlFS::getArchiveDirectoryDescr(this->temp_descr->directory);
@@ -777,6 +777,16 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     pgstream->connect();
 
     /*
+     * Prepare backup handler
+     *
+     * We cannot do this earlier, since we need to
+     * know the WAL segment size of the source instance.
+     */
+    this->backup = make_shared<TransactionLogBackup>(temp_descr);
+    this->backup->setWalSegmentSize(pgstream->getWalSegmentSize());
+    this->backup->initialize();
+
+    /*
      * Identify system
      */
     pgstream->identify();
@@ -813,9 +823,9 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     walstreamer = pgstream->walstreamer();
 
     /*
-     * We want the walstreamer to stream into our directory.
+     * We want the walstreamer to stream into our current log archive.
      */
-    walstreamer->setArchiveLogDir(this->logdir);
+    walstreamer->setBackupHandler(this->backup);
 
     /*
      * Enter infinite loop as long as receive() tells

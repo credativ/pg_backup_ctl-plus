@@ -42,6 +42,230 @@ void TransactionLogBackup::create() {
 
 }
 
+XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
+                                       unsigned int timeline) {
+
+  shared_ptr<TransactionLogListItem> item = nullptr;
+  size_t message_written = 0;
+  size_t message_left    = 0;
+  int waloffset = 0;
+  char *databuf;
+  XLogRecPtr position = InvalidXLogRecPtr;
+
+  /*
+   * If not initialized, error out.
+   */
+  if (!this->isInitialized())
+    throw CArchiveIssue("attempt to write into uninitialized TransactionLogBackup handle");
+
+  /*
+   * If message isn't valid, throw an exception.
+   */
+  if (message == nullptr) {
+    throw CArchiveIssue("could not write uninitialized XLOG data message");
+  }
+
+  /*
+   * Calculate WAL position and offsets. The start position
+   * for the current write is obtained from the WAL position in this record.
+   */
+  position = message->getXLOGStartPos();
+  waloffset = PGStream::XLOGOffset(position, this->wal_segment_size);
+  databuf   = message->buffer();
+  message_left = message->dataBufferSize();
+
+  /*
+   * Check if there is a stacked WAL segment file.
+   */
+  if (this->fileList.empty()) {
+
+    /*
+     * We need to allocate a new WAL segment file. Before, we
+     * do a sanity check, wether the current waloffset really
+     * starts at the beginning of a WAL segment.
+     *
+     * This is the same approach, pg_receivewal does during streaming
+     * and it seems sane to adapt this here, since like pg_receivewal,
+     * we also rely on segment starting position on startup.
+     *
+     * We fall through this clause in case everything
+     * is positioned as expected.
+     */
+    if (waloffset != 0) {
+      std::ostringstream oss;
+
+      oss << "requested new WAL segment file, but WAL offset( "
+          << waloffset
+          << ") is beyond WAL segment start";
+      throw CArchiveIssue(oss.str());
+    }
+
+  } else {
+
+    /*
+     * Initialize the item pointer to the current
+     * WAL segment file. Check wether it's position is
+     * where we expect it.
+     */
+    item = this->fileList.back();
+
+    if (item->fileHandle->current_position() != waloffset) {
+      std::ostringstream oss;
+      oss << "unexpected position "
+          << item->fileHandle->current_position()
+          << ", expected "
+          << waloffset;
+      throw CArchiveIssue(oss.str());
+    }
+
+  }
+
+
+
+  while (message_left > 0) {
+
+    /* bytes to write into current WAL segment */
+    size_t bw;
+
+    /*
+     * The data block here might cross WAL segment
+     * boundary. Check that, otherwise we need to stack
+     * a new transaction log segment.
+     */
+    if ( (waloffset + message_left) > this->wal_segment_size ) {
+
+      /*
+       * Calculate the offset until the end of the current
+       * WAL segment
+       */
+      bw = this->wal_segment_size - waloffset;
+
+    } else {
+
+      /*
+       * No boundary crossed, so remaining
+       * bytes are just as-is
+       */
+      bw = message_left;
+
+    }
+
+    /*
+     * If current WAL segment wasn't initialized
+     * yet, get a new one (e.g. we crossed a WAL segment
+     * boundary.
+     */
+    if (item == nullptr) {
+      this->stackFile(this->walfilename(timeline,
+                                        position) + ".partial");
+      item = this->fileList.back();
+    }
+
+    /*
+     * Attempt to write the data message block ...
+     *
+     * NOTE:
+     *
+     * write() will fail with an exception in case the
+     * requested block could not be written.
+     */
+    item->fileHandle->write(databuf + message_written,
+                            bw);
+
+    /*
+     * Mark them being unsynced
+     */
+    item->sync_pending = item->flush_pending = true;
+
+    /*
+     * Calculate next offset to write from...
+     */
+    message_written += bw;
+    message_left -= bw;
+    position += bw;
+    waloffset += bw;
+
+    /*
+     * We have advanced the XLogRecPtr from this XLOG data
+     * message block to the new position. We need now to check
+     * if the boundary of the current WAL file is reached. If true,
+     * finalize the current XLOG segment file and stack a new one.
+     */
+    if (PGStream::XLOGOffset(position, this->wal_segment_size) == 0) {
+      std::string filename;
+
+      this->finalizeCurrentWALFile(true);
+
+      /*
+       * From this point, there shouldn't anything pending,
+       * make sure we flushed everything to disk. Note that
+       * this will also clear all open XLOG segment files
+       * from the internal file list (atm there should always
+       * be one, but in the future me might queue them up to some
+       * point).
+       */
+      this->finalize();
+
+      /*
+       * Flag current item handler to be empty,
+       * next loop will create a new WAL log segment file.
+       */
+      item = nullptr;
+
+      /*
+       * Reset wal offset to be a starting point again.
+       */
+      waloffset = 0;
+    }
+
+  }
+
+  return position;
+}
+
+std::string TransactionLogBackup::walfilename(unsigned int timeline,
+                                              XLogRecPtr position) {
+
+  char xlogfilename[MAXPGPATH];
+  XLogSegNo segment_number ;
+  string result;
+
+#if PG_VERSION_NUM < 110000
+
+  XLByteToSeg(position,
+              segment_number);
+
+  XLogFileName(xlogfilename,
+               position,
+               segment_number);
+#else
+  XLByteToSeg(position,
+              segment_number,
+              wal_segment_size);
+
+  XLogFileName(xlogfilename,
+               timeline,
+               segment_number,
+               wal_segment_size);
+#endif
+
+  result = string(xlogfilename);
+  return result;
+}
+
+std::shared_ptr<BackupFile> TransactionLogBackup::current_segment_file() {
+
+  std::shared_ptr<BackupFile> result = nullptr;
+  std::shared_ptr<TransactionLogListItem> item = nullptr;
+
+  if (this->fileList.empty())
+    return result;
+
+  item = this->fileList.back();
+  return item->fileHandle;
+
+}
+
 void TransactionLogBackup::finalize() {
 
   /*
@@ -57,14 +281,39 @@ void TransactionLogBackup::finalize() {
     item->fileHandle->close();
   }
 
+  this->fileList.clear();
+
 }
 
 void TransactionLogBackup::initialize() {
 
   if (!this->isInitialized()) {
-    this->directory = new ArchiveLogDirectory(path(this->descr->directory));
+
+    /* WAL segment size must be greater than 0 and
+     * a power of two! */
+    if ( (this->wal_segment_size == 0)
+         || ( (this->wal_segment_size % 2) != 0) ) {
+      std::ostringstream oss;
+      oss << "invalid configured wal segment size("
+          << this->wal_segment_size
+          << ") "
+          << "in transaction log backup handle: ";
+      throw CArchiveIssue(oss.str());
+    }
+
+    this->directory = new BackupDirectory(path(this->descr->directory));
+    this->logDirectory = this->directory->logdirectory();
     this->initialized = true;
   }
+
+}
+
+void TransactionLogBackup::setWalSegmentSize(uint32 wal_segment_size) {
+
+  if (this->isInitialized())
+    throw CArchiveIssue("cannot change WAL segment size on initialized transaction log backup handle");
+
+  this->wal_segment_size = wal_segment_size;
 
 }
 
@@ -78,7 +327,7 @@ void TransactionLogBackup::sync_pending() {
     if (item->sync_pending ||
         item->flush_pending) {
       item->fileHandle->fsync();
-      item->sync_pending = item->flush_pending = true;
+      item->sync_pending = item->flush_pending = false;
     }
   }
 
@@ -92,6 +341,39 @@ void TransactionLogBackup::sync_pending() {
 void TransactionLogBackup::flush_pending() {
   /* currently a no-op, call sync_pending instead */
   this->sync_pending();
+}
+
+void TransactionLogBackup::finalizeCurrentWALFile(bool forceWalSegSz) {
+
+  shared_ptr<TransactionLogListItem> item = nullptr;
+  path finalName;
+
+  /*
+   * Check if there is a currently stacked file...
+   */
+  if (this->fileList.empty()) {
+    throw CArchiveIssue("cannot finalize current file in transaction log backup: no file stacked");
+  }
+
+  item = this->fileList.back();
+
+  /*
+   * Rename the XLOG segment into final name without .partial suffix, but
+   * only if we reached the end of the current WAL file.
+   */
+  if (item->fileHandle->current_position() == this->wal_segment_size) {
+
+    finalName = change_extension(item->fileHandle->getFilePath(), "");
+    item->fileHandle->rename(finalName);
+    item->sync_pending = item->flush_pending = true;
+
+  }
+
+  if ( forceWalSegSz && (item->fileHandle->current_position() != this->wal_segment_size) ) {
+    throw CArchiveIssue("could not finalize current WAL segment: unexpected seek location at "
+                        + item->fileHandle->current_position());
+  }
+
 }
 
 std::shared_ptr<BackupFile> TransactionLogBackup::stackFile(std::string name) {

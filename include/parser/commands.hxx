@@ -231,6 +231,11 @@ namespace credativ {
     std::shared_ptr<ArchiveLogDirectory> logdir = nullptr;
 
     /**
+     * Internal backup handler.
+     */
+    std::shared_ptr<TransactionLogBackup> backup = nullptr;
+
+    /**
      * Catalog handle we operate on. Note that we
      * don't use the properties of our own instance here, since
      * we need the properties stored within the catalog. Since this Command
@@ -259,7 +264,7 @@ namespace credativ {
     StartStreamingForArchiveCommand(std::shared_ptr<BackupCatalog> catalog);
     StartStreamingForArchiveCommand(std::shared_ptr<CatalogDescr> descr);
     StartStreamingForArchiveCommand();
-    ~StartStreamingForArchiveCommand();
+    virtual ~StartStreamingForArchiveCommand();
 
     virtual void execute(bool noop);
   };

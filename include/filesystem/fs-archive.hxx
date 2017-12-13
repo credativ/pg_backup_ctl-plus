@@ -67,6 +67,12 @@ namespace credativ {
     /* boost::filesystem handle */
     path   handle;
 
+    /*
+     * Current internal position in file.
+     * initialized by read(), lseek() and write().
+     */
+    off_t currpos = 0;
+
   public:
 
     BackupFile(path handle);
@@ -90,11 +96,18 @@ namespace credativ {
     virtual void remove() = 0;
     virtual size_t size();
     virtual off_t lseek(off_t offset, int whence) = 0;
+    virtual off_t current_position();
 
     /**
-     * Returns the filename.
+     * Returns the filename as a string.
      */
     virtual std::string getFileName();
+
+    /**
+     * Returns the full qualified path of the
+     * allocated file.
+     */
+    virtual std::string getFilePath();
 
   };
 
@@ -361,7 +374,11 @@ namespace credativ {
     virtual std::shared_ptr<ArchiveLogDirectory> logdirectory();
 
     /*
-     * Returns a file belonging to this directory.
+     * Returns a WAL segment file belonging to this directory.
+     *
+     * Internally, nothing special happens. The returned
+     * file handle doesn't actually persist on the filesystem until
+     * you open()/close() it.
      */
     virtual std::shared_ptr<BackupFile> walfile(std::string name,
                                                 BackupProfileCompressType compression);

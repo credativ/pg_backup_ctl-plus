@@ -201,6 +201,14 @@ XLOGStreamMessage& XLOGDataStreamMessage::operator<<(MemoryBuffer &srcbuffer) {
 
 }
 
+char * XLOGDataStreamMessage::buffer() {
+  return this->xlogdata.ptr();
+}
+
+size_t XLOGDataStreamMessage::dataBufferSize() {
+  return this->xlogdata.getSize();
+}
+
 /******************************************************************************
  * Helper classes for feedback messages.
  ******************************************************************************/
