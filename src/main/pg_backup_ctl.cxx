@@ -35,9 +35,15 @@ using namespace std;
 volatile bool wants_exit = false;
 
 /*
+ * Exit flag indicating that
+ * a running command wants to exit.
+ */
+volatile bool command_abort_requested = false;
+
+/*
  * Global signal handler object.
  */
-ConditionalSignalHandler *sigStop = new ConditionalSignalHandler(&wants_exit);
+ConditionalSignalHandler *sigStop = new ConditionalSignalHandler(&command_abort_requested);
 
 /*
  * Handle for command line arguments
@@ -56,12 +62,18 @@ typedef struct PGBackupCtlArgs {
   bool useCompression;
 } PGBackupCtlArgs;
 
-void handle_signal_on_input(int sig) {
+static void handle_signal_on_input(int sig) {
   if ( (sig == SIGQUIT)
-       || (sig == SIGINT)
        || (sig == SIGTERM) ) {
 
     wants_exit = true;
+    command_abort_requested = true;
+
+  }
+
+  if ( sig == SIGINT ) {
+
+    command_abort_requested = true;
 
   }
 }
