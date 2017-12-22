@@ -64,7 +64,7 @@ int StreamIdentification::updateStartSegmentWriteOffset() {
   this->write_pos_start_offset
     += this->write_position % XLOG_SEG_SIZE;
 #else
-  this->.write_pos_start_offset
+  this->write_pos_start_offset
     += XLogSegmentOffset(this->write_position,
                          this->wal_segment_size);
 #endif
@@ -138,6 +138,26 @@ int PGStream::XLOGOffset(XLogRecPtr pos,
 
 }
 
+XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos) {
+
+#if PG_VERSION_NUM < 110000
+  return pos - (pos % XLOG_SEG_SIZE);
+#else
+  return pos - XLogSegmentOffset(pos, this->walSegmentSize);
+#endif
+
+}
+
+XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos,
+                                              uint32 wal_segment_size) {
+
+#if PG_VERSION_NUM < 110000
+  return pos - (pos % wal_segment_size);
+#else
+  return pos - (pos - XLogSegmentOffset(pos, wal_segment_size));
+#endif
+
+}
 
 std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
@@ -145,8 +165,8 @@ std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
   std::ostringstream oss;
   unsigned int hi, lo;
 
-  hi = (pos >> 32);
-  lo = pos;
+  hi = (uint32)(pos >> 32);
+  lo = (uint32)(pos);
 
   oss << std::hex << hi << "/" << std::hex << lo;
 
@@ -166,7 +186,7 @@ XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
     throw StreamingFailure(oss.str());
   }
 
-  return ((uint64) hi) << 32 | lo;
+  return ((uint64) hi << 32) | lo;
 }
 
 int PGStream::getServerVersion() {

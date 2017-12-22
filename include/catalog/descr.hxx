@@ -166,6 +166,13 @@ namespace credativ {
     unsigned long long wal_segment_size = -1;
 
     /*
+     * Tells the stream to restart from the server XLOG
+     * position without consulting the catalog. Only used
+     * during runtime.
+     */
+    bool force_xlogpos_restart = false;
+
+    /*
      * Runtime streaming properties. Those usually
      * get instrumented for example by a WALStreamerProcess
      * instance.
@@ -277,6 +284,11 @@ namespace credativ {
      */
     bool detach = true;
 
+    /**
+     * Properties for streaming control
+     */
+    bool forceXLOGPosRestart = false;
+
     /*
      * Static class methods.
      */
@@ -330,6 +342,8 @@ namespace credativ {
     void setConnectionType(std::string const& type);
 
     void setJobDetachMode(bool const& detach);
+
+    void setStreamingForceXLOGPositionRestart( bool const& restart );
 
     CatalogDescr& operator=(const CatalogDescr& source);
   };

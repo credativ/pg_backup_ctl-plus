@@ -7,6 +7,7 @@
 /* pg_backup_ctl++ headers */
 #include <descr.hxx>
 #include <backup.hxx>
+#include <signalhandler.hxx>
 #include <xlogdefs.hxx>
 
 /* PostgreSQL client API */
@@ -97,6 +98,19 @@ namespace credativ {
      */
     long timeout = 10000;
 
+
+    /**
+     * Timeout when to send status update to upstream, in milliseconds.
+     * Default is 60s
+     */
+    long receiver_status_timeout = 60000;
+
+    /**
+     * Defines the interval since when
+     * we are forced to send receiver status updates.
+     */
+    std::chrono::high_resolution_clock::time_point last_status_update;
+
     /**
      * Receive buffer
      */
@@ -144,11 +158,29 @@ namespace credativ {
      */
     void timeoutSelectValue(timeval *timeoutptr);
 
+    /**
+     * Internal method to check wether a specified
+     * stop handler was set.
+     */
+    virtual bool stopHandlerWantsExit();
+
+    /**
+     * Signal handler instances.
+     */
+    JobSignalHandler *stopHandler = nullptr;
+
   public:
 
     WALStreamerProcess(PGconn *prepared_connection,
                        StreamIdentification streamident);
     ~WALStreamerProcess();
+
+    /**
+     * Assign a stop signal handler to a WALStreamerProcess
+     * instance. This handler is used to check wether we
+     * received an asynchronous stop signal somehow.
+     */
+    virtual void assignStopHandler(JobSignalHandler *handler);
 
     /**
      * Returns the current xlog position of the WAL Streamer.
@@ -165,6 +197,12 @@ namespace credativ {
      *       bytes.
      */
     XLogRecPtr getCurrentXLOGPos();
+
+    /**
+     * Returns a copy of the internal StreamIdentification state
+     * object.
+     */
+    virtual StreamIdentification identification();
 
     /**
      * Returns the current timeline a WAL Streamer instance
@@ -230,6 +268,13 @@ namespace credativ {
      * streaming server.
      */
     virtual void end();
+
+    /**
+     * sendStatusUpdate() sends a ReceiverStatusUpdateMessage to the
+     * connected stream.
+     */
+    virtual ArchiverState sendStatusUpdate();
+
   };
 
   /*

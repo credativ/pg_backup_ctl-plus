@@ -178,7 +178,9 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_STREAMING_FOR_ARCHIVE) ]
           > no_case[ lexeme[ lit("FOR ARCHIVE") ] ]
           > identifier
-          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          > -( no_case[lexeme[ lit("RESTART") ]] )
+          [ boost::bind(&CatalogDescr::setStreamingForceXLOGPositionRestart, &cmd, true) ];
 
         /*
          * CREATE, DROP, ALTER, START and LIST tokens...
@@ -527,6 +529,14 @@ PGBackupCtlCommand::PGBackupCtlCommand(CatalogDescr descr) {
 
 PGBackupCtlCommand::~PGBackupCtlCommand() {}
 
+void PGBackupCtlCommand::assignSigStopHandler(JobSignalHandler *handler) {
+
+  if (handler == nullptr)
+    throw CPGBackupCtlFailure("attempt to assign uninitialized signal handler");
+
+  this->stopHandler = handler;
+}
+
 CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
 
   shared_ptr<CatalogDescr> descr = nullptr;
@@ -566,6 +576,11 @@ CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
      * Must cast to derived class.
      */
     execCmd = dynamic_cast<BaseCatalogCommand*>(descr.get());
+
+    /*
+     * Assign stop signal handler.
+     */
+    execCmd->assignSigStopHandler(this->stopHandler);
     execCmd->setCatalog(catalog);
     execCmd->execute(false);
 

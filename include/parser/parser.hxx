@@ -4,6 +4,7 @@
 #include <BackupCatalog.hxx>
 #include <common.hxx>
 #include <parser.hxx>
+#include <signalhandler.hxx>
 
 #include <iostream>
 #include <unordered_map>
@@ -38,6 +39,14 @@ namespace credativ {
      * See commands.cxx for details.
      */
     std::shared_ptr<CatalogDescr> catalogDescr;
+
+    /**
+     * Internal references to signal handler instances. Currently
+     * supported singal handlers are:
+     *
+     * - Stop signal (TERM, INT) handlers
+     */
+    JobSignalHandler *stopHandler = nullptr;
   public:
 
     PGBackupCtlCommand(CatalogTag tag);
@@ -55,6 +64,12 @@ namespace credativ {
      * executes the command handle.
      */
     virtual CatalogTag execute(std::string catalogDir);
+
+    /**
+     * Assigns a stop signal handler to a command instance.
+     * This should be used to react on SIGTERM or SIGINT
+     */
+    virtual void assignSigStopHandler(JobSignalHandler *handler);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

@@ -151,8 +151,20 @@ completion_word start_basebackup_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start
 completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebackup_archive },
                                            { "", COMPL_EOL, NULL } };
 
+completion_word start_streaming_option[] = { { "RESTART", COMPL_KEYWORD, NULL },
+                                             { "", COMPL_EOL, NULL } };
+
+completion_word start_streaming_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_streaming_option },
+                                                        { "", COMPL_EOL, NULL } };
+
+completion_word start_streaming_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start_streaming_ident_completion },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word start_streaming_for[] = { { "FOR", COMPL_KEYWORD, start_streaming_archive },
+                                          { "", COMPL_EOL, NULL } };
+
 completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
-                                       { "STREAMING", COMPL_KEYWORD, start_basebackup_for },
+                                       { "STREAMING", COMPL_KEYWORD, start_streaming_for },
                                        { "", COMPL_EOL, NULL } };
 
 completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },

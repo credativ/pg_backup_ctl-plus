@@ -15,6 +15,7 @@
 #include <pg_backup_ctl.hxx>
 #include <tab_completion.hxx>
 #include <common.hxx>
+#include <signalhandler.hxx>
 #include <fs-archive.hxx>
 #include <parser.hxx>
 
@@ -34,6 +35,11 @@ using namespace std;
 volatile bool wants_exit = false;
 
 /*
+ * Global signal handler object.
+ */
+ConditionalSignalHandler *sigStop = new ConditionalSignalHandler(&wants_exit);
+
+/*
  * Handle for command line arguments
  */
 typedef struct PGBackupCtlArgs {
@@ -51,8 +57,12 @@ typedef struct PGBackupCtlArgs {
 } PGBackupCtlArgs;
 
 void handle_signal_on_input(int sig) {
-  if ( (sig == SIGQUIT) || (sig == SIGINT) ) {
+  if ( (sig == SIGQUIT)
+       || (sig == SIGINT)
+       || (sig == SIGTERM) ) {
+
     wants_exit = true;
+
   }
 }
 
@@ -140,6 +150,7 @@ static void handle_interactive(std::string in,
                                PGBackupCtlArgs *args) {
   PGBackupCtlParser parser;
   shared_ptr<PGBackupCtlCommand> command;
+  JobSignalHandler *stopHandler;
 
   try {
 
@@ -158,6 +169,16 @@ static void handle_interactive(std::string in,
      * the current catalog.
      */
     command = parser.getCommand();
+
+    /*
+     * Initialize stop handler for command.
+     */
+    stopHandler = dynamic_cast<JobSignalHandler *>(sigStop);
+    command->assignSigStopHandler(stopHandler);
+
+    /*
+     * ... and execute the command.
+     */
     cmdType = command->execute(string(args->catalogDir));
 
     cout << CatalogDescr::commandTagName(cmdType) << endl;
@@ -404,6 +425,11 @@ int main(int argc, const char **argv) {
     }
 
     if (signal(SIGINT, handle_signal_on_input) == SIG_ERR) {
+      cerr << "error setting up input signal handler" << endl;
+      exit(PG_BACKUP_CTL_GENERIC_ERROR);
+    }
+
+    if (signal(SIGTERM, handle_signal_on_input) == SIG_ERR) {
       cerr << "error setting up input signal handler" << endl;
       exit(PG_BACKUP_CTL_GENERIC_ERROR);
     }

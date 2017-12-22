@@ -128,6 +128,18 @@ void WALStreamerProcess::timeoutSelectValue(timeval *timeoutptr) {
 
 }
 
+ArchiverState WALStreamerProcess::sendStatusUpdate() {
+
+  ReceiverStatusUpdateMessage rsum(this->pgconn);
+
+  rsum.setStatus(this->streamident.write_position,
+                 this->streamident.flush_position,
+                 this->streamident.apply_position);
+  rsum.send();
+  return this->current_state;
+
+}
+
 ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
   /* Holds length of incoming buffer data */
@@ -186,6 +198,14 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
       status = this->current_state = ARCHIVER_STREAMING_NO_DATA;
     }
 
+    /*
+     * In case the connection was terminated, check
+     * for a buffer length set to < -1.
+     */
+    if (*bufferlen <= -1) {
+      status = this->current_state = ARCHIVER_END_POSITION;
+    }
+
   } else if (*bufferlen == -1) {
 
     /*
@@ -198,6 +218,10 @@ ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
     /* Oops, something went wrong here */
     status = this->current_state = ARCHIVER_STREAMING_ERROR;
+
+  } else if (*bufferlen > 0) {
+
+    status = this->current_state = ARCHIVER_STREAMING;
 
   }
 
@@ -262,11 +286,11 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
        * Update XLOG write position and, if flushed, also
        * the flush position.
        *
-       * XXX: Flush currenty the same as the current write position
-       *      Need to implement WAL file handling to get that right.
+       * NOTE: If no backup handler was configured,
+       *       Flush is currently the same as the
+       *       current write position.
        */
       this->streamident.write_position = datamsg->getXLOGServerPos();
-      this->streamident.flush_position = datamsg->getXLOGServerPos();
       this->streamident.updateStartSegmentWriteOffset();
 
       /*
@@ -283,8 +307,15 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
          * a WAL segment boundary, in that case we have to switch to
          * new WAL segment file, again.
          */
-        this->streamident.flush_position = this->backupHandler->write(datamsg, this->streamident.timeline);
-      } /* if ... archiveLogDir != nullptr */
+        this->streamident.flush_position
+          = this->backupHandler->write(datamsg,
+                                       this->streamident.timeline);
+
+      } else { /* if ... backupHandler != nullptr */
+
+        this->streamident.flush_position = datamsg->getXLOGServerPos();
+
+      }
 
       break;
     }
@@ -312,8 +343,18 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 
         /* ... and send 'em over */
         try {
+
+#ifdef __DEBUG_XLOG__
           std::cerr << " ... sending status update to primary " << std::endl;
+#endif
+
           rm->send();
+
+          /*
+           * Update timeout interval.
+           */
+          this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
+
         } catch (XLOGMessageFailure &e) {
           delete rm;
           throw e;
@@ -334,6 +375,26 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 
   } /* switch...msgType */
 
+}
+
+bool WALStreamerProcess::stopHandlerWantsExit() {
+
+  if (this->stopHandler != nullptr) {
+    cerr << "checking STOP handler" << endl;
+    return this->stopHandler->check();
+  } else
+    return false;
+
+}
+
+void WALStreamerProcess::assignStopHandler(JobSignalHandler *handler) {
+
+  /* if handler is NULL, this is a no-op */
+  if (handler == nullptr) {
+    return;
+  }
+
+  this->stopHandler = handler;
 }
 
 bool WALStreamerProcess::receive() {
@@ -362,15 +423,44 @@ bool WALStreamerProcess::receive() {
 
   cerr << "entering WAL streaming receive() " << endl;
 
-  reason = this->handleReceive(&buffer, &bufferlen);
+  /*
+   * Initialize status update start interval.
+   */
+  this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
+
+  this->current_state = reason = this->handleReceive(&buffer, &bufferlen);
   while (reason != ARCHIVER_END_POSITION
-         || reason != ARCHIVER_SHUTDOWN
-         || reason != ARCHIVER_STREAMING_ERROR
-         || reason != ARCHIVER_TIMELINE_SWITCH
-         || reason != ARCHIVER_STARTUP
-         || reason != ARCHIVER_START_POSITION) {
+         && reason != ARCHIVER_SHUTDOWN
+         && reason != ARCHIVER_STREAMING_ERROR
+         && reason != ARCHIVER_TIMELINE_SWITCH
+         && reason != ARCHIVER_STARTUP
+         && reason != ARCHIVER_START_POSITION) {
 
     XLOGStreamMessage *message = nullptr;
+
+    /**
+     * Before doing anything, check wether our stop
+     * handler wants to exit.
+     */
+    if (this->stopHandlerWantsExit()) {
+      reason = this->current_state = ARCHIVER_SHUTDOWN;
+      this->streamident.status = StreamIdentification::STREAM_PROGRESS_SHUTDOWN;
+      break;
+    }
+
+    /*
+     * Next we check wether we should send a status update message
+     * to upstream. This is always the case if our internal
+     * timeout value forces us to do.
+     */
+    if (CPGBackupCtlBase::calculate_duration_ms(this->last_status_update,
+                                                CPGBackupCtlBase::current_hires_time_point())
+        >= std::chrono::milliseconds(this->receiver_status_timeout)) {
+
+      this->sendStatusUpdate();
+      this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
+
+    }
 
     /*
      * If not streaming, don't try to handle XLOG messages.
@@ -378,7 +468,7 @@ bool WALStreamerProcess::receive() {
     if (reason != ARCHIVER_STREAMING) {
 
       /*
-       * Before trying next, local copy buffer ...
+       * Before trying next, copy local buffer ...
        */
       if (buffer != NULL) {
         PQfreemem(buffer);
@@ -428,7 +518,7 @@ bool WALStreamerProcess::receive() {
     delete message;
 
     /* ..next try */
-    reason = this->handleReceive(&buffer, &bufferlen);
+    this->current_state = reason = this->handleReceive(&buffer, &bufferlen);
 
   }
 
@@ -457,6 +547,7 @@ bool WALStreamerProcess::receive() {
    * timeline.
    */
   if (this->current_state == ARCHIVER_END_POSITION) {
+
     PGresult *pgres = this->handleEndOfStream();
 
     if (this->current_state == ARCHIVER_TIMELINE_SWITCH) {
@@ -477,6 +568,16 @@ bool WALStreamerProcess::receive() {
        */
       can_continue = false;
     }
+
+  } else if (this->current_state == ARCHIVER_SHUTDOWN) {
+
+    /*
+     * Inner loop recognized a shutdown request and set the
+     * current state to ARCHIVER_SHUTDOWN.
+     */
+    this->end();
+    can_continue = false;
+
   }
 
   return can_continue;
@@ -610,7 +711,23 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
       this->current_state = ARCHIVER_STREAMING_ERROR;
       throw e;
     }
+  } else {
+
+    /*
+     * Reaching this point usually means that the
+     * server has disconnected, most likely without having established
+     * a working streaming connection before.
+     *
+     * We now force a WAL Streamer shutdown without sending the
+     * end-of-stream message.
+     */
+    this->current_state = ARCHIVER_SHUTDOWN;
+
   }
+}
+
+StreamIdentification WALStreamerProcess::identification() {
+  return this->streamident;
 }
 
 void WALStreamerProcess::end() {
@@ -627,6 +744,7 @@ void WALStreamerProcess::end() {
   }
 
   this->current_state = ARCHIVER_SHUTDOWN;
+  this->streamident.status = StreamIdentification::STREAM_PROGRESS_SHUTDOWN;
 
 }
 
@@ -731,6 +849,8 @@ void WALStreamerProcess::start() {
    * to use receive()...
    */
   this->current_state = ARCHIVER_STREAMING;
+  this->streamident.status = StreamIdentification::STREAM_PROGRESS_STREAMING;
+
 }
 
 /******************************************************************************

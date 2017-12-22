@@ -163,6 +163,10 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
 }
 
+void CatalogDescr::setStreamingForceXLOGPositionRestart( bool const& restart ) {
+  this->forceXLOGPosRestart = restart;
+}
+
 std::string CatalogDescr::commandTagName(CatalogTag tag) {
   switch(tag) {
   case EMPTY_DESCR:
@@ -3108,7 +3112,7 @@ BackupCatalog::createCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr
   std::ostringstream insert;
   int rc;
 
-  if (!this-!available()) {
+  if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
   }
 

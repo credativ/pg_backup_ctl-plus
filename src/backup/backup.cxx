@@ -364,14 +364,34 @@ void TransactionLogBackup::finalizeCurrentWALFile(bool forceWalSegSz) {
   if (item->fileHandle->current_position() == this->wal_segment_size) {
 
     finalName = change_extension(item->fileHandle->getFilePath(), "");
+
+    /*
+     * The current XLOG segment file is opened wb+, since we
+     * always want to write from the beginning when streaming is started.
+     *
+     * Change its open mode during rename(), since we then switch
+     * to read-only in this case. This also prevent rename() from truncating
+     * the file during rename(), since it wants to reopen the file with its
+     * new name.
+     */
+    item->fileHandle->setOpenMode("r+");
+
+    /* Do the rename() now ... */
     item->fileHandle->rename(finalName);
-    item->sync_pending = item->flush_pending = true;
+
+    /*
+     * rename() already synced the file, so no need to sync it again.
+     */
+    item->sync_pending = item->flush_pending = false;
 
   }
 
-  if ( forceWalSegSz && (item->fileHandle->current_position() != this->wal_segment_size) ) {
-    throw CArchiveIssue("could not finalize current WAL segment: unexpected seek location at "
-                        + item->fileHandle->current_position());
+  if ( forceWalSegSz && (item->fileHandle->size() != this->wal_segment_size) ) {
+    std::ostringstream oss;
+
+    oss << "could not finalize current WAL segment: unexpected seek location at "
+        << item->fileHandle->current_position();
+    throw CArchiveIssue(oss.str());
   }
 
 }
@@ -390,8 +410,29 @@ std::shared_ptr<BackupFile> TransactionLogBackup::stackFile(std::string name) {
 
   /* Allocate new segment file handle */
   this->file = this->directory->walfile(name, this->compression);
-  this->file->setOpenMode("wb");
+  this->file->setOpenMode("wb+");
   this->file->open();
+
+  /*
+   * Make sure, we start at the beginning of the file.
+   */
+  this->file->lseek(0, SEEK_SET);
+
+  /*
+   * If we are in an uncompressed mode, pad the file.
+   */
+  // if (this->compression == BACKUP_COMPRESS_TYPE_NONE) {
+
+  //   char *zerobuffer = new char[XLOG_BLCKSZ];
+  //   int   wbytes = 0; /* bytes written */
+
+  //   memset(zerobuffer, 0, XLOG_BLCKSZ);
+
+  //   for (wbytes = 0; i < this->wal_segment_size; wbytes += XLOG_BLCKSZ) {
+
+  //     this->file->write(
+  //   }
+  // }
 
   /*
    * Stack walfile reference into open file list.

@@ -3,6 +3,7 @@
 
 #include <BackupCatalog.hxx>
 #include <fs-archive.hxx>
+#include <signalhandler.hxx>
 
 #include <vector>
 
@@ -12,6 +13,11 @@ namespace credativ {
 
   class BaseCatalogCommand : public CatalogDescr {
   protected:
+    /**
+     * Internal reference to sig stop signal handler.
+     */
+    JobSignalHandler *stopHandler = nullptr;
+
     std::shared_ptr<BackupCatalog> catalog = NULL;
     virtual void copy(CatalogDescr& source);
   public:
@@ -21,6 +27,13 @@ namespace credativ {
 
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
     virtual std::shared_ptr<BackupCatalog> getCatalog();
+
+    /**
+     * Assigns specific signal handler objects to
+     * a BaseCatalogCommand descendant instance. Currently
+     * supported are: stop signal.
+     */
+    virtual void assignSigStopHandler(JobSignalHandler *handler);
   };
 
   class DropConnectionCatalogCommand : public BaseCatalogCommand {
@@ -248,7 +261,7 @@ namespace credativ {
     /**
      * Helper function to update current status and XLOG position of stream.
      */
-    virtual void updateStreamCatalogStatus();
+    virtual void updateStreamCatalogStatus(StreamIdentification &ident);
 
     /**
      * Prepare internal stream handle

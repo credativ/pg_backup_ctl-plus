@@ -37,6 +37,19 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
 }
 
+void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
+
+  /*
+   * Setting a nullptr to our internal sig stop handler
+   * is treated as an general error.
+   */
+  if (handler == nullptr) {
+    throw CPGBackupCtlFailure("attempt to assign uninitialized stop signal handler");
+  }
+
+  this->stopHandler = handler;
+}
+
 DropConnectionCatalogCommand::DropConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
@@ -456,7 +469,7 @@ void StartStreamingForArchiveCommand::prepareStream() {
     pgstream->createPhysicalReplicationSlot(pgstream->streamident.slot);
 
     /*
-     * It might occur that we didn't find registered stream, but
+     * It might occur that we didn't find a registered stream, but
      * the replication slot already exists. We treat this condition
      * as an error and exit, but before that we mark the stream as failed.
      */
@@ -479,7 +492,7 @@ void StartStreamingForArchiveCommand::prepareStream() {
      * to STREAM_PROGRESS_IDENTIFIED.
      */
     this->catalog->registerStream(this->id,
-                                  ConnectionDescr::CONNECTION_TYPE_STREAMER,
+                                   ConnectionDescr::CONNECTION_TYPE_STREAMER,
                                   pgstream->streamident);
 
   } else {
@@ -520,11 +533,13 @@ void StartStreamingForArchiveCommand::prepareStream() {
 
     if (pgstream->streamident.slot->status == REPLICATION_SLOT_EXISTS) {
 
+#ifdef __DEBUG_XLOG__
       cerr
         << "replication slot "
         << pgstream->streamident.slot_name
         << " exists, trying to reuse it"
         << endl;
+#endif
 
       /*
        * The slot already exist, we should use the last reported XLOG
@@ -552,8 +567,24 @@ void StartStreamingForArchiveCommand::prepareStream() {
              << endl;
 #endif
 
-        pgstream->streamident.xlogpos  = myStream->xlogpos;
-        pgstream->streamident.timeline = myStream->timeline;
+        /*
+         * If START STREAMING ... RESTART was requested, don't
+         * update the XLOG position we got by IDENTIFY SYSTEM. Instead,
+         * restart the stream from the server's position.
+         */
+        if (!this->forceXLOGPosRestart) {
+
+          XLogRecPtr startpos = PGStream::decodeXLOGPos(myStream->xlogpos);
+
+          /*
+           * Make sure we initialize the starting position
+           * to segment beginning.
+           */
+          startpos = pgstream->XLOGSegmentStartPosition(startpos);
+          pgstream->streamident.xlogpos  = PGStream::encodeXLOGPos(startpos);
+          pgstream->streamident.timeline = myStream->timeline;
+
+        }
       }
 
       /*
@@ -582,40 +613,58 @@ void StartStreamingForArchiveCommand::prepareStream() {
         unsigned int new_segno = 0;
         std::string xlogpos;
 
-#ifdef __DEBUG__
+#ifdef __DEBUG_XLOG__
         cerr << "not a clean streamer shutdown, trying to get xlog position from log archive" << endl;
 #endif
 
-        xlogpos = logdir->getXlogStartPosition(new_tli,
-                                               new_segno,
-                                               pgstream->getWalSegmentSize());
+        if (!this->forceXLOGPosRestart) {
+          xlogpos = logdir->getXlogStartPosition(new_tli,
+                                                 new_segno,
+                                                 pgstream->getWalSegmentSize());
 
-        if (xlogpos.length() <= 0) {
+          if (xlogpos.length() <= 0) {
+            /*
+             * Oops, we couldn't extract a valid XLOG record from the archive.
+             * This usually means the archive didn't have anything interesting, so
+             * we just assume the archive is empty and we start from the beginning.
+             *
+             * In this case, just rely on the XLOG position reported
+             * by IDENTIFY_SYSTEM.
+             *
+             * XXX: Report this somehow to the user.
+             */
+            myStream->xlogpos = pgstream->streamident.xlogpos;
+            myStream->timeline = pgstream->streamident.timeline;
+
+#ifdef __DEBUG_XLOG__
+            cerr
+              << "no transaction logs found, will start from catalog XLOG position"
+              << endl;
+#endif
+
+          } else {
+            /*
+             * We could extract a new XLogRecPtr from the archive.
+             */
+#ifdef __DEBUG_XLOG__
+            cerr << "new XLOG start position determined by archive: "
+                 << xlogpos
+                 << endl;
+#endif
+            pgstream->streamident.xlogpos = xlogpos;
+            pgstream->streamident.timeline = new_tli;
+            myStream->xlogpos = xlogpos;
+            myStream->timeline = new_tli;
+          }
+        } else {
+
           /*
-           * Oops, we couldn't extract a valid XLOG record from the archive.
-           * This usually means the archive didn't have anything interesting, so
-           * we just assume the archive is empty and we start from the beginning.
-           *
-           * In this case, just rely on the XLOG position reported
-           * by IDENTIFY_SYSTEM.
-           *
-           * XXX: Report this somehow to the user.
+           * We are forced to rely on the XLOG position from
+           * IDENTIFY SYSTEM, so leave it as-is.
            */
           myStream->xlogpos = pgstream->streamident.xlogpos;
           myStream->timeline = pgstream->streamident.timeline;
-        } else {
-          /*
-           * We could extract a new XLogRecPtr from the archive.
-           */
-#ifdef __DEBUG__
-          cerr << "new XLOG start position determined by archive: "
-               << xlogpos
-               << endl;
-#endif
-          pgstream->streamident.xlogpos = xlogpos;
-          pgstream->streamident.timeline = new_tli;
-          myStream->xlogpos = xlogpos;
-          myStream->timeline = new_tli;
+
         }
 
       }
@@ -636,7 +685,7 @@ void StartStreamingForArchiveCommand::prepareStream() {
 
   /*
    * When starting up, we choose the write_position to
-   * be identical with the previously locates xlogpos
+   * be identical with the previously examined xlogpos
    * start position.
    */
   pgstream->streamident.write_position = PGStream::decodeXLOGPos(pgstream->streamident.xlogpos);
@@ -653,27 +702,28 @@ void StartStreamingForArchiveCommand::prepareStream() {
   /*
    * Update the slot to reflect current state.
    */
-  this->updateStreamCatalogStatus();
+  this->updateStreamCatalogStatus(pgstream->streamident);
 
 }
 
-void StartStreamingForArchiveCommand::updateStreamCatalogStatus() {
+void StartStreamingForArchiveCommand::updateStreamCatalogStatus(StreamIdentification &ident) {
 
   std::vector<int> affectedAttrs;
 
   affectedAttrs.clear();
   affectedAttrs.push_back(SQL_STREAM_XLOGPOS_ATTNO);
+  affectedAttrs.push_back(SQL_STREAM_TIMELINE_ATTNO);
   affectedAttrs.push_back(SQL_STREAM_STATUS_ATTNO);
 
-  this->catalog->updateStream(pgstream->streamident.id,
+  this->catalog->updateStream(ident.id,
                               affectedAttrs,
-                              pgstream->streamident);
+                              ident);
 
 }
 
 void StartStreamingForArchiveCommand::finalizeStream() {
 
-  this->updateStreamCatalogStatus();
+  /* this is a no-op yet */
 
 }
 
@@ -734,6 +784,8 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
   /* prepare stream and start streaming */
   try {
 
+    XLogRecPtr startpos = InvalidXLogRecPtr;
+
     /*
      * Get the streaming connection for this archive. Please note that we
      * have to fallback to archive default connection.
@@ -791,6 +843,18 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      */
     pgstream->identify();
 
+    /*
+     * Since we always want to start from the _beginning_ of
+     * a XLOG segment, we need to setup the current server's
+     * XLOG position to segment start.
+     */
+    cerr << "IDENTIFY XLOG says: " << pgstream->streamident.xlogpos << endl;
+    startpos = pgstream->streamident.xlogposDecoded();
+    cerr << "IDENTIFY XLOG after decode says: " << PGStream::encodeXLOGPos(startpos) << endl;
+    startpos = pgstream->XLOGSegmentStartPosition(startpos);
+    pgstream->streamident.xlogpos = PGStream::encodeXLOGPos(startpos);
+
+
 #ifdef __DEBUG__
     cerr << "IDENTIFICATION (TLI/XLOGPOS) "
          << pgstream->streamident.timeline
@@ -823,6 +887,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     walstreamer = pgstream->walstreamer();
 
     /*
+     * Assign stop handler, this is just a reference
+     * to our own stop handler.
+     */
+    walstreamer->assignStopHandler(this->stopHandler);
+
+    /*
      * We want the walstreamer to stream into our current log archive.
      */
     walstreamer->setBackupHandler(this->backup);
@@ -835,6 +905,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
       MemoryBuffer timelineHistory;
       string historyFilename;
+      StreamIdentification walstreamerIdent;
 
       /*
        * Get the timeline history file content, but only if we
@@ -852,6 +923,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
       }
 
       walstreamer->start();
+
+      /*
+       * Set catalog state to streaming
+       */
+      walstreamerIdent = walstreamer->identification();
+      this->updateStreamCatalogStatus(walstreamerIdent);
 
       if (!walstreamer->receive()) {
 
@@ -887,15 +964,21 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
         } else if (reason == ARCHIVER_SHUTDOWN) {
 
-#ifdef __DEBUG_XLOG_
+          StreamIdentification currentIdent;
+
+#ifdef __DEBUG_XLOG__
           std::cerr << "preparing WAL streamer for shutdown" << std::endl;
 #endif
+          currentIdent = walstreamer->identification();
+          this->updateStreamCatalogStatus(currentIdent);
           break;
 
         } else {
 
           /* oops, this is unexpected here */
           std::cerr << "unexpected WAL streamer state: " << reason << std::endl;
+          break;
+
         }
       }
 

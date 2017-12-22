@@ -221,7 +221,12 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
     }
 
     /* Determine Timeline and segment number of current xlog segment */
+#if PG_VERSION_NUM < 110000
     XLogFromFileName(xlogfilename.c_str(), &current_tli, &current_segno);
+#else
+    XLogFromFileName(xlogfilename.c_str(), &current_tli,
+                     &current_segno, xlogsegsize);
+#endif
 
     /* Get the *real* uncompressed file size */
     fileSize = this->getXlogSegmentSize(entry.path(),
@@ -230,13 +235,15 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
 #ifdef __DEBUG_XLOG__
     cerr << "xlog file=" << xlogfilename << " "
-         << "tli=" << timelineID << " "
-         << "segmentNumber=" << segmentNumber << " "
+         << "tli=" << current_tli << " "
+         << "segmentNumber=" << current_segno << " "
          << "size=" << fileSize
          << endl;
 #endif
 
-    if (fileSize != xlogsegsize) {
+    if ((fileSize != xlogsegsize)
+        && (current_status == WAL_SEGMENT_COMPLETE)
+        && (current_status == WAL_SEGMENT_PARTIAL) ) {
 #ifdef __DEBUG_XLOG__
       cerr << "invalid file size ("
            << fileSize
@@ -1091,7 +1098,7 @@ size_t ArchiveFile::read(char *buf, size_t len) {
   }
 
   if (result > 0)
-    this->currpos += result;
+    this->currpos += len;
 
   return result;
 
@@ -1125,7 +1132,7 @@ size_t ArchiveFile::write(const char *buf, size_t len) {
    * Update internal offset
    */
   if (result > 0)
-    this->currpos += result;
+    this->currpos += len;
 
   return result;
 
@@ -1405,7 +1412,7 @@ size_t ZSTDArchiveFile::write(const char *buf, size_t len) {
   }
 
   if (rc > 0)
-    this->currpos += rc;
+    this->currpos += bufOutSize;
 
   return rc;
 }
@@ -1519,7 +1526,7 @@ size_t ZSTDArchiveFile::read(char *buf, size_t len) {
   }
 
   if (rc > 0)
-    this->currpos += rc;
+    this->currpos += len;
 
   return rc;
 }
@@ -1756,7 +1763,7 @@ size_t CompressedArchiveFile::write(const char *buf, size_t len) {
   }
 
   if (wbytes > 0)
-    this->currpos += wbytes;
+    this->currpos += len;
 
   return wbytes;
 }
@@ -1801,7 +1808,7 @@ size_t CompressedArchiveFile::read(char *buf, size_t len) {
   }
 
   if (rbytes > 0)
-    this->currpos += rbytes;
+    this->currpos += len;
 
   return rbytes;
 }
