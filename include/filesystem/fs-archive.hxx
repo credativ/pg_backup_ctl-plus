@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include <common.hxx>
+#include <daemon.hxx>
 #include <BackupCatalog.hxx>
 
 #ifdef PG_BACKUP_CTL_HAS_ZLIB
@@ -30,7 +31,6 @@ using namespace std;
 using namespace boost::filesystem;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
-
 
 namespace credativ {
 
@@ -111,6 +111,40 @@ namespace credativ {
 
   };
 
+  /**
+   * A special archive file which just
+   * represents a pipe communicating with
+   * a subprocess doing the actual legwork.
+   *
+   * When opened, this class forks and uses
+   * the specified processTitle() to execute and open
+   * a pipe for communication. The goal is to write to STDOUT
+   * and consume this input from STDOUT on the other side(TM).
+   *
+   * There's also a reverse channel opened for read().
+   */
+  class ArchivePipedProcess : public BackupFile {
+  protected:
+
+    //job_info jobDescr;
+    string executable = "";
+    vector<string> execArgs;
+
+    /*
+     * Set to true in case the pipe is open
+     * and fully initialized.
+     */
+    bool opened = false;
+
+  public:
+    ArchivePipedProcess(path pathHandle);
+    ArchivePipedProcess(path pathHandle, string executable, vector<string> execArgs);
+    virtual ~ArchivePipedProcess();
+
+    virtual void open();
+    virtual size_t write(const char *buf, size_t len);
+  };
+
   class ArchiveFile : public BackupFile {
   private:
     FILE  *fp = NULL;
@@ -125,7 +159,7 @@ namespace credativ {
   public:
 
     ArchiveFile(path pathHandle);
-    ~ArchiveFile();
+    virtual ~ArchiveFile();
 
     virtual bool isCompressed();
     virtual void setCompressed(bool compressed);
@@ -213,7 +247,7 @@ namespace credativ {
 
   public:
     ZSTDArchiveFile(path pathHandle);
-    ~ZSTDArchiveFile();
+    virtual ~ZSTDArchiveFile();
 
     virtual bool isCompressed();
     virtual void setCompressed(bool compressed);
@@ -266,7 +300,7 @@ namespace credativ {
   public:
 
     CompressedArchiveFile(path pathHandle);
-    ~CompressedArchiveFile();
+    virtual ~CompressedArchiveFile();
 
     virtual bool isCompressed();
     virtual void setCompressed(bool compressed);
@@ -332,7 +366,7 @@ namespace credativ {
   public:
 
     BackupDirectory(path handle);
-    ~BackupDirectory();
+    virtual ~BackupDirectory();
 
     /*
      * Check if this is an existing directory.

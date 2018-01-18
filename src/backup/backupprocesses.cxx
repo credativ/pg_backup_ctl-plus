@@ -1089,7 +1089,7 @@ void BaseBackupProcess::readTablespaceInfo() {
     /*
      * Tablespace OID
      */
-    descr->spcoid = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(res, i, 0)));
+    descr->spcoid = CPGBackupCtlBase::strToUInt(std::string(PQgetvalue(res, i, 0)));
 
     /*
      * Tablespace location (path, can be NULL in case of base directory)
@@ -1185,7 +1185,7 @@ bool BaseBackupProcess::stepTablespace(std::shared_ptr<StreamBaseBackup> backupH
   /*
    * Make the file access handle.
    */
-  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::intToStr(descr->spcoid)
+  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::uintToStr(descr->spcoid)
                                                 + ".tar");
 
   if (descr->spclocation == "")

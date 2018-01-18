@@ -30,6 +30,7 @@ namespace credativ {
     DROP_ARCHIVE,
     DROP_BACKUP_PROFILE,
     DROP_CONNECTION,
+    EXEC_COMMAND,
     ALTER_ARCHIVE,
     VERIFY_ARCHIVE,
     START_BASEBACKUP,
@@ -230,7 +231,8 @@ namespace credativ {
      * Static class members, identifying proc types.
      */
     static constexpr const char *PROC_TYPE_LAUNCHER = "launcher";
-    static constexpr const char *PROC_TYPE_WORKER = "streamer";
+    static constexpr const char *PROC_TYPE_STREAMER = "streamer";
+    static constexpr const char *PROC_TYPE_WORKER = "worker";
 
     /*
      * Static class members, specifying proc status values.
@@ -289,6 +291,11 @@ namespace credativ {
      */
     bool forceXLOGPosRestart = false;
 
+    /**
+     * Used for executing shell commands.
+     */
+    std::string execString = "";
+
     /*
      * Static class methods.
      */
@@ -303,6 +310,8 @@ namespace credativ {
      * The methods below are used by our spirit::parser
      * implementation.
      */
+    void setExecString(std::string const& execStr);
+
     void setDbName(std::string const& db_name);
 
     void setCommandTag(credativ::CatalogTag const& tag);
@@ -375,7 +384,7 @@ namespace credativ {
   public:
     int id = -1;
     int backup_id = -1;
-    int spcoid;
+    unsigned int spcoid;
     std::string spclocation;
     unsigned long long spcsize;
   };
@@ -440,6 +449,7 @@ namespace credativ {
 
     virtual std::string gimmeFormattedString();
   };
+
 }
 
 #endif

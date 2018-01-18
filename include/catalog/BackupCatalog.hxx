@@ -204,9 +204,15 @@ namespace credativ {
 
     /*
      * Returns the name of the catalog database. In this
-     * case the full path to the sqlite3 database.
+     * case the filename of the associated sqlite3 database.
      */
     virtual std::string name();
+
+    /**
+     * Returns the full path (including filename)
+     * of the connected sqlite3 database file.
+     */
+    virtual std::string fullname();
 
     /*
      * Returns true wether the catalog is available.

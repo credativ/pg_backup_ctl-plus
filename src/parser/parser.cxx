@@ -80,66 +80,85 @@ namespace credativ {
          * Parser rule definitions
          */
         start %= eps > (
+                        /* EXEC syntax */
+                        (
+                         no_case[lexeme[ lit("EXEC") ]]
+                         [boost::bind(&CatalogDescr::setCommandTag, &cmd, EXEC_COMMAND)]
+                         > executable
+                          [boost::bind(&CatalogDescr::setExecString, &cmd, ::_1)]
+                         )
+                        |
+
                         /* CREATE command syntax start */
-                        cmd_create > (
-                                      cmd_create_archive
-                                      | cmd_create_backup_profile
-                                      | cmd_create_connection
-                                      )
+                        (
+                         cmd_create > (
+                                       cmd_create_archive
+                                       | cmd_create_backup_profile
+                                       | cmd_create_connection
+                                       )
+                         )
 
                         /* LIST command syntax start */
-                        | cmd_list > (
-                                      cmd_list_archive
-                                      | cmd_list_backup
-                                      | cmd_list_connection
-                                      )
+                        | (
+                           cmd_list > (
+                                       cmd_list_archive
+                                       | cmd_list_backup
+                                       | cmd_list_connection
+                                       )
+                           )
 
                         /* ALTER command */
-                        | cmd_alter > (
-                                       cmd_alter_archive
-                                       | cmd_alter_backup_profile
-                                       )
+                        | (
+                           cmd_alter > (
+                                        cmd_alter_archive
+                                        | cmd_alter_backup_profile
+                                        )
+                           )
 
                         /*
                          * DROP command syntax start
                          */
-                        | cmd_drop > (
-                                      /*
-                                       * DROP ARCHIVE <name> command
-                                       */
-                                      cmd_drop_archive > identifier
-                                      [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                        | (
+                           cmd_drop > (
+                                       /*
+                                        * DROP ARCHIVE <name> command
+                                        */
+                                       ( cmd_drop_archive > identifier
+                                         [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
 
-                                      /*
-                                       * DROP BACKUP PROFILE
-                                       */
-                                      | cmd_drop_backup_profile
+                                       /*
+                                        * DROP BACKUP PROFILE
+                                        */
+                                       | cmd_drop_backup_profile
 
-                                      /*
-                                       * DROP STREAMING CONNECTION
-                                       */
-                                      | cmd_drop_connection)
+                                       /*
+                                        * DROP STREAMING CONNECTION
+                                        */
+                                       | cmd_drop_connection)
+                           )
 
                         /*
                          * VERIFY ARCHIVE <name> command
                          */
-                        | cmd_verify_archive > identifier
-                        [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                        | ( cmd_verify_archive > identifier
+                            [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
 
                         /*
                          * START command
                          */
-                        | cmd_start_command > (
-                                               /*
-                                                * START BASEBACKUP FOR ARCHIVE <name> command
-                                                */
-                                               ( cmd_start_basebackup
-                                                 > identifier
-                                                 [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                                                 > -(with_profile) )
-                                               | ( cmd_start_launcher )
-                                               | ( cmd_start_streaming )
-                                               )
+                        | (
+                           cmd_start_command > (
+                                                /*
+                                                 * START BASEBACKUP FOR ARCHIVE <name> command
+                                                 */
+                                                ( cmd_start_basebackup
+                                                  > identifier
+                                                  [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                                                  > -(with_profile) )
+                                                | ( cmd_start_launcher )
+                                                | ( cmd_start_streaming )
+                                                )
+                           )
 
                         ); /* start rule end */
 
@@ -417,6 +436,9 @@ namespace credativ {
         /* We enforce quoting for path strings */
         directory_string = no_skip[ '"' >> +(char_ - ('"') ) >> '"' ];
 
+        /* A binary name (executable without full path */
+        executable = +(char_("a-zA-Z0-9_-+/"));
+
         /* PROFILE property */
         with_profile = no_case[lexeme [ lit("PROFILE") ]] >> identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
@@ -456,6 +478,7 @@ namespace credativ {
         cmd_list_backup.name("LIST BACKUP");
         cmd_list_connection.name("LIST CONNECTION");
         identifier.name("object identifier");
+        executable.name("executable name");
         hostname.name("ip or hostname");
         profile_compression_option.name("COMPRESSION=GZIP|NONE");
         profile_max_rate_option.name("MAX_RATE=maximum transfer rate in KB/s");
@@ -509,7 +532,8 @@ namespace credativ {
                           profile_max_rate_option,
                           profile_compression_option,
                           profile_backup_label_option,
-                          with_profile;
+                          with_profile,
+                          executable;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string;
 
@@ -556,11 +580,12 @@ CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
    * which will then support initializing the backup catalog.
    */
   descr = this->getExecutableDescr();
-  result = descr->tag;
 
   if (descr == nullptr) {
     throw CPGBackupCtlFailure("cannot execute uninitialized descriptor handle");
   }
+
+  result = descr->tag;
 
   /*
    * Now establish the catalog instance.
@@ -693,6 +718,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case START_STREAMING_FOR_ARCHIVE:
     result = make_shared<StartStreamingForArchiveCommand>(this->catalogDescr);
+    break;
+
+  case EXEC_COMMAND:
+    result = make_shared<ExecCommandCatalogCommand>(this->catalogDescr);
     break;
 
   default:

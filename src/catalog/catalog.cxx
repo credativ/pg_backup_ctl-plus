@@ -204,6 +204,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "DROP CONNECTION";
   case START_STREAMING_FOR_ARCHIVE:
     return "START STREAMING FOR ARCHIVE";
+  case EXEC_COMMAND:
+    return "EXEC";
   default:
     return "UNKNOWN";
   }
@@ -263,6 +265,10 @@ void CatalogDescr::setProfileName(std::string const& profile_name) {
 void CatalogDescr::setDbName(std::string const& db_name) {
   this->coninfo->pgdatabase = db_name;
   this->pushAffectedAttribute(SQL_ARCHIVE_PGDATABASE_ATTNO);
+}
+
+void CatalogDescr::setExecString(std::string const& execStr) {
+  this->execString = execStr;
 }
 
 void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
@@ -396,8 +402,12 @@ BackupCatalog::BackupCatalog(string sqliteDB) {
   this->checkCatalog();
 }
 
-std::string BackupCatalog::name() {
+std::string BackupCatalog::fullname() {
   return this->sqliteDB;
+}
+
+std::string BackupCatalog::name() {
+  return path(this->sqliteDB).filename().string();
 }
 
 void BackupCatalog::startTransaction() {
@@ -2573,6 +2583,7 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
 
   int rc;
   sqlite3_stmt *stmt;
+  std::ostringstream query;
 
   if (!this->available())
     throw CCatalogIssue("could not register process handle in catalog: database not opened");
@@ -2580,13 +2591,19 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
   /*
    * Prepare INSERT SQL command ...
    */
+  query
+    << "INSERT INTO procs("
+    "pid, archive_id, type, started, state)"
+    " VALUES(?, ?, ?, ?, ?);";
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO procs("
-                          "pid, archive_id, type, started, state)"
-                          " VALUES(?, ?, ?, ?, ?);",
+                          query.str().c_str(),
                           -1,
                           &stmt,
                           NULL);
+
+#ifdef __DEBUG__
+  cerr << "INSERT SQL: " << query.str() << endl;
+#endif
 
   if (rc != SQLITE_OK) {
     std::ostringstream oss;
@@ -2632,6 +2649,7 @@ void BackupCatalog::unregisterProc(int pid,
   int rc;
   sqlite3_stmt *stmt;
   std::shared_ptr<CatalogProc> procInfo = std::make_shared<CatalogProc>();
+  std::ostringstream query;
 
   if (!this->available())
     throw CCatalogIssue("could not unregister process handle from catalog: databas not opened");
@@ -2639,11 +2657,16 @@ void BackupCatalog::unregisterProc(int pid,
   /*
    * Prepare the DELETE SQL command...
    */
+  query << "DELETE FROM procs WHERE pid = ?1 AND archive_id = ?2;";
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "DELETE FROM procs WHERE pid = ?1 AND archive_id = ?2;",
+                          query.str().c_str(),
                           -1,
                           &stmt,
                           NULL);
+#ifdef __DEBUG__
+  cerr << "DELETE SQL: " << query.str() << endl;
+  cerr << "   bound attrs pid=" << pid << ", archive_id=" << archive_id << endl;
+#endif
 
   if (rc != SQLITE_OK) {
     std::ostringstream oss;
@@ -3528,6 +3551,28 @@ void BackupCatalog::open_rw() {
 
   rc = sqlite3_exec(this->db_handle,
                     "PRAGMA journal_mode=WAL;",
+                    NULL,
+                    NULL,
+                    &errmsg);
+
+  if (errmsg != NULL) {
+    ostringstream oss;
+    oss << "error setting SQLite Pragma: " << errmsg;
+    sqlite3_free(errmsg);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Doing catalog maintenance can cause large
+   * delays in some cases, so it's okay to
+   * define a large value here.
+   *
+   * We usually try hard to *not* hold SQLite transactions
+   * very long, but this can't be guaranteed all over
+   * the place.
+   */
+  rc = sqlite3_exec(this->db_handle,
+                    "PRAGMA busy_timeout=60000;",
                     NULL,
                     NULL,
                     &errmsg);

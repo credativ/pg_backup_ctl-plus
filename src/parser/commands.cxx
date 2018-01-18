@@ -31,6 +31,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
    * Job control properties
    */
   this->detach = source.detach;
+  this->execString = source.execString;
 
   this->setAffectedAttributes(source.getAffectedAttributes());
   this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
@@ -48,6 +49,37 @@ void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
   }
 
   this->stopHandler = handler;
+}
+
+ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+}
+
+void ExecCommandCatalogCommand::execute(bool flag) {
+
+  job_info jobDescr;
+  char buf_byte;
+  pid_t pid;
+
+  jobDescr.background_exec = true;
+  jobDescr.use_pipe = true;
+  jobDescr.executable = path(this->execString);
+
+  jobDescr.close_std_fd = false;
+
+  pid = credativ::run_process(jobDescr);
+
+  while (::read(jobDescr.pipe_out[0], &buf_byte, 1) > 0) {
+    cout << buf_byte;
+  }
+
 }
 
 DropConnectionCatalogCommand::DropConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
@@ -381,10 +413,22 @@ void StartLauncherCatalogCommand::execute(bool flag) {
    */
   pid = launch(job_info);
 
+  if (pid > 0) {
 
-  if (pid > 0)
     cout << "background launcher launched at pid " << pid << endl;
-  else {
+
+      /*
+       * Send a test message.
+       */
+    /*
+     * Establish message queue, of not yet there.
+     */
+    establish_launcher_cmd_queue(job_info);
+    cout << "sending test message to message queue...";
+    send_launcher_cmd(job_info, "status update force");
+    cout << "done" << endl;
+
+  } else {
     /*
      * This code shouldn't be reached, since the forked child process
      * should take care to exit in their child code after executing
@@ -429,7 +473,9 @@ void StartStreamingForArchiveCommand::prepareStream() {
   bool result = false;
   std::vector<std::shared_ptr<StreamIdentification>> streamList;
 
+  this->catalog->startTransaction();
   this->catalog->getStreams(this->archive_name, streamList);
+  this->catalog->commitTransaction();
 
   for (auto &stream : streamList) {
 
@@ -491,9 +537,11 @@ void StartStreamingForArchiveCommand::prepareStream() {
      * This also sets the state of the new stream descriptor
      * to STREAM_PROGRESS_IDENTIFIED.
      */
+    this->catalog->startTransaction();
     this->catalog->registerStream(this->id,
                                    ConnectionDescr::CONNECTION_TYPE_STREAMER,
                                   pgstream->streamident);
+    this->catalog->commitTransaction();
 
   } else {
 
@@ -715,9 +763,11 @@ void StartStreamingForArchiveCommand::updateStreamCatalogStatus(StreamIdentifica
   affectedAttrs.push_back(SQL_STREAM_TIMELINE_ATTNO);
   affectedAttrs.push_back(SQL_STREAM_STATUS_ATTNO);
 
+  this->catalog->startTransaction();
   this->catalog->updateStream(ident.id,
                               affectedAttrs,
                               ident);
+  this->catalog->commitTransaction();
 
 }
 

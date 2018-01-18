@@ -1,6 +1,7 @@
 #ifndef __PGBACKUPCTL_COMMON__
-#include "pg_backup_ctl.hxx"
 #define __PGBACKUPCTL_COMMON__
+
+#include "pg_backup_ctl.hxx"
 
 /* PostgreSQL API includes */
 #include <postgres_fe.h>
@@ -217,7 +218,9 @@ namespace credativ {
 
     static std::string getVersionString();
     static int strToInt(std::string in);
+    static unsigned int strToUInt(std::string in);
     static std::string intToStr(int in);
+    static std::string uintToStr(unsigned int in);
     static boost::posix_time::ptime ISO8601_strTo_ptime(std::string input);
     static std::string ptime_to_str(boost::posix_time::ptime input);
     static void openFile(std::ifstream& file,

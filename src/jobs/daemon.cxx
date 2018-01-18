@@ -16,8 +16,9 @@
 #include <iostream>
 #endif
 
-#include <commands.hxx>
 #include <daemon.hxx>
+
+#define MSG_QUEUE_MAX_TOKEN_SZ 255
 
 using namespace credativ;
 
@@ -142,7 +143,7 @@ void BackgroundWorker::registerMe() {
 
   procInfo->pid = getpid();
   procInfo->archive_id = -1;
-  procInfo->type = CatalogProc::PROC_TYPE_WORKER;
+  procInfo->type = CatalogProc::PROC_TYPE_LAUNCHER;
   procInfo->state = CatalogProc::PROC_STATUS_RUNNING;
   procInfo->started = CPGBackupCtlBase::current_timestamp();
 
@@ -153,6 +154,8 @@ void BackgroundWorker::registerMe() {
   catalog->startTransaction();
 
   try {
+
+    std::cerr << "checking for worker for archive " << procInfo->archive_id << std::endl;
     tempProc = catalog->getProc(procInfo->archive_id,
                                 procInfo->type);
 
@@ -177,7 +180,6 @@ void BackgroundWorker::registerMe() {
 
       } else {
         /* oops, PID seems alive */
-        catalog->commitTransaction();
         std::ostringstream oss;
         oss << "worker with PID "
             << tempProc->pid
@@ -199,9 +201,11 @@ void BackgroundWorker::registerMe() {
     procInfo->pushAffectedAttribute(SQL_PROCS_STATE_ATTNO);
 
     catalog->registerProc(procInfo);
-  } catch (std::exception& e) {
+
+  } catch (CPGBackupCtlFailure& e) {
 
     catalog->rollbackTransaction();
+
     /* don't hide exception from caller */
     throw e;
 
@@ -241,10 +245,10 @@ void BackgroundWorker::initialize() {
 
     this->registerMe();
 
-  } catch(std::exception& e) {
+  } catch(CPGBackupCtlFailure& e) {
 
 #ifdef __DEBUG__
-    cerr << "error forcing shutdown: "
+    cerr << "error registering launcher process, forcing shutdown: "
          << e.what()
          << endl;
 #endif
@@ -370,7 +374,7 @@ static pid_t daemonize(job_info &info) {
     int wstatus;
 
     /*
-     * This is the launcher process.
+     * This is the launcher's parent process.
      *
      * Set the session  leader.
      */
@@ -420,14 +424,25 @@ static pid_t daemonize(job_info &info) {
 
   if (pid == 0) {
     /*
-     * This is the background worker process
+     * This is the initial background worker (aka launcher) process
      */
     BackgroundWorker worker(info);
 
     /*
-     * Register worker in the database.
+     * Flag, indicating that we got a valid command string
+     * from the msg queue.
+     */
+    bool cmd_ok;
+
+    /*
+     * Register launcher in the database.
      */
     worker.initialize();
+
+    /*
+     * Setup message queue.
+     */
+    establish_launcher_cmd_queue(info);
 
     /*
      * Enter processing loop
@@ -447,7 +462,7 @@ static pid_t daemonize(job_info &info) {
         try {
           worker.prepareShutdown();
         } catch (std::exception& e) {
-          cerr << "smart shutdown catched error, resuming: " << endl;
+          cerr << "smart shutdown catched error: " << e.what() << endl;
         }
         break;
       }
@@ -455,6 +470,21 @@ static pid_t daemonize(job_info &info) {
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
         std::cout << "emergency shutdown request received" << std::endl;
         break;
+      }
+
+      /*
+       * Check message queue wether there is something to do.
+       */
+      std::string command = recv_launcher_cmd(info, cmd_ok);
+
+      if (cmd_ok) {
+
+        /*
+         * We got a command string. Establish a command
+         * handler and proceed. We don't do this ourselves, but
+         * fork off a new command process to actually execute the
+         * command.
+         */
       }
 
     }
@@ -467,9 +497,268 @@ static pid_t daemonize(job_info &info) {
 
 }
 
-pid_t launch(job_info& info) {
+void credativ::establish_launcher_cmd_queue(job_info& info) {
+
+  std::string message_queue_name;
+
+  using namespace boost::interprocess;
+
+  try {
+
+    if (info.command_queue == nullptr) {
+
+      /*
+       * Create or open/attach the specified message queue.
+       * Be aware that we need to choose the correct one, since
+       * every launcher and workers are catalog related.
+       */
+      message_queue_name = "pg_backup_ctl::command_queue::"
+        + info.cmdHandle->getCatalog()->name();
+
+      info.command_queue = new message_queue(open_or_create,
+                                             message_queue_name.c_str(),
+                                             255,
+                                             MSG_QUEUE_MAX_TOKEN_SZ);
+    }
+
+  } catch(interprocess_exception &e) {
+
+    /*
+     * Caller shouldn't deal with interprocess_exception directly,
+     * so map it to LauncherFailure.
+     */
+    throw LauncherFailure(e.what());
+  }
+
+}
+
+void credativ::send_launcher_cmd(job_info& info, std::string command) {
+
+  using namespace boost::interprocess;
+
+  /*
+   * Having a uninitialized message queue forces
+   * a generic failure.
+   */
+  if (info.command_queue == nullptr) {
+    throw CPGBackupCtlFailure("could not send command with uninitialized message queue");
+  }
+
+  /*
+   * If command string has zero length, omit the command.
+   */
+  if (command.length() <= 0)
+    return;
+
+  /*
+   * Command can't be larger than MSG_QUEUE_MAX_TOKEN_SZ.
+   */
+  if (command.length() > MSG_QUEUE_MAX_TOKEN_SZ) {
+    throw CPGBackupCtlFailure("token size exceeds max message queue token size");
+  }
+
+  try {
+
+    /*
+     * interprocess_exception is not recognized
+     * by the pg_backup_ctl++ API, map it to a CPGBackupCtlFailure
+     * instead.
+     */
+
+    if (!info.command_queue->try_send(command.data(), command.length(), 0)) {
+      throw CPGBackupCtlFailure("timeout while sending message into message queue");
+    }
+
+  } catch(interprocess_exception &e) {
+    throw CPGBackupCtlFailure(e.what());
+  }
+}
+
+std::string credativ::recv_launcher_cmd(job_info &info, bool &cmd_received) {
+
+  using namespace boost::interprocess;
+
+  std::string command = "";
+
+  /*
+   * Having a uninitialized message queue forces
+   * a generic failure.
+   */
+  if (info.command_queue == nullptr) {
+    throw CPGBackupCtlFailure("could not send command with uninitialized message queue");
+  }
+
+  try {
+
+    /*
+     * Recv buffer. Holds up to MSG_QUEUE_MAX_TOKEN_SZ bytes.
+     */
+    char recvbuffer[MSG_QUEUE_MAX_TOKEN_SZ];
+    message_queue::size_type recv_size;
+    unsigned int prio;
+
+    memset(recvbuffer, 0, MSG_QUEUE_MAX_TOKEN_SZ);
+    if (info.command_queue->try_receive(&recvbuffer, MSG_QUEUE_MAX_TOKEN_SZ, recv_size, prio)) {
+      cmd_received = true;
+    } else {
+      cmd_received = false;
+    }
+
+    command = recvbuffer;
+
+  } catch(interprocess_exception &e) {
+    throw CPGBackupCtlFailure(e.what());
+  }
+
+  return command;
+}
+
+/**
+ * Launches a fully subprocess suitable to
+ * execute background processes. This shouldn't be called
+ * multiple times per catalog instance, since they are going
+ * to share the same message queue otherwise.
+ */
+pid_t credativ::launch(job_info& info) {
 
   daemonize(info);
   return info.pid;
 
+}
+
+void credativ::worker_command(job_info &info) {
+
+}
+
+pid_t credativ::run_process(job_info& info) {
+
+  pid_t pid;
+
+  /*
+   * run_process() requires background job preparation.
+   */
+  if (!info.background_exec)
+    throw WorkerFailure("running a process needs background execution");
+
+  /*
+   * Prepare pipe if requested. This must be happening
+   * in the caller before we fork our background job.
+   */
+  if (info.use_pipe) {
+
+    /*
+     * Output pipe, used to read FROM STDIN in the child
+     */
+    if (::pipe(info.pipe_in) < 0) {
+      std::ostringstream oss;
+      oss << "failed to initialize parent output pipe: " << strerror(errno);
+      throw WorkerFailure(oss.str());
+    }
+
+    if (::pipe(info.pipe_out) < 0) {
+      std::ostringstream oss;
+      oss << "failed to initialize parent input pipe: " << strerror(errno);
+      throw WorkerFailure(oss.str());
+    }
+
+  }
+
+  /*
+   * Do the fork() ...
+   */
+  if ((pid = fork()) == (pid_t) 0) {
+
+    /*
+     * This is the child process, actually executing the executable.
+     */
+    string execstr = info.executable.string();
+
+    /*
+     * Create array for arguments. reserve two extra
+     * pointers, since we store the executable name *and*
+     * the finalizing NULL there, too
+     */
+    char *args[info.execArgs.size() + 2];
+
+    args[0] = new char[execstr.length() + 1];
+    memset(args[0], '\0', execstr.length() + 1);
+    strncpy(args[0], execstr.c_str(), execstr.length());
+
+    for(int i = 1; i <= info.execArgs.size(); i++) {
+      std::string item = info.execArgs[i - 1];
+
+      args[i] = new char[item.length() + 1];
+      memset(args[i], '\0', item.length() + 1);
+      strncpy(args[i], item.c_str(), item.length());
+    }
+
+    args[info.execArgs.size() + 1] = NULL;
+
+    if (info.use_pipe) {
+
+      /*
+       * pipe_in is STDIN, pipe_out is STDOUT
+       */
+      close(info.pipe_in[1]);
+      close(info.pipe_out[0]);
+
+      if (info.pipe_in[0] != STDIN_FILENO) {
+
+        if (dup2(info.pipe_in[0], STDIN_FILENO) != STDIN_FILENO)
+          throw WorkerFailure("could not bind pipe to STDIN");
+
+        close(info.pipe_in[0]);
+      }
+
+      if (info.pipe_out[1] != STDOUT_FILENO) {
+
+        if (dup2(info.pipe_out[1], STDOUT_FILENO) != STDOUT_FILENO)
+          throw WorkerFailure("could not bind pipe to STDOUT");
+
+        close(info.pipe_out[1]);
+      }
+
+    }
+
+    if (info.close_std_fd) {
+
+      close(STDIN_FILENO);
+      close(STDOUT_FILENO);
+      close(STDERR_FILENO);
+
+    }
+
+    if (::execve(execstr.c_str(), args, NULL) < 0) {
+      std::ostringstream oss;
+      oss << "error executing "
+          << info.executable.string()
+          << ": "
+          << strerror(errno);
+      cerr << oss.str() << endl;
+      exit(-1);
+    }
+
+  } else if (pid < (pid_t) 0) {
+
+    /*
+     * Whoops, something went wrong here.
+     */
+    std::ostringstream oss;
+    oss << "error forking process for executable "
+        << info.executable << ": "
+        << strerror(errno);
+    throw WorkerFailure(oss.str());
+  } else {
+
+    /* Parent process */
+
+    /*
+     * Caller closes it's pipe fd's
+     */
+    close(info.pipe_in[0]);
+    close(info.pipe_out[1]);
+
+  }
+
+  return pid;
 }

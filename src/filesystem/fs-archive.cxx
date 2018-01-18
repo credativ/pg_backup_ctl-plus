@@ -875,6 +875,71 @@ off_t BackupFile::current_position() {
 }
 
 /******************************************************************************
+ * ArchivePipedProcess Implementation
+ ******************************************************************************/
+
+ArchivePipedProcess::ArchivePipedProcess(path pathHandle) : BackupFile(pathHandle) {
+
+}
+
+ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
+                                         string executable,
+                                         vector<string> execArgs)
+  : BackupFile(pathHandle) {
+
+  this->executable = executable;
+  this->execArgs = execArgs;
+
+}
+
+ArchivePipedProcess::~ArchivePipedProcess() {
+
+}
+
+void ArchivePipedProcess::open() {
+
+
+  job_info info;
+
+  if (this->isOpen()) {
+    throw CArchiveIssue("attempt to open piped process which is already open");
+  }
+
+  /*
+   * ... just to make sure.
+   */
+  this->opened = false;
+
+  /*
+   * open() needs to do some hard work here, since
+   * it does:
+   *
+   * - fork() the current process into a new one, execute
+   *   the specified binary with exec()
+   *
+   * - establish pipe communication with the pipe
+   *
+   */
+
+  /*
+   * Initialize job handle
+   */
+  info.use_pipe = true;
+  info.background_exec = true;
+
+  info.execArgs = this->execArgs;
+
+  /*
+   * Do the fork()
+   */
+  
+}
+
+size_t ArchivePipedProcess::write(const char *buf, size_t len) {
+
+}
+
+/******************************************************************************
  * Implementation of ArchiveFile
  *****************************************************************************/
 

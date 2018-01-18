@@ -1,4 +1,8 @@
+#ifndef __DAEMON_HXX__
+#define __DAEMON_HXX__
+
 #include <common.hxx>
+#include <jobhandles.hxx>
 #include <BackupCatalog.hxx>
 
 #define DAEMON_RUN 0
@@ -11,38 +15,8 @@ namespace credativ {
 
   /* Forwarded declarations */
   class BackgroundWorker;
-
-  struct job_info {
-
-    /*
-     * PID from fork(). 0 is the background
-     * process, others launcher processes.
-     */
-    pid_t pid;
-
-    /*
-     * Background process detaches from
-     * parent.
-     */
-    bool detach = false;
-
-    /*
-     * Instruct launcher control to close
-     * all standard filehandles. This currently includes:
-     * - STDIN
-     * - STDOUT
-     * - STDERR
-     */
-    bool close_std_fd = false;
-
-    /*
-     * Catalog/Command descriptor. The descriptor usually is
-     * initialized by the caller and passed to the worker
-     * process.
-     */
-    std::shared_ptr<BackgroundWorkerCommandHandle> cmdHandle;
-
-  };
+  class BaseCatalogCommand;
+  class BackupCatalog;
 
   /*
    * Launcher errors are mapped to
@@ -110,6 +84,18 @@ namespace credativ {
      */
     virtual void prepareShutdown();
   };
+
+  pid_t launch(job_info& info);
+  void establish_launcher_cmd_queue(job_info &info);
+  void send_launcher_cmd(job_info& info, std::string command);
+  std::string recv_launcher_cmd(job_info &info, bool &cmd_received);
+  void worker_command(job_info &info);
+
+  /**
+   * Runs a blocking child subprocess.
+   */
+  pid_t run_process(job_info &info);
+
 }
 
-extern pid_t launch(job_info& info);
+#endif

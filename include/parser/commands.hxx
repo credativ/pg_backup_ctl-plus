@@ -11,6 +11,13 @@ using namespace credativ;
 
 namespace credativ {
 
+  /* forwarded declarations */
+  class BackupCatalog;
+  class PGStream;
+  class BackupDirectory;
+  class ArchiveLogDirectory;
+  class TransactionLogBackup;
+
   class BaseCatalogCommand : public CatalogDescr {
   protected:
     /**
@@ -34,6 +41,15 @@ namespace credativ {
      * supported are: stop signal.
      */
     virtual void assignSigStopHandler(JobSignalHandler *handler);
+  };
+
+  class ExecCommandCatalogCommand : public BaseCatalogCommand {
+  public:
+    ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    ExecCommandCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    ExecCommandCatalogCommand();
+
+    virtual void execute(bool flag);
   };
 
   class DropConnectionCatalogCommand : public BaseCatalogCommand {
@@ -302,4 +318,5 @@ namespace credativ {
   };
 
 }
+
 #endif

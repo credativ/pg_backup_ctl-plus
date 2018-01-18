@@ -443,12 +443,28 @@ string CPGBackupCtlBase::ptime_to_str(ptime input) {
   return oss.str();
 }
 
+unsigned int CPGBackupCtlBase::strToUInt(std::string in) {
+
+  std::istringstream iss(in);
+  unsigned int result;
+  iss >> result;
+
+  return result;
+}
+
 int CPGBackupCtlBase::strToInt(std::string in) {
   std::istringstream iss(in);
   int result;
   iss >> result;
 
   return result;
+}
+
+string CPGBackupCtlBase::uintToStr(unsigned int in) {
+  stringstream ss;
+
+  ss << in;
+  return ss.str();
 }
 
 string CPGBackupCtlBase::intToStr(int in) {
