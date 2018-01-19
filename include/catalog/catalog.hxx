@@ -1,7 +1,7 @@
 #ifndef __CATALOG__
 #define __CATALOG__
 
-#define CATALOG_MAGIC 102
+#define CATALOG_MAGIC 103
 
 /*
  * Archive catalog entity
@@ -125,11 +125,12 @@
 #define SQL_PROCS_TYPE_ATTNO 2
 #define SQL_PROCS_STARTED_ATTNO 3
 #define SQL_PROCS_STATE_ATTNO 4
+#define SQL_PROCS_SHM_KEY_ATTNO 5
 
 /*
  * Keep number of columns in sync with above definitions
  */
-#define SQL_PROCS_NCOLS 5
+#define SQL_PROCS_NCOLS 6
 
 /*
  * connections catalog entry

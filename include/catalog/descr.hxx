@@ -245,6 +245,7 @@ namespace credativ {
     std::string type;
     std::string started;
     std::string state;
+    key_t shm_key;
 
   };
 

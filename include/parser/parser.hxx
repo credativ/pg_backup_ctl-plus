@@ -47,6 +47,7 @@ namespace credativ {
      * - Stop signal (TERM, INT) handlers
      */
     JobSignalHandler *stopHandler = nullptr;
+    JobSignalHandler *intHandler  = nullptr;
   public:
 
     PGBackupCtlCommand(CatalogTag tag);
@@ -67,9 +68,15 @@ namespace credativ {
 
     /**
      * Assigns a stop signal handler to a command instance.
-     * This should be used to react on SIGTERM or SIGINT
+     * This should be used to react on SIGTERM signals.
      */
     virtual void assignSigStopHandler(JobSignalHandler *handler);
+
+    /*
+     * Assigns an interruption signal handler to a command instance.
+     * This should be used to react on SIGINT signals
+     */
+    virtual void assignSigIntHandler(JobSignalHandler *handler);
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

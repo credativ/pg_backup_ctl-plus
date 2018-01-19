@@ -17,6 +17,8 @@
 #endif
 
 #include <daemon.hxx>
+#include <parser.hxx>
+#include <commands.hxx>
 
 #define MSG_QUEUE_MAX_TOKEN_SZ 255
 
@@ -29,6 +31,14 @@ extern int errno;
  * Forwarded declarations.
  */
 static pid_t daemonize(job_info &info);
+
+/*
+ * Signal handler objects
+ */
+AtomicSignalHandler *termHandler = new AtomicSignalHandler(&_pgbckctl_shutdown_mode,
+                                                           DAEMON_TERM_NORMAL);
+AtomicSignalHandler *emergencyHandler = new AtomicSignalHandler(&_pgbckctl_shutdown_mode,
+                                                                DAEMON_TERM_EMERGENCY);
 
 BackgroundWorker::BackgroundWorker(job_info info) {
 
@@ -146,6 +156,7 @@ void BackgroundWorker::registerMe() {
   procInfo->type = CatalogProc::PROC_TYPE_LAUNCHER;
   procInfo->state = CatalogProc::PROC_STATUS_RUNNING;
   procInfo->started = CPGBackupCtlBase::current_timestamp();
+  procInfo->shm_key = -1;
 
   /*
    * Check if there is a catalog entry for this kind
@@ -199,6 +210,7 @@ void BackgroundWorker::registerMe() {
     procInfo->pushAffectedAttribute(SQL_PROCS_TYPE_ATTNO);
     procInfo->pushAffectedAttribute(SQL_PROCS_STARTED_ATTNO);
     procInfo->pushAffectedAttribute(SQL_PROCS_STATE_ATTNO);
+    procInfo->pushAffectedAttribute(SQL_PROCS_SHM_KEY_ATTNO);
 
     catalog->registerProc(procInfo);
 
@@ -254,6 +266,19 @@ void BackgroundWorker::initialize() {
 #endif
 
     _pgbckctl_shutdown_mode = DAEMON_TERM_EMERGENCY;
+  }
+
+}
+
+LauncherSHM::LauncherSHM() {
+
+  this->shm = nullptr;
+}
+
+LauncherSHM::~LauncherSHM() {
+
+  if (this->shm != nullptr) {
+    delete this->shm;
   }
 
 }
@@ -439,6 +464,9 @@ static pid_t daemonize(job_info &info) {
      */
     worker.initialize();
 
+    /* mark this as a background worker */
+      info.background_exec = true;
+
     /*
      * Setup message queue.
      */
@@ -449,7 +477,7 @@ static pid_t daemonize(job_info &info) {
      */
     while(true) {
 
-      usleep(10);
+      usleep(1000);
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
         std::cout << "shutdown request received" << std::endl;
@@ -485,6 +513,31 @@ static pid_t daemonize(job_info &info) {
          * fork off a new command process to actually execute the
          * command.
          */
+        try {
+
+          cerr << "BACKGROUND COMMAND: " << command << endl;
+
+          /*
+           * Execute the command
+           */
+          if (worker_command(info, command) == (pid_t) 0) {
+
+            /* child should exit after having done its duty */
+            exit(0);
+          }
+
+        } catch (CParserIssue &pe) {
+          cerr << "parser failed: " << pe.what() << endl;
+          exit(DAEMON_FAILURE);
+        } catch (WorkerFailure &e) {
+          /* something shitty has happend ... */
+          cerr << "fork() failed: " << e.what() << endl;
+          exit(DAEMON_FAILURE);
+        } catch (std::exception &e) {
+          cerr << "background worker failure: " << e.what() << endl;
+          exit(DAEMON_FAILURE);
+        }
+
       }
 
     }
@@ -626,10 +679,91 @@ pid_t credativ::launch(job_info& info) {
 
 }
 
-void credativ::worker_command(job_info &info) {
+/**
+ * worker_command() runs from the launcher and
+ * forks a new process executing the
+ * the command passed to info. If info doesn't
+ * hold a proper command handle, nothing will
+ * be forked or executed (so this is effectively
+ * a no-op then).
+ *
+ * The command passed to worker_command() should be
+ * a command understood by the PGBackupCtlParser. Thus, the
+ * caller should be prepared to handle parser errors.
+ */
+pid_t credativ::worker_command(job_info &info, std::string command) {
 
+  pid_t pid;
+
+  if (info.cmdHandle == nullptr)
+    return (pid_t) -1;
+
+  if (!info.background_exec)
+    return (pid_t) -1;
+
+  if ((pid = fork()) == (pid_t) 0) {
+
+    /* worker child */
+    PGBackupCtlParser parser;
+    std::shared_ptr<PGBackupCtlCommand> bgrnd_cmd_handler;
+    JobSignalHandler *cmdSignalHandler;
+    CatalogTag cmdType;
+
+    cerr << "background job executing command " << command << endl;
+
+    /*
+     * Parse command.
+     */
+    parser.parseLine(command);
+
+    /*
+     * Parser has instantiated a command handler
+     * iff success.
+     */
+    bgrnd_cmd_handler = parser.getCommand();
+
+    /*
+     * Set signal handlers.
+     */
+    cmdSignalHandler = dynamic_cast<JobSignalHandler *>(termHandler);
+    bgrnd_cmd_handler->assignSigStopHandler(cmdSignalHandler);
+
+    cmdSignalHandler = dynamic_cast<JobSignalHandler *>(emergencyHandler);
+    bgrnd_cmd_handler->assignSigIntHandler(cmdSignalHandler);
+
+    /*
+     * Now it's time to execute the command.
+     */
+    cmdType = bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
+
+    /* Exit, if done */
+    exit(0);
+
+  } else if (pid < (pid_t) 0) {
+
+    /*
+     * fork() error, this is severe, so report
+     * that by throwing a worker exception. This
+     * affects the launcher process directly!
+     */
+
+  } else {
+
+    /*
+     * Launcher process, here's actually
+     * nothing to do.
+     */
+
+  }
+  return pid;
 }
 
+/**
+ * run_process is supposed to run an executable
+ * in a background process via execve() and
+ * a bidirectional pipe where the caller
+ * can write to and read from.
+ */
 pid_t credativ::run_process(job_info& info) {
 
   pid_t pid;
@@ -684,7 +818,7 @@ pid_t credativ::run_process(job_info& info) {
     memset(args[0], '\0', execstr.length() + 1);
     strncpy(args[0], execstr.c_str(), execstr.length());
 
-    for(int i = 1; i <= info.execArgs.size(); i++) {
+    for(unsigned int i = 1; i <= info.execArgs.size(); i++) {
       std::string item = info.execArgs[i - 1];
 
       args[i] = new char[item.length() + 1];

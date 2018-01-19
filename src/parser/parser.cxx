@@ -167,20 +167,20 @@ namespace credativ {
          */
         cmd_alter_archive_opt = identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          > no_case[ lexeme[ lit("SET") ] ]
-          ^ directory
-          [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
-          ^ ( ( hostname
-                [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-                ^ database
-                [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-                ^ username
-                [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-                ^ portnumber
-                [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
-              |
-              ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
-                [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
+          > ( no_case[ lexeme[ lit("SET") ] ]
+              ^ ( directory
+                  [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ] )
+              ^ ( ( hostname
+                    [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                    ^ database
+                    [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                    ^ username
+                    [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                    ^ portnumber
+                    [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+                  |
+                  ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
+                    [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) ) );
 
         /*
          * START LAUNCHER command
@@ -198,8 +198,10 @@ namespace credativ {
           > no_case[ lexeme[ lit("FOR ARCHIVE") ] ]
           > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          > -( no_case[lexeme[ lit("RESTART") ]] )
-          [ boost::bind(&CatalogDescr::setStreamingForceXLOGPositionRestart, &cmd, true) ];
+          > -( no_case[lexeme[ lit("RESTART") ]]
+               [ boost::bind(&CatalogDescr::setStreamingForceXLOGPositionRestart, &cmd, true) ] )
+          > -( no_case[lexeme[ lit("NODETACH") ]]
+               [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
 
         /*
          * CREATE, DROP, ALTER, START and LIST tokens...
@@ -561,6 +563,15 @@ void PGBackupCtlCommand::assignSigStopHandler(JobSignalHandler *handler) {
   this->stopHandler = handler;
 }
 
+void PGBackupCtlCommand::assignSigIntHandler(JobSignalHandler *handler) {
+
+  if (handler == nullptr)
+    throw CPGBackupCtlFailure("attempt to assign uninitialized signal handler");
+
+  this->intHandler = handler;
+}
+
+
 CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
 
   shared_ptr<CatalogDescr> descr = nullptr;
@@ -603,9 +614,14 @@ CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
     execCmd = dynamic_cast<BaseCatalogCommand*>(descr.get());
 
     /*
-     * Assign stop signal handler.
+     * Assign signal handlers, if present.
      */
-    execCmd->assignSigStopHandler(this->stopHandler);
+    if (this->stopHandler != nullptr)
+      execCmd->assignSigStopHandler(this->stopHandler);
+
+    if (this->intHandler != nullptr)
+      execCmd->assignSigIntHandler(this->intHandler);
+
     execCmd->setCatalog(catalog);
     execCmd->execute(false);
 

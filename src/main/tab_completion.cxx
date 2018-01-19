@@ -151,7 +151,11 @@ completion_word start_basebackup_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start
 completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebackup_archive },
                                            { "", COMPL_EOL, NULL } };
 
-completion_word start_streaming_option[] = { { "RESTART", COMPL_KEYWORD, NULL },
+completion_word start_streaming_option_detach[] = { { "NODETACH", COMPL_KEYWORD, NULL },
+                                                     { "", COMPL_EOL, NULL } };
+
+completion_word start_streaming_option[] = { { "RESTART", COMPL_KEYWORD, start_streaming_option_detach },
+                                             { "NODETACH", COMPL_KEYWORD, NULL },
                                              { "", COMPL_EOL, NULL } };
 
 completion_word start_streaming_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_streaming_option },

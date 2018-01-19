@@ -25,6 +25,11 @@ namespace credativ {
      */
     JobSignalHandler *stopHandler = nullptr;
 
+    /**
+     * Internal reference to sig int handler.
+     */
+    JobSignalHandler *intHandler = nullptr;
+
     std::shared_ptr<BackupCatalog> catalog = NULL;
     virtual void copy(CatalogDescr& source);
   public:
@@ -36,11 +41,14 @@ namespace credativ {
     virtual std::shared_ptr<BackupCatalog> getCatalog();
 
     /**
-     * Assigns specific signal handler objects to
-     * a BaseCatalogCommand descendant instance. Currently
-     * supported are: stop signal.
+     * Assign a SIGTERM signal handler object.
      */
     virtual void assignSigStopHandler(JobSignalHandler *handler);
+
+    /**
+     * Assign a SIGINT signal handler object.
+     */
+    virtual void assignSigIntHandler(JobSignalHandler *handler);
   };
 
   class ExecCommandCatalogCommand : public BaseCatalogCommand {

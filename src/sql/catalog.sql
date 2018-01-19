@@ -88,7 +88,8 @@ CREATE TABLE procs(
        archive_id integer not null default -1,
        type text not null CHECK(type IN ('launcher', 'streamer')),
        started text not null,
-       state text not null default 'running'
+       state text not null default 'running',
+       shm_key integer default NULL
 );
 
 CREATE UNIQUE INDEX procs_archive_id_type_idx ON procs(archive_id, type);

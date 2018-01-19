@@ -93,7 +93,8 @@ std::vector<std::string>BackupCatalog::procsCatalogCols =
     "archive_id",
     "type",
     "started",
-    "state"
+    "state",
+    "shm_key"
   };
 
 PushableCols::PushableCols() {}
@@ -508,6 +509,16 @@ std::shared_ptr<CatalogProc> BackupCatalog::fetchCatalogProcData(sqlite3_stmt *s
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
         procInfo->state = (char *) sqlite3_column_text(stmt, currindex);
       break;
+
+    case SQL_PROCS_SHM_KEY_ATTNO:
+      /* can be NULL, so check for NULL value. In case it's null, assign
+       * a negative value, indicating that here's nothing to read */
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        procInfo->shm_key = (key_t) sqlite3_column_int(stmt, currindex);
+      else
+        procInfo->shm_key = (key_t) -1;
+      break;
+
     default:
       /* oops, should we throw a CCatalogIssue exception ? */
       break;
@@ -1048,6 +1059,8 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
 
   std::string backupCols;
   std::string tblspcCols;
+  std::vector<std::shared_ptr<BaseBackupDescr>> list;
+
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
   }
@@ -1078,6 +1091,7 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
   tblspcCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
                                                tblspcAttrs);
 
+  return list;
 }
 
 void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
@@ -1085,7 +1099,7 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
   sqlite3_stmt *stmt;
   ostringstream updateSQL;
   int rc;
-  int boundCols;
+  unsigned int boundCols = 0;
 
   if(!this->available())
     throw CCatalogIssue("catalog database not opened");
@@ -1121,7 +1135,8 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
   /*
    * ...and attach the where clause
    */
-  updateSQL << " WHERE id = ?" << (++boundCols) << ";";
+  ++boundCols;
+  updateSQL << " WHERE id = ?" << boundCols << ";";
 
 #ifdef __DEBUG__
   cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
@@ -1661,6 +1676,10 @@ int BackupCatalog::SQLbindProcsAttributes(std::shared_ptr<CatalogProc> procInfo,
       sqlite3_bind_text(stmt, result,
                         procInfo->state.c_str(),
                         -1, SQLITE_STATIC);
+      break;
+
+    case SQL_PROCS_SHM_KEY_ATTNO:
+      sqlite3_bind_int(stmt, result, procInfo->shm_key);
       break;
 
     default:
@@ -2499,7 +2518,7 @@ std::shared_ptr<CatalogProc> BackupCatalog::getProc(int archive_id, std::string 
 
   std::string query =
     "SELECT pid, archive_id, type, "
-    "started, state FROM procs WHERE archive_id = ?1 "
+    "started, state, shm_key FROM procs WHERE archive_id = ?1 "
     "AND type = ?2;";
 
   procInfo = std::make_shared<CatalogProc>();
@@ -2537,6 +2556,7 @@ std::shared_ptr<CatalogProc> BackupCatalog::getProc(int archive_id, std::string 
   attrs.push_back(SQL_PROCS_TYPE_ATTNO);
   attrs.push_back(SQL_PROCS_STARTED_ATTNO);
   attrs.push_back(SQL_PROCS_STATE_ATTNO);
+  attrs.push_back(SQL_PROCS_SHM_KEY_ATTNO);
 
   /*
    * Bind WHERE predicate values...
@@ -2584,6 +2604,7 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
   int rc;
   sqlite3_stmt *stmt;
   std::ostringstream query;
+  std::vector<int> attrs = procInfo->getAffectedAttributes();
 
   if (!this->available())
     throw CCatalogIssue("could not register process handle in catalog: database not opened");
@@ -2593,8 +2614,17 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
    */
   query
     << "INSERT INTO procs("
-    "pid, archive_id, type, started, state)"
-    " VALUES(?, ?, ?, ?, ?);";
+    << BackupCatalog::SQLgetColumnList(SQL_PROCS_ENTITY, attrs)
+    << ") VALUES(";
+
+  for (unsigned int i = 0; i < attrs.size(); i++) {
+    query << "?" << (i + 1);
+    if (i < (attrs.size() - 1))
+      query << ", ";
+  }
+
+  query << ")";
+
   rc = sqlite3_prepare_v2(this->db_handle,
                           query.str().c_str(),
                           -1,
@@ -2621,7 +2651,7 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
    * Bind values.
    */
   this->SQLbindProcsAttributes(procInfo,
-                               procInfo->getAffectedAttributes(),
+                               attrs,
                                stmt,
                                Range(1, 5));
 
@@ -2718,7 +2748,7 @@ void BackupCatalog::updateProc(std::shared_ptr<CatalogProc> procInfo,
   int rc;
   sqlite3_stmt *stmt;
   std::ostringstream updateSQL;
-  int boundCols;
+  unsigned int boundCols = 0;
 
   if (!this->available())
     throw CCatalogIssue("could not update process handle: database not opened");
@@ -2746,8 +2776,10 @@ void BackupCatalog::updateProc(std::shared_ptr<CatalogProc> procInfo,
   /*
    * ... don't forget the WHERE clause ...
    */
-  updateSQL << " WHERE pid = ?" << (++boundCols)
-            << "AND archive_id = ?" << (++boundCols) << ";";
+  ++boundCols;
+  updateSQL << " WHERE pid = ?" << boundCols;
+  ++boundCols;
+  updateSQL << "AND archive_id = ?" << boundCols << ";";
 
 #ifdef __DEBUG__
   cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
@@ -3189,7 +3221,7 @@ void BackupCatalog::updateCatalogConnection(std::shared_ptr<ConnectionDescr> con
   sqlite3_stmt *stmt;
   ostringstream updateSQL;
   int rc;
-  int boundCols;
+  unsigned int boundCols = 0;
   std::vector<int> attrs;
 
   if (!this->available())
@@ -3217,9 +3249,12 @@ void BackupCatalog::updateCatalogConnection(std::shared_ptr<ConnectionDescr> con
   /*
    * ...attach WHERE clause.
    */
+  ++boundCols;
   updateSQL << " WHERE archive_id = (SELECT id FROM archive WHERE name = ?"
-            << (++boundCols)
-            << ") AND type = ?" << (++boundCols)
+            << boundCols;
+  ++boundCols;
+  updateSQL << ") AND type = ?"
+            << boundCols
             << ";";
 
   /*

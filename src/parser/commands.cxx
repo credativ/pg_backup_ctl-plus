@@ -51,6 +51,19 @@ void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
   this->stopHandler = handler;
 }
 
+void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
+
+  /*
+   * Setting a nullptr to our internal sig int handler
+   * is treated as an general error.
+   */
+  if (handler == nullptr) {
+    throw CPGBackupCtlFailure("attempt to assign uninitialized stop signal handler");
+  }
+
+  this->intHandler = handler;
+}
+
 ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
@@ -425,7 +438,7 @@ void StartLauncherCatalogCommand::execute(bool flag) {
      */
     establish_launcher_cmd_queue(job_info);
     cout << "sending test message to message queue...";
-    send_launcher_cmd(job_info, "status update force");
+    //    send_launcher_cmd(job_info, "status update force");
     cout << "done" << endl;
 
   } else {
@@ -788,6 +801,41 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
   if (!this->catalog->available()) {
     this->catalog->open_rw();
+  }
+
+  /*
+   * Check if we are supposed to run a background streaming
+   * process via launcher.
+   */
+  if (this->detach) {
+
+    job_info jobDescr;
+
+    /*
+     * Rebuild the command from scratch.
+     */
+    std::string archive_name = this->archive_name;
+    std::ostringstream cmd_str;
+
+    cerr << "DETACHING requested" << endl;
+
+    cmd_str << "START STREAMING FOR ARCHIVE "
+            << archive_name;
+
+    if (this->forceXLOGPosRestart) {
+      cmd_str << " RESTART";
+    }
+
+    cmd_str << " NODETACH";
+
+    /* Assign a dummy catalog command handle to the job descriptor */
+    jobDescr.cmdHandle = std::make_shared<BackgroundWorkerCommandHandle>(this->catalog);
+    establish_launcher_cmd_queue(jobDescr);
+    send_launcher_cmd(jobDescr, cmd_str.str());
+
+    /* All done, we should exit this command handler */
+    return;
+
   }
 
   /*

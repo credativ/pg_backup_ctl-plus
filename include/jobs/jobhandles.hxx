@@ -2,6 +2,7 @@
 #define __HAVE_JOBHANDLES_HXX__
 
 #include <boost/interprocess/ipc/message_queue.hpp>
+#include <boost/interprocess/xsi_shared_memory.hpp>
 //#include <BackupCatalog.hxx>
 #include <commands.hxx>
 
@@ -86,6 +87,21 @@ namespace credativ {
 
   } job_info;
 
+  /*
+   * A wrapper for shared memory access.
+   *
+   * LauncherSHM encapsulates routines to access a shared
+   * memory area used by a launcher process.
+   */
+  class LauncherSHM {
+  protected:
+
+    boost::interprocess::xsi_shared_memory *shm;
+
+  public:
+    LauncherSHM();
+    virtual ~LauncherSHM();
+  };
 }
 
 #endif

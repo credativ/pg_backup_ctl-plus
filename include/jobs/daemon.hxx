@@ -44,8 +44,10 @@ namespace credativ {
    */
   class BackgroundWorker {
   private:
+
     bool checkPID(pid_t pid);
     void registerMe();
+
   protected:
     /*
      * Structure holding compacted status information
@@ -89,7 +91,7 @@ namespace credativ {
   void establish_launcher_cmd_queue(job_info &info);
   void send_launcher_cmd(job_info& info, std::string command);
   std::string recv_launcher_cmd(job_info &info, bool &cmd_received);
-  void worker_command(job_info &info);
+  pid_t worker_command(job_info &info, std::string command);
 
   /**
    * Runs a blocking child subprocess.

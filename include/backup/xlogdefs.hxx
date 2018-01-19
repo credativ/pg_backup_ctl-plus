@@ -87,7 +87,9 @@ namespace credativ {
     /**
      * Operator to assign streamed byte buffer
      */
-    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer) {};
+    virtual XLOGStreamMessage& operator<<(MemoryBuffer &srcbuffer) {
+      throw XLOGMessageFailure("stream operator not implemented");
+    }
 
     /**
      * A factory method, returning any message instance identified

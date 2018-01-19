@@ -34,6 +34,51 @@ bool ConditionalSignalHandler::ref(volatile bool *bvalue) {
 
 bool ConditionalSignalHandler::check() {
 
+  /*
+   * Having a NULL pointer here causes
+   * chech() to always return FALSE.
+   */
+  if (this->ref_bvalue == nullptr)
+    return false;
+
   return *(this->ref_bvalue);
 
+}
+
+AtomicSignalHandler::AtomicSignalHandler() {
+
+  this->ref_var = nullptr;
+  this->ref_value = -1;
+
+}
+
+AtomicSignalHandler::AtomicSignalHandler(volatile sig_atomic_t *ref_var,
+                                         int ref_value) {
+
+  this->ref_var = ref_var;
+  this->ref_value = ref_value;
+
+}
+
+AtomicSignalHandler::~AtomicSignalHandler() {}
+
+int AtomicSignalHandler::ref(volatile sig_atomic_t *ref_var,
+                             int ref_value) {
+
+  if (ref_var != nullptr) {
+    this->ref_var = ref_var;
+    this->ref_value = ref_value;
+  }
+
+  return this->ref_value;
+
+}
+
+bool AtomicSignalHandler::check() {
+
+  if (this->ref_var != nullptr) {
+    return (*(this->ref_var) == this->ref_value);
+  }
+
+  return false;
 }
