@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/shm.h> /* for IPC_STAT */
 #include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,9 +47,43 @@ BackgroundWorker::BackgroundWorker(job_info info) {
   this->catalog = this->ji.cmdHandle->getCatalog();
   this->procInfo = std::make_shared<CatalogProc>();
 
+  /*
+   * XXX: Probably we should use getCatalog()->fullname() here, since
+   *      we risk clashes with sqlite files equally named but residing
+   *      in different locations.
+   */
+  this->my_shm.attach(this->ji.cmdHandle->getCatalog()->fullname(), false);
+
+  /*
+   * Worker shared memory area.
+   */
+  this->worker_shm = new WorkerSHM();
+  this->worker_shm->attach(this->ji.cmdHandle->getCatalog()->fullname(), false);
+
 }
 
 BackgroundWorker::~BackgroundWorker() {
+
+  this->my_shm.detach();
+  this->worker_shm->detach();
+
+}
+
+void BackgroundWorker::release_launcher_role() {
+
+  this->my_shm.detach();
+
+}
+
+WorkerSHM *BackgroundWorker::workerSHM() {
+
+  return this->worker_shm;
+
+}
+
+job_info BackgroundWorker::jobInfo() {
+
+  return this->ji;
 
 }
 
@@ -124,12 +159,6 @@ void BackgroundWorker::registerMe() {
    */
 
   /*
-   * Register a dummy worker for now. This means
-   * this worker is *not* associated with a specific
-   * archive.
-   */
-
-  /*
    * Registering a worker needs to recognize the
    * following possible preconditions:
    *
@@ -156,7 +185,14 @@ void BackgroundWorker::registerMe() {
   procInfo->type = CatalogProc::PROC_TYPE_LAUNCHER;
   procInfo->state = CatalogProc::PROC_STATUS_RUNNING;
   procInfo->started = CPGBackupCtlBase::current_timestamp();
-  procInfo->shm_key = -1;
+
+  /*
+   * It's time to remember our PID
+   * into our control memory segment.
+   */
+  this->my_shm.setPID(procInfo->pid);
+  procInfo->shm_key = this->my_shm.get_shmkey();
+  procInfo->shm_id  = this->my_shm.get_shmid();
 
   /*
    * Check if there is a catalog entry for this kind
@@ -211,6 +247,7 @@ void BackgroundWorker::registerMe() {
     procInfo->pushAffectedAttribute(SQL_PROCS_STARTED_ATTNO);
     procInfo->pushAffectedAttribute(SQL_PROCS_STATE_ATTNO);
     procInfo->pushAffectedAttribute(SQL_PROCS_SHM_KEY_ATTNO);
+    procInfo->pushAffectedAttribute(SQL_PROCS_SHM_ID_ATTNO);
 
     catalog->registerProc(procInfo);
 
@@ -255,6 +292,18 @@ void BackgroundWorker::initialize() {
    */
   try {
 
+    /*
+     * Sanity check, are we still alone?
+     */
+    if (this->my_shm.getNumberOfAttached() > 1) {
+      std::ostringstream errstr;
+
+      errstr << "launcher for catalog instance "
+             << this->ji.cmdHandle->getCatalog()->name()
+             << " already running";
+      throw WorkerFailure("launcher for catalog instance already running");
+    }
+
     this->registerMe();
 
   } catch(CPGBackupCtlFailure& e) {
@@ -270,9 +319,445 @@ void BackgroundWorker::initialize() {
 
 }
 
-LauncherSHM::LauncherSHM() {
+/******************************************************************************
+ * ProcessSHM & objects implementation start
+ ******************************************************************************/
+
+ProcessSHM::ProcessSHM() {
+
+}
+
+ProcessSHM::~ProcessSHM() {
+
+}
+
+shmatt_t ProcessSHM::getNumberOfAttached(int check_shmid) {
+
+  shmatt_t nattach = 0;
+  shmid_ds shmstat;
+
+  /*
+   * We need to call shmctl() directly, since there seems to be
+   * no boost::interprocess API for it.
+   */
+
+  /* perform the IPC_STAT operation */
+  if (shmctl(check_shmid, IPC_STAT, &shmstat) >= 0) {
+
+    /* shmstat contains all necessary information */
+    nattach = shmstat.shm_nattch;
+
+  } else {
+
+    /*
+     * Oops, something went wrong here, notify
+     * the caller via SHMFailure exception.
+     */
+    std::ostringstream oss;
+    oss << "could not stat launcher shared segment: "
+        << strerror(errno);
+    throw SHMFailure(oss.str());
+  }
+
+  return nattach;
+
+}
+
+shmatt_t ProcessSHM::getNumberOfAttached() {
+
+  shmatt_t nattach = 0;
+  int shmid;
+
+  if (this->shm == nullptr) {
+    throw SHMFailure("can't get nattach from shared memory segment: not initialized");
+  }
+
+  shmid = this->shm->get_shmid();
+  nattach = LauncherSHM::getNumberOfAttached(shmid);
+
+  return nattach;
+
+}
+
+key_t ProcessSHM::get_shmkey() {
+
+  if (this->shm == nullptr) {
+    return (key_t) -1;
+  }
+
+  return this->shm_key;
+}
+
+int ProcessSHM::get_shmid() {
+
+  if (this->shm == nullptr) {
+    return -1;
+  }
+
+  return this->shm->get_shmid();
+}
+
+std::string ProcessSHM::getIdent() {
+  return this->shm_ident;
+}
+
+/******************************************************************************
+ * WorkerSHM & objects implementation start
+ ******************************************************************************/
+
+WorkerSHM::WorkerSHM() : ProcessSHM() {
 
   this->shm = nullptr;
+  this->shm_mem_ptr = nullptr;
+
+}
+
+WorkerSHM::~WorkerSHM() {
+
+  if (this->shm != nullptr) {
+    delete this->shm;
+  }
+
+}
+
+size_t WorkerSHM::calculateSHMsize() {
+
+  /*
+   * Caluclate the shared memory size.
+   *
+   */
+  return (sizeof(shm_worker_area) * this->max_workers)
+    + sizeof(boost::interprocess::interprocess_mutex)
+    + 4;
+}
+
+bool WorkerSHM::attach(std::string catalog, bool attach_only) {
+
+  using namespace boost::interprocess;
+
+  if (this->shm != nullptr) {
+    /* already initialized, consider this as no-op */
+    return true;
+  }
+
+  /*
+   * Generate the worker shared memory key.
+   */
+  std::ostringstream keystr;
+  bool result = false;
+
+  keystr << catalog;
+
+  xsi_key key = xsi_key(keystr.str().c_str(), 2);
+  std::ostringstream shm_ctl_name;
+  std::ostringstream mtx_ctl_name;
+
+  /*
+   * Calculate requested shared memory size.
+   */
+  this->size = 10485760; /*this->calculateSHMsize();*/
+
+  /*
+   * Internal handle not yet connected. Either create one or,
+   * if attach_only is set to true, just attach.
+   */
+  if (attach_only) {
+
+    try {
+      this->shm = new managed_xsi_shared_memory(open_only, key);
+    } catch(interprocess_exception &ie) {
+      if (ie.get_error_code() == not_found_error) {
+        result = false;
+        return result;
+      } else {
+        throw ie;
+      }
+    }
+  } else {
+
+    this->shm = new managed_xsi_shared_memory(open_or_create,
+                                              key,
+                                              this->size);
+  }
+
+  /*
+   * Stick mutex into shared memory.
+   */
+  mtx_ctl_name << catalog << "_mtx";
+  this->mtx
+    = this->shm->find_or_construct<interprocess_mutex>(mtx_ctl_name.str().c_str())();
+
+  /*
+   * Create worker control area in shared memory. This is basically an
+   * array with up to max_worker entries. Also initialize
+   * the upper index and make sure the last is set to 0.
+   */
+  shm_ctl_name << catalog << "_worker_area";
+  this->shm_mem_ptr
+    = this->shm->find_or_construct<shm_worker_area>(shm_ctl_name.str().c_str())[this->max_workers]();
+
+  this->upper = this->max_workers - 1;
+
+  /*
+   * Don't forget identifiers...
+   */
+  this->shm_ident = shm_ctl_name.str();
+  this->shm_key   = key.get_key();
+
+  /*
+   * Looks good so far ...
+   */
+  result = true;
+  return result;
+}
+
+void WorkerSHM::unlock() {
+
+  if (this->shm == nullptr) {
+    throw SHMFailure("failed to unlock shared memory: not attached");
+  }
+
+  this->mtx->unlock();
+}
+
+void WorkerSHM::lock() {
+
+  if (this->shm == nullptr) {
+    throw SHMFailure("failed to lock shared memory: not attached");
+  }
+
+  this->mtx->lock();
+}
+
+void WorkerSHM::write(unsigned int slot_index,
+                      shm_worker_area &item) {
+
+  shm_worker_area *ptr = NULL;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to write worker slot from uninitialized shared memory");
+  }
+
+  /*
+   * Reference the worker slot at the
+   * specified slot_index. If slot_index is larger
+   * than our upper index, throw.
+   */
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index " << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  if (ptr != NULL) {
+    ptr->pid = item.pid;
+    ptr->cmdType = item.cmdType;
+    ptr->started = item.started;
+  }
+
+}
+
+bool WorkerSHM::isEmpty(unsigned int slot_index) {
+
+  shm_worker_area *ptr;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index "
+        << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+  return ( (ptr->pid == 0) && (ptr->cmdType == EMPTY_DESCR) );
+
+}
+
+void WorkerSHM::reset() {
+
+  shm_worker_area *ptr;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  for (unsigned int i = 0; i <= this->upper; i++) {
+
+    ptr = (shm_worker_area *)(this->shm_mem_ptr + i);
+
+    if (ptr != NULL) {
+      ptr->pid = 0;
+      ptr->cmdType = EMPTY_DESCR;
+      ptr->started = boost::posix_time::ptime();
+    }
+
+  }
+
+}
+
+void WorkerSHM::free(unsigned int slot_index) {
+
+  shm_worker_area *ptr;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index "
+        << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  ptr->pid = 0;
+  ptr->cmdType = EMPTY_DESCR;
+  ptr->started = boost::posix_time::ptime();
+
+  this->allocated--;
+
+}
+
+unsigned int WorkerSHM::allocate(shm_worker_area &item) {
+
+  unsigned int result = 0;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  result = this->getFreeIndex();
+  this->write(result, item);
+  this->allocated++;
+
+  return result;
+
+}
+
+unsigned int WorkerSHM::getFreeIndex() {
+
+  shm_worker_area *ptr = nullptr;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  for (unsigned int i = 0; i <= this->upper; i++) {
+
+    ptr = (shm_worker_area *)(this->shm_mem_ptr + i);
+
+    if (ptr->cmdType == EMPTY_DESCR) {
+      return i;
+    }
+  }
+
+  throw SHMFailure("no worker slot available");
+
+}
+
+shm_worker_area WorkerSHM::read(unsigned int slot_index) {
+
+  shm_worker_area result;
+  shm_worker_area *ptr;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index "
+        << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+  result.pid = ptr->pid;
+  result.started = ptr->started;
+  result.cmdType = ptr->cmdType;
+
+  return result;
+
+}
+
+void WorkerSHM::detach() {
+
+  if (this->shm != nullptr) {
+
+    /*
+     * Local pointers are NULL now.
+     */
+    this->upper = 0;
+    this->mtx = nullptr;
+    this->shm_mem_ptr = nullptr;
+
+    /*
+     * Now detach. We don't remove it
+     * physically from the kernel here.
+     */
+    delete this->shm;
+    this->shm = nullptr;
+  }
+
+}
+
+void WorkerSHM::setMaxWorkers(unsigned int max_workers) {
+
+  this->max_workers = max_workers;
+
+}
+
+unsigned int WorkerSHM::getMaxWorkers() {
+
+  return this->max_workers;
+
+}
+
+size_t WorkerSHM::getSize() {
+
+  /*
+   * If not attached, just calculate the shared memory
+   * size as it would be if we are attached.
+   */
+  if (this->shm == nullptr) {
+    return this->calculateSHMsize();
+  } else {
+    return this->size;
+  }
+
+}
+
+/******************************************************************************
+ * LauncherSHM & objects implementation start
+ ******************************************************************************/
+
+LauncherSHM::LauncherSHM() : ProcessSHM() {
+
+  this->shm = nullptr;
+
 }
 
 LauncherSHM::~LauncherSHM() {
@@ -282,6 +767,120 @@ LauncherSHM::~LauncherSHM() {
   }
 
 }
+
+size_t LauncherSHM::getSize() {
+  return this->size;
+}
+
+void LauncherSHM::detach() {
+
+  if (this->shm != nullptr) {
+
+    /*
+     * Local pointers into shared memory
+     * are now undefined.
+     */
+    this->mtx = nullptr;
+    this->shm_mem_ptr = nullptr;
+
+    /*
+     * detach the shared memory segment.
+     *
+     * NOTE: This will *NOT* remove the shared memory
+     *       physically from the system. The caller must
+     *       call managed_xsi_shared_memory::remove()
+     *       explictly.
+     */
+    delete this->shm;
+    this->shm = nullptr;
+  }
+
+}
+
+bool LauncherSHM::attach(std::string catalog, bool attach_only) {
+
+  using namespace boost::interprocess;
+
+  /*
+   * Key referencing the shared memory segment.
+   */
+  xsi_key key(catalog.c_str(), 1);
+  std::ostringstream shm_ctl_name;
+  std::ostringstream mtx_ctl_name;
+  bool result = false;
+
+  if (this->shm != nullptr) {
+    /* already initialized, nothing to do */
+    return true;
+  }
+
+  /*
+   * Internal handle not yet initialized, trying
+   * to either a) attach or b) create, attach
+   */
+  if (attach_only) {
+
+    try {
+      this->shm = new managed_xsi_shared_memory(open_only, key);
+    } catch (interprocess_exception &ie) {
+
+      if (ie.get_error_code() == not_found_error) {
+        result = false;
+        return result;
+      }
+      else {
+        throw ie;
+      }
+    }
+
+  } else {
+    this->shm = new managed_xsi_shared_memory(open_or_create,
+                                              key,
+                                              this->size);
+  }
+
+  /*
+   * Stick mutex for access control into
+   * shared memory.
+   */
+  mtx_ctl_name << catalog << "_mtx";
+  this->mtx = this->shm->find_or_construct<interprocess_mutex>(mtx_ctl_name.str().c_str())();
+
+  /*
+   * Create control area in shared memory.
+   */
+  shm_ctl_name << catalog << "_shm_area";
+  this->shm_mem_ptr = this->shm->find_or_construct<shm_launcher_area>(shm_ctl_name.str().c_str())();
+
+  /*
+   * Don't forget to remember the generated
+   * SHM area identifier.
+   */
+  this->shm_ident = shm_ctl_name.str();
+  this->shm_key = key.get_key();
+
+  /* everything looks good ... */
+  result = true;
+
+  return result;
+}
+
+pid_t LauncherSHM::setPID(pid_t pid) {
+
+  if (this->shm == nullptr) {
+    throw SHMFailure("attemp to write PID into uninitialized shared memory");
+  }
+
+  this->mtx->lock();
+  this->shm_mem_ptr->pid = pid;
+  this->mtx->unlock();
+
+  return this->shm_mem_ptr->pid;
+}
+
+/******************************************************************************
+ * LauncherSHM implementation end
+ ******************************************************************************/
 
 /*
  * pg_backup_ctl launcher signal handler
@@ -448,10 +1047,12 @@ static pid_t daemonize(job_info &info) {
   }
 
   if (pid == 0) {
+
     /*
      * This is the initial background worker (aka launcher) process
      */
     BackgroundWorker worker(info);
+    WorkerSHM *worker_shm = worker.workerSHM();
 
     /*
      * Flag, indicating that we got a valid command string
@@ -464,8 +1065,62 @@ static pid_t daemonize(job_info &info) {
      */
     worker.initialize();
 
+    /*
+     * If initialization got exit signal, exit.
+     */
+    if ( (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY)
+         || (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) ) {
+
+         exit(_pgbckctl_shutdown_mode);
+
+    }
+
     /* mark this as a background worker */
-      info.background_exec = true;
+    info.background_exec = true;
+
+    cerr << "reset worker shared memory area" << endl;
+
+    /*
+     * Reset shared memory area, but only if no
+     * workers are currently attached. This is a sanity check
+     * in case the launcher has crashed somehow, but its workers
+     * survived somehow. We don't consider this an error, but
+     * give the caller a warning.
+     *
+     * We also need to be careful here with shared memory
+     * interlocking!
+     */
+    worker_shm->lock();
+
+    if (worker_shm->getNumberOfAttached() > 1) {
+
+      cerr << "ERROR: cannot re-initialize worker shared memory:" << endl;
+      cerr << "       there are still workers attached, you need to terminate them first" << endl;
+
+    } else {
+
+      /* re-initialize all worker slots to be empy */
+      try {
+
+        worker_shm->reset();
+
+      } catch(exception &e) {
+
+        /*
+         * Whoops, this failed somehow, this is considered
+         * a hard error.
+         */
+        cerr << "failure resetting worker SHM: " << e.what() << endl;
+        worker_shm->unlock();
+        exit(DAEMON_FAILURE);
+
+      }
+
+    }
+
+    worker_shm->unlock();
+
+    cerr << "reset worker shared memory area done" << endl;
 
     /*
      * Setup message queue.
@@ -515,15 +1170,29 @@ static pid_t daemonize(job_info &info) {
          */
         try {
 
+          pid_t worker_pid;
+
           cerr << "BACKGROUND COMMAND: " << command << endl;
 
           /*
            * Execute the command
            */
-          if (worker_command(info, command) == (pid_t) 0) {
+          if ((worker_pid = worker_command(worker, command)) == (pid_t) 0) {
 
             /* child should exit after having done its duty */
             exit(0);
+          } else if (worker_pid < 0) {
+
+            /*
+             * A negative value of worker_pid indicates that the initial setup
+             * of worker_command() and the specified job_handle had failed.
+             */
+            cerr << "launcher cannot fork worker process: worker setup failed" << endl;
+
+          } else {
+
+            cout << "launcher forked worker process at PID " << worker_pid << endl;
+
           }
 
         } catch (CParserIssue &pe) {
@@ -682,34 +1351,51 @@ pid_t credativ::launch(job_info& info) {
 /**
  * worker_command() runs from the launcher and
  * forks a new process executing the
- * the command passed to info. If info doesn't
- * hold a proper command handle, nothing will
+ * the command passed to the job_handle hold by the specified worker instance.
+ *
+ * If info doesn't hold a proper command handle, nothing will
  * be forked or executed (so this is effectively
  * a no-op then).
  *
  * The command passed to worker_command() should be
  * a command understood by the PGBackupCtlParser. Thus, the
  * caller should be prepared to handle parser errors.
+ *
+ * We don't care if the job_handle hold by the worker process
+ * is set to background_exec, as we do in run_process. The specified
+ * command handle will always be executed in a separate process.
  */
-pid_t credativ::worker_command(job_info &info, std::string command) {
+pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
 
+  job_info info = worker.jobInfo();
   pid_t pid;
 
   if (info.cmdHandle == nullptr)
     return (pid_t) -1;
 
-  if (!info.background_exec)
-    return (pid_t) -1;
-
   if ((pid = fork()) == (pid_t) 0) {
 
-    /* worker child */
+    /* Worker child */
+
     PGBackupCtlParser parser;
     std::shared_ptr<PGBackupCtlCommand> bgrnd_cmd_handler;
     JobSignalHandler *cmdSignalHandler;
     CatalogTag cmdType;
+    WorkerSHM *worker_shm;
+    unsigned int worker_slot_index = 0;
+    shm_worker_area worker_info;
+
+    /*
+     * Tell our background worker handle that we
+     * aren't longer a launcher instance.
+     */
+    worker.release_launcher_role();
 
     cerr << "background job executing command " << command << endl;
+
+    worker_info.pid = ::getpid();
+    worker_info.cmdType = info.cmdHandle->tag;
+    worker_info.started = CPGBackupCtlBase::ISO8601_strTo_ptime(CPGBackupCtlBase::current_timestamp());
 
     /*
      * Parse command.
@@ -732,9 +1418,46 @@ pid_t credativ::worker_command(job_info &info, std::string command) {
     bgrnd_cmd_handler->assignSigIntHandler(cmdSignalHandler);
 
     /*
-     * Now it's time to execute the command.
+     * Now it's time to execute the command. Since everything is setup now,
+     * it's overdue to register the forked process into the
+     * worker shared memory area. This needs to be done in a critical
+     * section, to protect us against concurrent workers doing the same.
      */
-    cmdType = bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
+    worker_shm = worker.workerSHM();
+    if (!worker_shm->attach(info.cmdHandle->getCatalog()->fullname(), true)) {
+      /* could not attach to shared memory segment */
+      throw WorkerFailure("could not attach to worker shared memory area");
+    }
+
+    worker_shm->lock();
+    worker_slot_index = worker_shm->allocate(worker_info);
+    worker_shm->unlock();
+
+    try {
+      cmdType = bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
+    } catch(exception &e) {
+
+      /*
+       * In any case, detach from the shared memory but clear
+       * our slot before.
+       *
+       * WorkerSHM::free() can throw itself if there's no valid shared
+       * memory handle here. But that seems unlikely, since the
+       * actions before should have failed before.
+       */
+      worker_shm->lock();
+      worker_shm->free(worker_slot_index);
+      worker_shm->unlock();
+
+      /* re-throw */
+      throw WorkerFailure(e.what());
+
+    }
+
+    /* only reached if everything went okay */
+    worker_shm->lock();
+    worker_shm->free(worker_slot_index);
+    worker_shm->unlock();
 
     /* Exit, if done */
     exit(0);
@@ -746,6 +1469,10 @@ pid_t credativ::worker_command(job_info &info, std::string command) {
      * that by throwing a worker exception. This
      * affects the launcher process directly!
      */
+    std::ostringstream oss;
+
+    oss << "could not fork new worker: " << strerror(errno);
+    throw WorkerFailure(oss.str());
 
   } else {
 
@@ -755,6 +1482,7 @@ pid_t credativ::worker_command(job_info &info, std::string command) {
      */
 
   }
+
   return pid;
 }
 

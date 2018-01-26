@@ -49,6 +49,29 @@ namespace credativ {
     void registerMe();
 
   protected:
+
+    /**
+     * A background worker is basically a
+     * launcher, which primarily forks and executes
+     * command handles in the background. To control
+     * various behavior, we employ a shared memory
+     * segment which safes some of its properties.
+     *
+     * The LauncherSHM shared memory area is to
+     * control wether a launcher instance is already started
+     * and to safe operation states. Only one launcher
+     * shared memory segment exists per catalog and
+     * only the launcher itself should be attached to it.
+     */
+    LauncherSHM my_shm;
+
+    /**
+     * The worker shared memory area is to control
+     * running state of background processes launched
+     * by the launcher process.
+     */
+    WorkerSHM *worker_shm = nullptr;
+
     /*
      * Structure holding compacted status information
      * for a background worker instance. Also used
@@ -69,29 +92,53 @@ namespace credativ {
      * catalog handle, usually initialized by c'tor.
      */
     std::shared_ptr<BackupCatalog> catalog = nullptr;
+
   public:
     BackgroundWorker(job_info info);
     ~BackgroundWorker();
 
-    /*
+    /**
      * Initializes properties of this workers and
      * registers it into the catalog.
      */
     virtual void initialize();
 
-    /*
+    /**
      * Prepare a worker for clean shutdown (smart shutdown
      * request). Also removes every runtime information
      * from the catalog.
      */
     virtual void prepareShutdown();
+
+    /**
+     * Returns a pointer to the worker shared memory segment.
+     */
+    virtual WorkerSHM *workerSHM();
+
+    /**
+     * Returns a copy of the associated job_handle structure.
+     */
+    virtual job_info jobInfo();
+
+    /*
+     * Release the launcher identity.
+     *
+     * This should be called after a fork of
+     * a background worker to release the launcher role, e.g.
+     * like credativ::worker_command() does.
+     *
+     * Basically the release_launcher_role() leaves the
+     * background launcher shared memory.
+     */
+    virtual void release_launcher_role();
+
   };
 
   pid_t launch(job_info& info);
   void establish_launcher_cmd_queue(job_info &info);
   void send_launcher_cmd(job_info& info, std::string command);
   std::string recv_launcher_cmd(job_info &info, bool &cmd_received);
-  pid_t worker_command(job_info &info, std::string command);
+  pid_t worker_command(BackgroundWorker &worker, std::string command);
 
   /**
    * Runs a blocking child subprocess.

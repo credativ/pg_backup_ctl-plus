@@ -398,11 +398,71 @@ StartLauncherCatalogCommand::StartLauncherCatalogCommand(std::shared_ptr<Catalog
 
 void StartLauncherCatalogCommand::execute(bool flag) {
 
+  std::shared_ptr<CatalogProc> procInfo = nullptr;
   job_info job_info;
   pid_t pid;
+  shmatt_t nattach;
 
   if (this->catalog == nullptr) {
     throw CArchiveIssue("could not execute catalog command: no catalog");
+  }
+
+  /*
+   * First check the catalog if a launcher is already running. This is
+   * done with the following steps:
+   *
+   * - Retrieve the catalog proc entry for the launcher
+   *   If a launcher is active, there's an entry for it (or if it
+   *   has crashed earlier).
+   *
+   * - Retrieve the SHMID and check wether the launcher is already
+   *   attached.
+   *
+   *   A catalog entry would also be present in case a launcher has crashed.
+   *   In that case the catalog proc entry is orphaned and we immediately
+   *   see that by checking LauncherSHM::getNumberOfAttached(), which is
+   *   expected to always zero in that case!
+   *
+   * - In case we don't find a catalog proc entry we don't have the
+   *   SHMID to check for. This usually means the launcher is shut down
+   *   and the catalog proc entry was removed (or there was never one before).
+   *
+   *   In this case, try to generate the shmid from scratch and check
+   *   again with getNumberOfAttached(). If the call succeeds, then
+   *   the catalog is corrupted.
+   *
+   *   If someone tries, he could just delete the catalog proc entry
+   *   underneath of a running launcher. If that happens, we're out ...
+   */
+  procInfo = this->catalog->getProc(-1, CatalogProc::PROC_TYPE_LAUNCHER);
+  nattach = 0;
+
+  try {
+    if (procInfo != nullptr && procInfo->pid > 0) {
+
+      /*
+       * If we get a SHMFailure exception here, then the shmid
+       * stored in the catalog doesn't exist anymore. In this case
+       * just go further and start the launcher.
+       */
+      nattach = LauncherSHM::getNumberOfAttached(procInfo->shm_id);
+
+    }
+  } catch(SHMFailure &e) {
+
+    /*
+     * A SHMFailure here usually means the request shmid
+     * doesn't exist or isn't readable anymore. This
+     * indicates a crashed launcher instance, since the
+     * catalog entry is orphaned.
+     */
+    nattach = 0;
+
+    cerr << "WARNING: catalog shm id " << procInfo->shm_id << " is orphaned" << endl;
+  }
+
+  if (nattach > 0) {
+    throw CCatalogIssue("Launcher for this catalog instance already running");
   }
 
   /*

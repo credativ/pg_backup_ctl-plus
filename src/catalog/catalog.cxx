@@ -94,7 +94,8 @@ std::vector<std::string>BackupCatalog::procsCatalogCols =
     "type",
     "started",
     "state",
-    "shm_key"
+    "shm_key",
+    "shm_id"
   };
 
 PushableCols::PushableCols() {}
@@ -517,6 +518,15 @@ std::shared_ptr<CatalogProc> BackupCatalog::fetchCatalogProcData(sqlite3_stmt *s
         procInfo->shm_key = (key_t) sqlite3_column_int(stmt, currindex);
       else
         procInfo->shm_key = (key_t) -1;
+      break;
+
+    case SQL_PROCS_SHM_ID_ATTNO:
+      /* can be NULL, so check for NULL value. In case it's null, assign
+       * a negative value, indicating that here's nothing to read */
+      if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
+        procInfo->shm_id = sqlite3_column_int(stmt, currindex);
+      else
+        procInfo->shm_id = -1;
       break;
 
     default:
@@ -1682,6 +1692,10 @@ int BackupCatalog::SQLbindProcsAttributes(std::shared_ptr<CatalogProc> procInfo,
       sqlite3_bind_int(stmt, result, procInfo->shm_key);
       break;
 
+    case SQL_PROCS_SHM_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, procInfo->shm_id);
+      break;
+
     default:
       {
         ostringstream oss;
@@ -2518,7 +2532,7 @@ std::shared_ptr<CatalogProc> BackupCatalog::getProc(int archive_id, std::string 
 
   std::string query =
     "SELECT pid, archive_id, type, "
-    "started, state, shm_key FROM procs WHERE archive_id = ?1 "
+    "started, state, shm_key, shm_id FROM procs WHERE archive_id = ?1 "
     "AND type = ?2;";
 
   procInfo = std::make_shared<CatalogProc>();
@@ -2557,6 +2571,7 @@ std::shared_ptr<CatalogProc> BackupCatalog::getProc(int archive_id, std::string 
   attrs.push_back(SQL_PROCS_STARTED_ATTNO);
   attrs.push_back(SQL_PROCS_STATE_ATTNO);
   attrs.push_back(SQL_PROCS_SHM_KEY_ATTNO);
+  attrs.push_back(SQL_PROCS_SHM_ID_ATTNO);
 
   /*
    * Bind WHERE predicate values...
@@ -2653,7 +2668,7 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
   this->SQLbindProcsAttributes(procInfo,
                                attrs,
                                stmt,
-                               Range(1, 5));
+                               Range(1, attrs.size()));
 
   /*
    * ... and execute the INSERT command.
@@ -2680,6 +2695,7 @@ void BackupCatalog::unregisterProc(int pid,
   sqlite3_stmt *stmt;
   std::shared_ptr<CatalogProc> procInfo = std::make_shared<CatalogProc>();
   std::ostringstream query;
+  std::vector<int> attrs;
 
   if (!this->available())
     throw CCatalogIssue("could not unregister process handle from catalog: databas not opened");
@@ -2717,10 +2733,11 @@ void BackupCatalog::unregisterProc(int pid,
 
   procInfo->pushAffectedAttribute(SQL_PROCS_PID_ATTNO);
   procInfo->pushAffectedAttribute(SQL_PROCS_ARCHIVE_ID_ATTNO);
+  attrs = procInfo->getAffectedAttributes();
   this->SQLbindProcsAttributes(procInfo,
-                               procInfo->getAffectedAttributes(),
+                               attrs,
                                stmt,
-                               Range(1, 2));
+                               Range(1, attrs.size()));
 
   /*
    * ... and execute the DELETE statement.

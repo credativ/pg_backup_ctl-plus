@@ -88,6 +88,8 @@ namespace credativ {
   };
 
   class StartLauncherCatalogCommand : public BaseCatalogCommand {
+  protected:
+    std::shared_ptr<CatalogProc> procInfo = nullptr;
   public:
     StartLauncherCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     StartLauncherCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
