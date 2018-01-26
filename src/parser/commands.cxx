@@ -427,10 +427,6 @@ void StartLauncherCatalogCommand::execute(bool flag) {
    *   SHMID to check for. This usually means the launcher is shut down
    *   and the catalog proc entry was removed (or there was never one before).
    *
-   *   In this case, try to generate the shmid from scratch and check
-   *   again with getNumberOfAttached(). If the call succeeds, then
-   *   the catalog is corrupted.
-   *
    *   If someone tries, he could just delete the catalog proc entry
    *   underneath of a running launcher. If that happens, we're out ...
    */
