@@ -236,7 +236,7 @@ std::string TransactionLogBackup::walfilename(unsigned int timeline,
               segment_number);
 
   XLogFileName(xlogfilename,
-               position,
+               timeline,
                segment_number);
 #else
   XLByteToSeg(position,
