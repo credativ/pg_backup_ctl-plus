@@ -301,7 +301,7 @@ void BackgroundWorker::initialize() {
       errstr << "launcher for catalog instance "
              << this->ji.cmdHandle->getCatalog()->name()
              << " already running";
-      throw WorkerFailure("launcher for catalog instance already running");
+      throw WorkerFailure(errstr.str());
     }
 
     this->registerMe();
