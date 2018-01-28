@@ -286,7 +286,7 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
          * contain anything user defined */
         completed_keywords.push_back(c_word);
 
-         break;
+        break;
       }
     }
   }

@@ -882,6 +882,21 @@ pid_t LauncherSHM::setPID(pid_t pid) {
  * LauncherSHM implementation end
  ******************************************************************************/
 
+static void _pgbckctl_sigchld_handler(int sig) {
+
+  pid_t pid;
+  int   wait_status;
+
+  /* Only react on SIGCHLD */
+  if (sig != SIGCHLD)
+    return;
+
+  while ((pid = waitpid(-1, &wait_status, WNOHANG)) != -1) {
+    cerr << "child pid " << pid << " exited with status " << wait_status << endl;
+  }
+
+}
+
 /*
  * pg_backup_ctl launcher signal handler
  */
@@ -981,6 +996,7 @@ static pid_t daemonize(job_info &info) {
   signal(SIGQUIT, _pgbckctl_sighandler);
   signal(SIGHUP, _pgbckctl_sighandler);
   signal(SIGUSR1, _pgbckctl_sighandler);
+  signal(SIGCHLD, _pgbckctl_sigchld_handler);
 
   /*
    * Now launch the background job.
@@ -1012,7 +1028,7 @@ static pid_t daemonize(job_info &info) {
     }
 
     /*
-     * Install SIGUSR1 handler for launcher.
+     * Launcher processing loop.
      */
     do {
 
@@ -1026,11 +1042,6 @@ static pid_t daemonize(job_info &info) {
         std::cout << "launcher emergency shutdown request received"
                   << std::endl;
         break;
-      }
-
-      if (waitpid(-1, &wstatus, WUNTRACED | WCONTINUED | WNOHANG) == -1) {
-        std::cerr << "waitpid() error " << endl;
-        exit(DAEMON_FAILURE);
       }
 
       /*
@@ -1175,7 +1186,11 @@ static pid_t daemonize(job_info &info) {
           cerr << "BACKGROUND COMMAND: " << command << endl;
 
           /*
-           * Execute the command
+           * Execute the command.
+           *
+           * worker_command() forks a new child process to
+           * execute the command, so make sure we exit after
+           * worker_command() returns.
            */
           if ((worker_pid = worker_command(worker, command)) == (pid_t) 0) {
 
@@ -1384,6 +1399,12 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     WorkerSHM *worker_shm;
     unsigned int worker_slot_index = 0;
     shm_worker_area worker_info;
+
+    /*
+     * Reset SIGCHLD signal handler. Not required
+     * in a background worker process.
+     */
+    signal(SIGCHLD, SIG_DFL);
 
     /*
      * Tell our background worker handle that we
