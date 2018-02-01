@@ -10,6 +10,8 @@
 namespace credativ {
 
   class BaseCatalogCommand;
+  class background_reaper;
+  class background_worker_shm_reaper;
 
   /**
    * Exception class for shared memory errors.
@@ -19,6 +21,29 @@ namespace credativ {
     SHMFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     SHMFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
+
+  /**
+   * Status of background launcher
+   */
+  typedef enum {
+
+    LAUNCHER_STARTUP,
+    LAUNCHER_RUN,
+    LAUNCHER_DIE,
+    LAUNCHER_SHUTDOWN
+
+  } LauncherStatus;
+
+  /**
+   * Describes the role of a process.
+   */
+  typedef enum {
+
+    BACKGROUND_LAUNCHER,
+    BACKGROUND_WORKER,
+    NO_BACKGROUND
+
+  } BackgroundJobType;
 
   /**
    * A descriptor area for background jobs.
@@ -112,9 +137,11 @@ namespace credativ {
    * WorkerSHM::max_workers # of this structures.
    */
   typedef struct shm_worker_area {
+
     pid_t pid = -1; /* -1 means unused slot */
     CatalogTag cmdType;
     boost::posix_time::ptime started;
+
   } shm_worker_area;
 
   /**
@@ -269,13 +296,13 @@ namespace credativ {
 
     /**
      * Max workers allowed to attach. The current
-     * default number is 256.
+     * default number is configured in pg_backup_ctl.hxx.in
      */
-    unsigned int max_workers = 256;
+    unsigned int max_workers = PGBCKCTL_MAX_WORKERS;
 
     /*
      * Current size of shared memory area, default
-     * is -1, indicating an uninitialized segment.
+     * is 0, indicating an uninitialized segment.
      */
     size_t size = 0;
 
@@ -312,6 +339,9 @@ namespace credativ {
     unsigned int allocated = 0;
 
   public:
+
+    friend class background_worker_shm_reaper;
+
     WorkerSHM();
     virtual ~WorkerSHM();
 
@@ -414,6 +444,24 @@ namespace credativ {
      */
     virtual void unlock();
   };
+
+  class background_reaper {
+  public:
+    std::stack<pid_t> dead_pids;
+    virtual void reap() = 0;
+  };
+
+  class background_worker_shm_reaper : public background_reaper {
+  protected:
+    WorkerSHM *shm;
+  public:
+    background_worker_shm_reaper();
+    virtual ~background_worker_shm_reaper();
+
+    virtual void set_shm_handle(WorkerSHM *shm);
+    virtual void reap();
+  };
+
 }
 
 #endif

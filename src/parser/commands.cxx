@@ -64,6 +64,59 @@ void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
   this->intHandler = handler;
 }
 
+ShowWorkersCommandHandle::ShowWorkersCommandHandle(std::shared_ptr<BackupCatalog> catalog) {
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+}
+
+ShowWorkersCommandHandle::ShowWorkersCommandHandle(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ShowWorkersCommandHandle::ShowWorkersCommandHandle(){}
+
+ShowWorkersCommandHandle::~ShowWorkersCommandHandle() {}
+
+void ShowWorkersCommandHandle::execute(bool noop) {
+
+  /*
+   * To get the list of all currently running workers
+   * in catalog, we need to attach to the shared memory
+   * area for background workers.
+   */
+  WorkerSHM shm;
+
+  shm.attach(this->catalog->fullname(), true);
+
+  shm.lock();
+  for (unsigned int i = 0; i < shm.getMaxWorkers(); i++) {
+
+    try {
+
+      shm_worker_area worker = shm.read(i);
+
+      if (worker.pid > 0) {
+        cout << "WORKER PID " << worker.pid
+             << " executing " << CatalogDescr::commandTagName(worker.cmdType)
+             << " started " << CPGBackupCtlBase::ptime_to_str(worker.started)
+             << endl;
+      }
+
+    } catch(SHMFailure &e) {
+      /* in any case, unlock() the SHM and re-throw. */
+      shm.unlock();
+      throw e;
+    }
+
+  }
+
+  shm.unlock();
+  shm.detach();
+
+}
+
 ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));

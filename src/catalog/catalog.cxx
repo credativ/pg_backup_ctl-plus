@@ -208,6 +208,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "START STREAMING FOR ARCHIVE";
   case EXEC_COMMAND:
     return "EXEC";
+  case SHOW_WORKERS:
+    return "SHOW WORKERS";
   default:
     return "UNKNOWN";
   }
@@ -3406,7 +3408,7 @@ BackupCatalog::getStreams(std::string archive_name,
   /* perform the SELECT */
   rc = sqlite3_step(stmt);
 
-  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+  if (rc != SQLITE_ROW /* && rc != SQLITE_DONE */) {
     ostringstream oss;
     sqlite3_finalize(stmt);
     oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);

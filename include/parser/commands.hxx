@@ -308,7 +308,21 @@ namespace credativ {
     virtual void execute(bool noop);
   };
 
-  /*
+  /**
+   * Implement the SHOW WORKERS command.
+   */
+  class ShowWorkersCommandHandle : public BaseCatalogCommand {
+  public:
+    ShowWorkersCommandHandle(std::shared_ptr<BackupCatalog> catalog);
+    ShowWorkersCommandHandle(std::shared_ptr<CatalogDescr> descr);
+    ShowWorkersCommandHandle();
+
+    virtual ~ShowWorkersCommandHandle();
+
+    virtual void execute(bool noop);
+  };
+
+  /**
    * Implements a dummy command to be passed to background workers.
    *
    * This commmand is a wrapper around commands, that

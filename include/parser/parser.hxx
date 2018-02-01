@@ -38,7 +38,7 @@ namespace credativ {
      *
      * See commands.cxx for details.
      */
-    std::shared_ptr<CatalogDescr> catalogDescr;
+    std::shared_ptr<CatalogDescr> catalogDescr = nullptr;
 
     /**
      * Internal references to signal handler instances. Currently
@@ -77,6 +77,14 @@ namespace credativ {
      * This should be used to react on SIGINT signals
      */
     virtual void assignSigIntHandler(JobSignalHandler *handler);
+
+    /**
+     * Returns the command tag of this handler.
+     *
+     * EMPTY_DESCR is returned in case this handler
+     * doesn't hold a valid command handle yet.
+     */
+    virtual CatalogTag getCommandTag();
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

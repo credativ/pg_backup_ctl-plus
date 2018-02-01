@@ -48,6 +48,11 @@ namespace credativ {
     bool checkPID(pid_t pid);
     void registerMe();
 
+    /**
+     * Current state of this worker object.
+     */
+    LauncherStatus launcher_status = LAUNCHER_SHUTDOWN;
+
   protected:
 
     /**
@@ -87,6 +92,11 @@ namespace credativ {
      * information.
      */
     job_info ji;
+
+    /**
+     * Reaper handler.
+     */
+    background_reaper *reaper = nullptr;
 
     /*
      * catalog handle, usually initialized by c'tor.
@@ -131,6 +141,38 @@ namespace credativ {
      * background launcher shared memory.
      */
     virtual void release_launcher_role();
+
+    /**
+     * Returns operation status
+     */
+    virtual LauncherStatus status();
+
+    /**
+     * Mark background worker as running
+     */
+    virtual void run();
+
+    /**
+     * Assigns an external reaper handle.
+     *
+     * A reaper handle recognizes dead PIDs that are
+     * are required to be reaped from our internal worker
+     * shared memory segment.
+     *
+     * The reason why we need such an external interface is that
+     * a signal handler (especially SIGCHLD handlers) don't have
+     * access to our internal worker shared memory area. The
+     * dead PIDS are reaped by calling execute_reaper(), which
+     * should happen periodically to avoid wasting too much
+     * worker slots in shared memory.
+     */
+    virtual void assign_reaper(background_reaper *reaper);
+
+    /**
+     * Executes the reaping process of dead PIDs. This is a no-op
+     * in case no reaper handle was assigned via assign_reaper();
+     */
+    virtual void execute_reaper();
 
   };
 

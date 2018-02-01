@@ -80,6 +80,11 @@ namespace credativ {
          * Parser rule definitions
          */
         start %= eps > (
+                        /* SHOW syntax */
+                        (
+                         cmd_show
+                         )
+                        |
                         /* EXEC syntax */
                         (
                          no_case[lexeme[ lit("EXEC") ]]
@@ -190,6 +195,12 @@ namespace credativ {
           ^ no_case[lexeme[ lit("NODETACH") ]]
           [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ];
 
+        cmd_show = no_case[lexeme[ lit("SHOW") ]]
+          > show_command_type;
+
+        show_command_type = no_case[lexeme[ lit("WORKERS") ]]
+          [boost::bind(&CatalogDescr::setCommandTag, &cmd, SHOW_WORKERS)];
+
         /*
          * START STREAMING FOR ARCHIVE command
          */
@@ -277,19 +288,19 @@ namespace credativ {
           > no_case[ lexeme[ lit("CONNECTION") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_CONNECTION) ]
           > no_case[ lexeme[ lit("FOR ARCHIVE") ]]
-          > identifier
-          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          ^ ( ( hostname
-                [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-                ^ database
-                [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-                ^ username
-                [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-                ^ portnumber
-                [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
-              |
-              ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
-                [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) );
+          > ( identifier
+              [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+              ^ ( ( hostname
+                    [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                    ^ database
+                    [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                    ^ username
+                    [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                    ^ portnumber
+                    [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+                  |
+                  ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
+                    [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) ) );
 
         /*
          * CREATE ARCHIVE <name> command
@@ -466,6 +477,7 @@ namespace credativ {
         cmd_start_command.name("START start");
         cmd_start_launcher.name("LAUNCHER");
         cmd_start_streaming.name("STREAMING");
+        cmd_show.name("SHOW");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_create_connection.name("CREATE STREAMING CONNECTION");
@@ -488,6 +500,7 @@ namespace credativ {
         profile_backup_label_option.name("LABEL=label string");
         profile_checkpoint_option.name("CHECKPOINT=FAST|DELAYED");
         profile_wait_for_wal_option.name("WAIT_FOR_WAL=TRUE|FALSE");
+        show_command_type.name("WORKERS");
         database.name("database identifier");
         username.name("username identifier");
         portnumber.name("port number");
@@ -520,6 +533,8 @@ namespace credativ {
                           cmd_drop_backup_profile,
                           cmd_alter_backup_profile,
                           cmd_create_connection,
+                          cmd_show,
+                          show_command_type,
                           backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
@@ -554,6 +569,13 @@ PGBackupCtlCommand::PGBackupCtlCommand(CatalogDescr descr) {
 }
 
 PGBackupCtlCommand::~PGBackupCtlCommand() {}
+
+CatalogTag PGBackupCtlCommand::getCommandTag() {
+
+  if (this->catalogDescr != nullptr)
+    return this->catalogDescr->tag;
+
+}
 
 void PGBackupCtlCommand::assignSigStopHandler(JobSignalHandler *handler) {
 
@@ -738,6 +760,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case EXEC_COMMAND:
     result = make_shared<ExecCommandCatalogCommand>(this->catalogDescr);
+    break;
+
+  case SHOW_WORKERS:
+    result = make_shared<ShowWorkersCommandHandle>(this->catalogDescr);
     break;
 
   default:

@@ -28,10 +28,22 @@ using namespace credativ;
 volatile sig_atomic_t _pgbckctl_shutdown_mode = DAEMON_RUN;
 extern int errno;
 
+/**
+ * Background launcher child reaper.
+ */
+background_reaper *launcher_reaper = nullptr;
+
 /*
  * Forwarded declarations.
  */
 static pid_t daemonize(job_info &info);
+
+/*
+ * Type of background process. Either launcher or worker
+ * background processes currently exists. In case this isn't
+ * a background process, NO_BACKGROUND is set.
+ */
+BackgroundJobType _pgbckctl_job_type = NO_BACKGROUND;
 
 /*
  * Signal handler objects
@@ -43,6 +55,7 @@ AtomicSignalHandler *emergencyHandler = new AtomicSignalHandler(&_pgbckctl_shutd
 
 BackgroundWorker::BackgroundWorker(job_info info) {
 
+  this->launcher_status = LAUNCHER_STARTUP;
   this->ji = info;
   this->catalog = this->ji.cmdHandle->getCatalog();
   this->procInfo = std::make_shared<CatalogProc>();
@@ -72,6 +85,12 @@ BackgroundWorker::~BackgroundWorker() {
 void BackgroundWorker::release_launcher_role() {
 
   this->my_shm.detach();
+
+}
+
+LauncherStatus BackgroundWorker::status() {
+
+  return this->launcher_status;
 
 }
 
@@ -126,6 +145,8 @@ bool BackgroundWorker::checkPID(pid_t pid) {
 
 void BackgroundWorker::prepareShutdown() {
 
+  this->launcher_status = LAUNCHER_SHUTDOWN;
+
   /*
    * NOTE: We don't catch any exceptions here,
    * this is done by the initialize() caller, since
@@ -146,6 +167,21 @@ void BackgroundWorker::prepareShutdown() {
   }
 
   catalog->commitTransaction();
+}
+
+void BackgroundWorker::assign_reaper(background_reaper *reaper) {
+
+  if (reaper != nullptr)
+    this->reaper = reaper;
+
+}
+
+void BackgroundWorker::execute_reaper() {
+
+  if (this->reaper != nullptr) {
+    this->reaper->reap();
+  }
+
 }
 
 void BackgroundWorker::registerMe() {
@@ -319,6 +355,12 @@ void BackgroundWorker::initialize() {
 
 }
 
+void BackgroundWorker::run() {
+
+  this->launcher_status = LAUNCHER_RUN;
+
+}
+
 /******************************************************************************
  * ProcessSHM & objects implementation start
  ******************************************************************************/
@@ -402,6 +444,71 @@ std::string ProcessSHM::getIdent() {
 }
 
 /******************************************************************************
+ * background_worker_shm_reaper & objects implementation start
+ ******************************************************************************/
+
+background_worker_shm_reaper::background_worker_shm_reaper()
+  : background_reaper() {
+
+  this->shm = nullptr;
+
+}
+
+background_worker_shm_reaper::~background_worker_shm_reaper() {
+
+  /* nothing special to do here */
+
+}
+
+void background_worker_shm_reaper::set_shm_handle(WorkerSHM *shm) {
+
+  this->shm = shm;
+
+}
+
+void background_worker_shm_reaper::reap() {
+
+  /*
+   * Nothing to do if we have no SHM pointer.
+   */
+  if (this->shm == nullptr)
+    return;
+
+  while(!this->dead_pids.empty()) {
+
+    pid_t deadpid = this->dead_pids.top();
+    this->dead_pids.pop();
+
+    cerr << "WARN: reaping dead PID " << deadpid << " from shared memory" << endl;
+
+    /*
+     * Ugly, but we need to loop through the shared memory
+     * area to find the PID we need to drop.
+     *
+     * NOTE: We do this without interlocking, since
+     *       we believe to reset the PID to 0 atomically.
+     *
+     *       This might by racy, but in the worst case we'll
+     *       miss this potential free slot and won't find a
+     *       remaining one. In this case the worker will
+     *       fail and exit.
+     */
+    for (unsigned int i = 0 ; i < this->shm->getMaxWorkers(); i++) {
+
+      shm_worker_area *ptr = (shm_worker_area *) (this->shm->shm_mem_ptr + i);
+
+      if (ptr != NULL && ptr->pid == deadpid) {
+
+        ptr->pid = 0;
+
+      }
+
+    }
+  }
+
+}
+
+/******************************************************************************
  * WorkerSHM & objects implementation start
  ******************************************************************************/
 
@@ -423,12 +530,16 @@ WorkerSHM::~WorkerSHM() {
 size_t WorkerSHM::calculateSHMsize() {
 
   /*
-   * Caluclate the shared memory size.
+   * Calculate the shared memory size.
+   *
+   * Make sure we have a segment at least 4K in size.
    *
    */
-  return (sizeof(shm_worker_area) * this->max_workers)
+  return 2 * (sizeof(shm_worker_area) * this->max_workers)
     + sizeof(boost::interprocess::interprocess_mutex)
-    + 4;
+    + ( 4096 - ( (sizeof(shm_worker_area) * this->max_workers)
+                 + sizeof(boost::interprocess::interprocess_mutex) ) );
+
 }
 
 bool WorkerSHM::attach(std::string catalog, bool attach_only) {
@@ -455,7 +566,10 @@ bool WorkerSHM::attach(std::string catalog, bool attach_only) {
   /*
    * Calculate requested shared memory size.
    */
-  this->size = 10485760; /*this->calculateSHMsize();*/
+  this->size = this->calculateSHMsize();
+
+  assert(this->size > 0 && this->max_workers > 0);
+  cerr << "size/max_workers " << this->size << "/" << this->max_workers << endl;
 
   /*
    * Internal handle not yet connected. Either create one or,
@@ -581,7 +695,7 @@ bool WorkerSHM::isEmpty(unsigned int slot_index) {
   }
 
   ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
-  return ( (ptr->pid == 0) && (ptr->cmdType == EMPTY_DESCR) );
+  return (ptr->pid == 0);
 
 }
 
@@ -892,7 +1006,57 @@ static void _pgbckctl_sigchld_handler(int sig) {
     return;
 
   while ((pid = waitpid(-1, &wait_status, WNOHANG)) != -1) {
-    cerr << "child pid " << pid << " exited with status " << wait_status << endl;
+
+    /*
+     * Check status of exited child.
+     */
+    if (WIFEXITED(wait_status)) {
+      /* child terminated via exit() */
+      cerr << "child pid " << pid << " exited with status " << wait_status << endl;
+    }
+
+    if (WIFSIGNALED(wait_status)) {
+
+      /*
+       * child terminated by signal
+       *
+       * Handle SIGKILL, since this usually means the
+       * worker didn't clean its shared memory state.
+       *
+       * Be aware that we only react in case this is
+       *
+       * a) a background launcher process
+       * b) a valid runnable_workers pidset was allocated
+       * c) the launcher is in LAUNCHER_RUN state.
+       *
+       * The latter, c) is also recognized by _pgbckctl_job_type
+       * when set to BACKGROUND_LAUNCHER.
+       */
+      if ( (_pgbckctl_job_type == BACKGROUND_LAUNCHER)
+           && ( launcher_reaper != nullptr) ) {
+
+        if ( (WTERMSIG(wait_status) == SIGKILL)
+             || ( WTERMSIG(wait_status) == SIGABRT) ) {
+
+          /*
+           * This child PID died an horrible death, we need
+           * to reap it out from the shared memory segment.
+           *
+           * We can't do this here, since the signal handlers
+           * don't have access to the internal worker handlers. Instead,
+           * we use a stack to remember dead pids and reap them out
+           * during command processing in the launcher itself. The
+           * launcher is then responsible to clear the corresponding
+           * PID entry.
+           */
+          launcher_reaper->dead_pids.push(pid);
+
+          cerr << "dead pid " << pid << " logged" << endl;
+        }
+
+      }
+
+    }
   }
 
 }
@@ -907,7 +1071,7 @@ static void _pgbckctl_sighandler(int sig) {
    * the signal again, if true.
    */
   if (_pgbckctl_shutdown_mode != DAEMON_RUN) {
-    raise(sig);
+    /* raise(sig); */
   }
 
   if (sig == SIGTERM) {
@@ -1011,8 +1175,6 @@ static pid_t daemonize(job_info &info) {
 
   if (pid > 0) {
 
-    int wstatus;
-
     /*
      * This is the launcher's parent process.
      *
@@ -1050,7 +1212,7 @@ static pid_t daemonize(job_info &info) {
        */
       if (info.detach)
         break;
-      usleep(10);
+      usleep(10000);
 
     } while(true);
 
@@ -1088,6 +1250,15 @@ static pid_t daemonize(job_info &info) {
 
     /* mark this as a background worker */
     info.background_exec = true;
+
+    cerr << "initialize child reaper handler" << endl;
+
+    /*
+     * Create and initialize the dead man's reaper...
+     */
+    launcher_reaper = new background_worker_shm_reaper();
+    dynamic_cast<background_worker_shm_reaper *>(launcher_reaper)->set_shm_handle(worker_shm);
+    worker.assign_reaper(launcher_reaper);
 
     cerr << "reset worker shared memory area" << endl;
 
@@ -1133,15 +1304,39 @@ static pid_t daemonize(job_info &info) {
 
     cerr << "reset worker shared memory area done" << endl;
 
+    /* Mark launcher process.
+     *
+     * This will instruct the signal handlers (e.g. SIGCHLD) to keep
+     * track of child PIDs forked from this process.
+     *
+     * We do this after having done all necessary setup work
+     * to make sure everything required is in place. Since signal
+     * handlers don't have access to the internal state
+     * of the worker handles, this must occure *AFTER* everything
+     * required is allocated, especially the workers_running
+     * PID set.
+     */
+    _pgbckctl_job_type = BACKGROUND_LAUNCHER;
+
     /*
      * Setup message queue.
      */
     establish_launcher_cmd_queue(info);
 
     /*
+     * Mark background worker running.
+     */
+    worker.run();
+
+    /*
      * Enter processing loop
      */
     while(true) {
+
+      /*
+       * Reap dead workers, if any.
+       */
+      worker.execute_reaper();
 
       usleep(1000);
 
@@ -1211,15 +1406,21 @@ static pid_t daemonize(job_info &info) {
           }
 
         } catch (CParserIssue &pe) {
+
           cerr << "parser failed: " << pe.what() << endl;
           exit(DAEMON_FAILURE);
+
         } catch (WorkerFailure &e) {
+
           /* something shitty has happend ... */
           cerr << "fork() failed: " << e.what() << endl;
           exit(DAEMON_FAILURE);
+
         } catch (std::exception &e) {
+
           cerr << "background worker failure: " << e.what() << endl;
           exit(DAEMON_FAILURE);
+
         }
 
       }
@@ -1395,10 +1596,14 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     PGBackupCtlParser parser;
     std::shared_ptr<PGBackupCtlCommand> bgrnd_cmd_handler;
     JobSignalHandler *cmdSignalHandler;
-    CatalogTag cmdType;
     WorkerSHM *worker_shm;
     unsigned int worker_slot_index = 0;
     shm_worker_area worker_info;
+
+    /*
+     * Make sure we have the right background job context.
+     */
+    _pgbckctl_job_type = BACKGROUND_WORKER;
 
     /*
      * Reset SIGCHLD signal handler. Not required
@@ -1415,7 +1620,6 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     cerr << "background job executing command " << command << endl;
 
     worker_info.pid = ::getpid();
-    worker_info.cmdType = info.cmdHandle->tag;
     worker_info.started = CPGBackupCtlBase::ISO8601_strTo_ptime(CPGBackupCtlBase::current_timestamp());
 
     /*
@@ -1428,6 +1632,11 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
      * iff success.
      */
     bgrnd_cmd_handler = parser.getCommand();
+
+    /*
+     * Remember parsed command tag.
+     */
+    worker_info.cmdType = bgrnd_cmd_handler->getCommandTag();
 
     /*
      * Set signal handlers.
@@ -1454,8 +1663,10 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     worker_slot_index = worker_shm->allocate(worker_info);
     worker_shm->unlock();
 
+    cerr << "WORKER SLOT " << worker_slot_index << endl;
+
     try {
-      cmdType = bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
+      bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
     } catch(exception &e) {
 
       /*
@@ -1562,6 +1773,11 @@ pid_t credativ::run_process(job_info& info) {
      * the finalizing NULL there, too
      */
     char *args[info.execArgs.size() + 2];
+
+    /*
+     * This is a background worker job.
+     */
+    _pgbckctl_job_type = BACKGROUND_WORKER;
 
     args[0] = new char[execstr.length() + 1];
     memset(args[0], '\0', execstr.length() + 1);
