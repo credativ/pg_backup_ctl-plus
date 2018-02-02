@@ -1747,10 +1747,10 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
       }
 
       /* Profile max rate */
-      if (profile->max_rate > 0) {
+      if (profile->max_rate <= 0) {
         cout << boost::format("%-25s\t%-30s") % "MAX RATE" % "NOT RATED" << endl;
       } else {
-        cout << boost::format("%-25s\t%-30s") % "MAX RATE(kbps)" % profile->max_rate << endl;
+        cout << boost::format("%-25s\t%-30s") % "MAX RATE(KByte/s)" % profile->max_rate << endl;
       }
 
       /* Profile backup label */
