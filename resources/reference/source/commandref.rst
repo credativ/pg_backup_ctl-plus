@@ -63,7 +63,7 @@ Syntax::
   CREATE RETENTION POLICY <identifier>
      {
        [KEEP <number of basebackups>]
-       | [DROP { [YEAR <nnnn>] | [MONTH nn] | [DAY nn] }
+       | [DROP OLDER THAN [<nnn> YEARS] | [<nn> MONTHS] | [<nn> DAYS]
      }
 
 The ``CREATE RETENTION POLICY`` command creates a retention policy
