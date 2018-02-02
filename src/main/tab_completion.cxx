@@ -183,8 +183,15 @@ completion_word drop_connection_from_completion[] = { { "FROM", COMPL_KEYWORD, d
 completion_word drop_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, drop_connection_from_completion },
                                                  { "", COMPL_EOL, NULL } };
 
+completion_word drop_profile_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                                    { "", COMPL_EOL, NULL } };
+
+completion_word drop_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, drop_profile_ident_completion },
+                                              { "", COMPL_EOL, NULL } };
+
 completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "STREAMING", COMPL_KEYWORD, drop_connection_completion },
+                                      { "BACKUP", COMPL_KEYWORD, drop_profile_completion },
                                       { "", COMPL_EOL, NULL } };
 
 completion_word alter_archive_set_completion[] = { { "SET", COMPL_KEYWORD, param_start_completion },
@@ -196,12 +203,16 @@ completion_word alter_archive_ident_completion[] = { { "<identifier>", COMPL_IDE
 completion_word alter_completion[] = { { "ARCHIVE", COMPL_KEYWORD, alter_archive_ident_completion },
                                        { "", COMPL_EOL, NULL } };
 
+completion_word show_completion[] = { { "WORKERS", COMPL_KEYWORD, NULL },
+                                      { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
                                     { "VERIFY", COMPL_KEYWORD, verify_archive_completion },
                                     { "DROP", COMPL_KEYWORD, drop_completion },
                                     { "ALTER", COMPL_KEYWORD, alter_completion },
+                                    { "SHOW", COMPL_KEYWORD, show_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
@@ -229,7 +240,7 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
    *       *uncompleted* input, so leave it out from
    *       examination.
    */
-  for (int i = 0; i < previous_words.size() - 1; i++) {
+  for (unsigned int i = 0; i < previous_words.size() - 1; i++) {
 
     std::string current_word = previous_words[i];
     completion_word *candidates;
