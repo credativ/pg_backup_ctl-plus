@@ -78,7 +78,7 @@ Syntax::
     [CHECKPOINT { DELAYED|FAST }]
     [COMPRESSION { GZIP|NONE|ZSTD }]
     [LABEL "<label string>"]
-    [MAX_RATE <bytes per second>]
+    [MAX_RATE <KBytes per second>]
     [WAIT_FOR_WAL { TRUE|FALSE }]
     [WAL { EXCLUDED|INCLUDED }]
 
@@ -109,7 +109,7 @@ The specific options are:
 |            +----------+------------------------------------------------------------+ EXCLUDED |
 |            | EXCLUDED | No WALs in basebackup included                             |          |
 +------------+----------+------------------------------------------------------------+----------+
-| MAX_RATE   | xx Bytes | If set, number of bytes for requested throughput           | 0 (off)  |
+| MAX_RATE   | xx KBytes| If set, number of KBytes for requested throughput          | 0 (off)  |
 +------------+----------+------------------------------------------------------------+----------+
 | LABEL      | String   | Backup label string, default is PG_BCK_CTL BASEBACKUP      |          |
 +------------+----------+------------------------------------------------------------+----------+
