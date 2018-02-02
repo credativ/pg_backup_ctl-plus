@@ -61,8 +61,13 @@ CREATE RETENTION POLICY
 Syntax::
 
   CREATE RETENTION POLICY <identifier>
-     { [KEEP <number of basebackups>]
-       | [DROP] }
+     {
+       [KEEP <number of basebackups>]
+       | [DROP { [YEAR <nnnn>] | [MONTH nn] | [DAY nn] }
+     }
+
+The ``CREATE RETENTION POLICY`` command creates a retention policy
+rule which can be applied to clean up backup archives.
 
 CREATE BACKUP PROFILE
 =====================
