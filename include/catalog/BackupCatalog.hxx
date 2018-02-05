@@ -88,6 +88,12 @@ namespace credativ {
     /* connections catalog table */
     static std::vector<std::string> connectionsCatalogCols;
 
+    /* retention catalog table */
+    static std::vector<std::string> retentionCatalogCols;
+
+    /* retention rules catalog table */
+    static std::vector<std::string> retentionRulesCatalogCols;
+
     /*
      * This method maps col IDs from the specified
      * catalog entity to its string name.

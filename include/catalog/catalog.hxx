@@ -1,7 +1,7 @@
 #ifndef __CATALOG__
 #define __CATALOG__
 
-#define CATALOG_MAGIC 104
+#define CATALOG_MAGIC 105
 
 /*
  * Archive catalog entity
@@ -150,5 +150,33 @@
  * Keep number of columns in sync with above definitions
  */
 #define SQL_CON_NCOLS 7
+
+/*
+ * retention catalog entry
+ */
+#define SQL_RETENTION_ENTITY 8
+
+#define SQL_RETENTION_ID_ATTNO 0
+#define SQL_RETENTION_NAME_ATTNO 1
+#define SQL_RETENTION_CREATED_ATTNO 2
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_RETENTION_NCOLS 3
+
+/*
+ * retention rules catalog entity
+ */
+#define SQL_RETENTION_RULES_ENTITY 9
+
+#define SQL_RETENTION_RULES_ID_ATTNO 0
+#define SQL_RETENTION_RULES_TYPE_ATTNO 1
+#define SQL_RETENTION_RULES_VALUE_ATTNO 2
+
+/*
+ * Keep number of columns in sync with above definitions
+ */
+#define SQL_RETENTION_RULES_NCOLS 3
 
 #endif

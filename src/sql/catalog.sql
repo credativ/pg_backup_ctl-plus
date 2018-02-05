@@ -67,7 +67,7 @@ CREATE TABLE version(
        create_date text not null);
 
 /* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
-INSERT INTO version VALUES(104, datetime('now'));
+INSERT INTO version VALUES(105, datetime('now'));
 
 CREATE TABLE backup_profiles(
        id integer not null,
@@ -113,3 +113,18 @@ VALUES
          0,
          1);
 
+CREATE TABLE retention(
+       id integer not null primary key,
+       name text not null,
+       created text not null
+);
+
+CREATE UNIQUE INDEX retention_name_uniq_idx ON retention(name);
+
+CREATE TABLE retention_rules(
+       id integer not null primary key,
+       type integer not null,
+       value text not null
+);
+
+CREATE UNIQUE INDEX retention_rules_id_type_uniq_idx ON retention_rules(id, type);
