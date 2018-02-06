@@ -453,6 +453,32 @@ namespace credativ {
     virtual std::string gimmeFormattedString();
   };
 
+  typedef enum {
+
+    RETENTION_NO_RULE, /* unknown/undefined rule type */
+    RETENTION_KEEP,
+    RETENTION_DROP_BY_YEAR,
+    RETENTION_DROP_BY_MONTH,
+    RETENTION_DROP_BY_DAY
+
+  } RetentionRuleId;
+
+  class RetentionRuleDescr : public PushableCols {
+  public:
+    int id = -1;
+    std::string name = "";
+    std::string created;
+  };
+
+  class RetentionDescr : public PushableCols {
+  public:
+
+    int id = -1;
+    RetentionRuleId type = RETENTION_NO_RULE;
+    std::string value = "";
+
+    std::vector<std::shared_ptr<RetentionRuleDescr>> rules;
+  };
 }
 
 #endif

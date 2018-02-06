@@ -98,6 +98,20 @@ std::vector<std::string>BackupCatalog::procsCatalogCols =
     "shm_id"
   };
 
+std::vector<std::string>BackupCatalog::retentionCatalogCols =
+  {
+    "id",
+    "name",
+    "created"
+  };
+
+std::vector<std::string>BackupCatalog::retentionRulesCatalogCols =
+  {
+    "id",
+    "type",
+    "value"
+  };
+
 PushableCols::PushableCols() {}
 PushableCols::~PushableCols() {}
 
