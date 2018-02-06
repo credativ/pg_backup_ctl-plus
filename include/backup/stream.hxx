@@ -282,12 +282,6 @@ namespace credativ {
     virtual std::shared_ptr<WALStreamerProcess> walstreamer();
 
     /**
-     * Sends a streaming receiver update message to the
-     * primary endpoint.
-     */
-    virtual void sendReceiverStatusUpdate();
-
-    /**
      * Sets the internal PostgreSQL connection to non-blocking.
      */
     virtual void setNonBlocking();

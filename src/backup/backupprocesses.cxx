@@ -143,7 +143,6 @@ ArchiverState WALStreamerProcess::sendStatusUpdate() {
 ArchiverState WALStreamerProcess::handleReceive(char **buffer, int *bufferlen) {
 
   /* Holds length of incoming buffer data */
-  int currlen = 0;
   ArchiverState status = ARCHIVER_STREAMING_ERROR;
 
   /* bufferlen should be not null! */
@@ -263,7 +262,6 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
     {
       XLOGDataStreamMessage *datamsg = dynamic_cast<XLOGDataStreamMessage *>(message);
       XLogRecPtr serverpos;
-      char *datablock;
 
       this->streamident.xlogpos
         = PGStream::encodeXLOGPos(datamsg->getXLOGStartPos());
@@ -724,6 +722,8 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
     this->current_state = ARCHIVER_SHUTDOWN;
 
   }
+
+  return result;
 }
 
 StreamIdentification WALStreamerProcess::identification() {

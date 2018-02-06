@@ -21,6 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## looks like older cmake needs this, too:
 add_definitions(-std=c++11)
+add_definitions(-Wall)
 
 ##
 ## Additional modules for CMake

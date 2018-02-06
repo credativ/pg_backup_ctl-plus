@@ -238,6 +238,9 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
     return PG_BACKUP_CTL_CATALOG_ERROR;
 
   }
+
+  /* Everything seems ok so far. */
+  return PG_BACKUP_CTL_SUCCESS;
 }
 
 static void executeCommand(PGBackupCtlArgs *args) {

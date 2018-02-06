@@ -148,7 +148,7 @@ namespace credativ {
 
     std::ostream& operator<<(std::ostream& out);
     MemoryBuffer& operator=(MemoryBuffer &out);
-    char& operator[](int index);
+    char& operator[](unsigned int index);
 
     /**
      * Returns a pointer of the internally maintained

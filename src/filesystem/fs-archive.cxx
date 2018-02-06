@@ -7,6 +7,7 @@
 #include <boost/range/iterator_range.hpp>
 
 #include <fs-archive.hxx>
+#include <fs-pipe.hxx>
 
 using namespace credativ;
 using namespace std;
@@ -295,8 +296,6 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
     XLogRecPtr recptr;
     std::ostringstream recptrstr;
-    unsigned int hi;
-    unsigned int lo;
 
     /*
      * The starting pointer is either
@@ -605,8 +604,6 @@ std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
 
 void BackupDirectory::fsync() {
 
-  int dh; /* directory descriptor handle */
-
   /*
    * If not a directory, error out.
    */
@@ -887,19 +884,21 @@ ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
                                          vector<string> execArgs)
   : BackupFile(pathHandle) {
 
-  this->executable = executable;
-  this->execArgs = execArgs;
+  this->jobDescr.executable = executable;
+  this->jobDescr.execArgs = execArgs;
 
 }
 
-ArchivePipedProcess::~ArchivePipedProcess() {
+ArchivePipedProcess::~ArchivePipedProcess() {}
+
+bool ArchivePipedProcess::isOpen() {
+
+  return (this->pid > 0) && this->opened;
 
 }
 
 void ArchivePipedProcess::open() {
 
-
-  job_info info;
 
   if (this->isOpen()) {
     throw CArchiveIssue("attempt to open piped process which is already open");
@@ -924,19 +923,63 @@ void ArchivePipedProcess::open() {
   /*
    * Initialize job handle
    */
-  info.use_pipe = true;
-  info.background_exec = true;
-
-  info.execArgs = this->execArgs;
+  this->jobDescr.use_pipe = true;
+  this->jobDescr.background_exec = true;
 
   /*
    * Do the fork()
+   *
+   * run_process() returns the PID of the forked
+   * process that actually execute the binary. This also replaces
+   * the child process via execve(). So check if we are the parent
+   * and, to be schizo, make sure we exit the child in any case.
    */
-  
+  this->pid = run_process(this->jobDescr);
+
+  if (this->pid > 0) {
+
+#ifdef __DEBUG__
+    cerr << "executing piped process with PID " << this->pid << endl;
+#endif
+
+    /*
+     * Seems everything worked so far...
+     */
+    this->opened = true;
+
+  } else if (this->pid < 0) {
+    exit(0);
+  } else {
+    /* oops, something went wrong here */
+    throw CArchiveIssue("could not fork piped process");
+  }
+
 }
 
 size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
+  size_t wbytes = 0;
+  size_t bytes_to_write = len;
+
+  /*
+   * Write directly into the writing end of our internal
+   * pipe, if successfully opened. This is pipe_out[1] in this
+   * case.
+   *
+   * Since we aren't using the FILE stream interface here, we
+   * use write instead of fwrite().
+   */
+  while ((wbytes += ::write(this->jobDescr.pipe_out[1], buf, bytes_to_write)) < len) {
+
+    if (wbytes == 0) {
+      /* checkout errno if we were interrupted */
+      if (errno == EINTR)
+        bytes_to_write -= wbytes;
+    }
+
+  }
+
+  return wbytes;
 }
 
 /******************************************************************************
@@ -1553,7 +1596,6 @@ size_t ZSTDArchiveFile::read(char *buf, size_t len) {
 
   size_t rc = 0;
   size_t inBufSize = ZSTD_compressBound(len);
-  size_t decompressedSize = 0;
 
   /*
    * Internal frame buffer.
@@ -1967,13 +2009,11 @@ void BackupHistoryFile::rename(path& newname) {
 }
 
 size_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
-
-
+  throw CArchiveIssue("not yet implemented");
 }
 
 size_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
-
-
+  throw CArchiveIssue("not yet implemented");
 }
 
 size_t BackupHistoryFile::read(char *buf, size_t len) {
@@ -2028,7 +2068,7 @@ void BackupHistoryFile::read() {
     bool compressed = false;
 
     /* Check state of the history file first */
-    file_status state = status(this->handle);
+    status(this->handle);
 
     /*
      * Open the backup history file.
@@ -2062,9 +2102,6 @@ void BackupHistoryFile::read() {
        */
 
       char backuplabel[MAXPGPATH];
-
-      unsigned int hi;
-      unsigned int lo;
       char ch;
 
       /*

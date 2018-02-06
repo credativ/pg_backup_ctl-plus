@@ -574,6 +574,8 @@ CatalogTag PGBackupCtlCommand::getCommandTag() {
 
   if (this->catalogDescr != nullptr)
     return this->catalogDescr->tag;
+  else
+    return EMPTY_DESCR;
 
 }
 
@@ -831,7 +833,7 @@ void PGBackupCtlParser::parseFile() {
    * Check state of the source file. Throws
    * an exception in case something is wrong.
    */
-  file_status state = status(this->sourceFile);
+  status(this->sourceFile);
 
   /*
    * Use the internal openFile() method

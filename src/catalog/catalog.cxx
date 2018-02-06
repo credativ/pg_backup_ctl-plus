@@ -177,6 +177,7 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   /* job control */
   this->detach = source.detach;
 
+  return *this;
 }
 
 void CatalogDescr::setStreamingForceXLOGPositionRestart( bool const& restart ) {
@@ -680,7 +681,7 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::fetchBackupProfileIntoDescr(s
   std::vector<int> attr = descr->getAffectedAttributes();
   int current_stmt_col = colIdRange.start();
 
-  for (int current = 0; current < attr.size(); current++) {
+  for (unsigned int current = 0; current < attr.size(); current++) {
 
     /*
      * Sanity check, stop if range end is reached.
@@ -1077,9 +1078,7 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
 std::vector<std::shared_ptr<BaseBackupDescr>>
 BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
 
-  sqlite3_stmt *stmt;
   std::ostringstream query;
-  int rc;
   std::vector<int> backupAttrs;
   std::vector<int> tblspcAttrs;
 
@@ -1253,7 +1252,7 @@ std::string BackupCatalog::mapAttributeId(int catalogEntity,
 
 string BackupCatalog::SQLgetColumnList(int catalogEntity, std::vector<int> attrs) {
 
-  int i;
+  unsigned int i;
   std::ostringstream collist;
 
   for (i = 0; i < attrs.size(); i++) {
@@ -1982,7 +1981,7 @@ std::string BackupCatalog::affectedColumnsToString(std::vector<int> affectedAttr
 
   ostringstream result;
 
-  for (int i = 0; i < affectedAttributes.size(); i++) {
+  for (unsigned int i = 0; i < affectedAttributes.size(); i++) {
     result << archiveCatalogCols[affectedAttributes[i]];
 
     if (i < (affectedAttributes.size() - 1))
@@ -1997,7 +1996,7 @@ std::string BackupCatalog::SQLmakePlaceholderList(std::vector<int> affectedAttri
 
   ostringstream result;
 
-  for(int i = 1; i <= affectedAttributes.size(); i++) {
+  for(unsigned int i = 1; i <= affectedAttributes.size(); i++) {
     result << "?" << i;
 
     if (i < affectedAttributes.size())
@@ -2012,7 +2011,7 @@ std::string BackupCatalog::affectedColumnsToString(int entity,
 
   ostringstream result;
 
-  for (int colId = 0; colId < affectedAttributes.size(); colId++) {
+  for (unsigned int colId = 0; colId < affectedAttributes.size(); colId++) {
     result << this->mapAttributeId(entity, affectedAttributes[colId]);
 
     if (colId < (affectedAttributes.size() -1))
@@ -2455,7 +2454,7 @@ void BackupCatalog::updateStream(int streamid,
   int rc;
   sqlite3_stmt *stmt;
   ostringstream updateSQL;
-  int boundCols;
+  unsigned int boundCols;
 
   if(!this->available()) {
     throw CCatalogIssue("could not update stream: database not opened");

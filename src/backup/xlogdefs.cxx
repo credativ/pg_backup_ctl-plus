@@ -382,7 +382,11 @@ XLogRecPtr PrimaryFeedbackMessage::getXLOGServerPos() {
 
 }
 
-std::string PrimaryFeedbackMessage::getServerTime() {}
+uint64 PrimaryFeedbackMessage::getServerTime() {
+
+  return this->xlogservertime;
+
+}
 
 void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
 
@@ -419,7 +423,7 @@ void PrimaryFeedbackMessage::assign(MemoryBuffer &mybuffer) {
    * this by setting it to '1'.
    */
 
-  if (mybuffer[17] = '1') {
+  if (mybuffer[17] == '1') {
     this->wantsResponse();
   }
 

@@ -140,7 +140,12 @@ void ExecCommandCatalogCommand::execute(bool flag) {
 
   jobDescr.close_std_fd = false;
 
-  pid = credativ::run_process(jobDescr);
+  pid = run_process(jobDescr);
+
+  if (pid < (pid_t)0) {
+    cerr << "could not execute command" << endl;
+    return;
+  }
 
   while (::read(jobDescr.pipe_out[0], &buf_byte, 1) > 0) {
     cout << buf_byte;
@@ -592,7 +597,6 @@ void StartStreamingForArchiveCommand::prepareStream() {
    * stream handle.
    */
   std::shared_ptr<StreamIdentification> myStream = nullptr;
-  bool result = false;
   std::vector<std::shared_ptr<StreamIdentification>> streamList;
 
   this->catalog->startTransaction();

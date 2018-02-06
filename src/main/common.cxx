@@ -141,11 +141,10 @@ void MemoryBuffer::clear() {
   memset(this->memory_buffer, 0x0, this->size);
 }
 
-char& MemoryBuffer::operator[](int index) {
+char& MemoryBuffer::operator[](unsigned int index) {
 
   /* Overflow checking */
-  if (index >= this->getSize()
-      || index < 0)
+  if (index >= this->getSize())
     throw CPGBackupCtlFailure("memory buffer index out of range");
 
   return this->memory_buffer[index];

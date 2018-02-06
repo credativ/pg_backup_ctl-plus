@@ -219,10 +219,9 @@ namespace credativ {
     /**
      * Returns the server time reported by a keepalive message.
      *
-     * The returned timestamp is formatted as a ANSI (ISO 8601 compliant)
-     * timestamp string.
+     * The returned value are microseconds since 2000-01-01 midnight.
      */
-    virtual std::string getServerTime();
+    virtual uint64 getServerTime();
   };
 
   class ReceiverStatusUpdateMessage : protected FeedbackMessage {

@@ -69,6 +69,8 @@ int StreamIdentification::updateStartSegmentWriteOffset() {
                          this->wal_segment_size);
 #endif
 
+  return this->write_pos_start_offset;
+
 }
 
 std::string StreamIdentification::xlogposEncoded() {
@@ -177,7 +179,6 @@ std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
 XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 
-  XLogRecPtr result;
   uint32     hi, lo;
 
   if (sscanf(pos.c_str(), "%X/%X", &hi, &lo) != 2) {
@@ -313,7 +314,6 @@ void PGStream::connect() {
 }
 
 void PGStream::disconnect() {
-  ConnStatusType cs;
 
   if (!this->connected())
     throw StreamingConnectionFailure("unable to disconnect stream: not connected",
@@ -331,13 +331,6 @@ void PGStream::disconnect() {
 
 bool PGStream::isIdentified() {
   return this->identified;
-}
-
-void PGStream::sendReceiverStatusUpdate() {
-
-  ExecStatusType es;
-  PGresult *result;
-
 }
 
 void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
