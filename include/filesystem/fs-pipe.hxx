@@ -45,7 +45,10 @@ namespace credativ {
 
     virtual void open();
     virtual size_t write(const char *buf, size_t len);
+    virtual size_t read(char *buf, size_t len);
     virtual bool isOpen();
+    virtual void fsync();
+    virtual void rename(path& newname);
   };
 
 

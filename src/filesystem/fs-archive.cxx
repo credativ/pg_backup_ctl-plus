@@ -958,28 +958,157 @@ void ArchivePipedProcess::open() {
 
 size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
-  size_t wbytes = 0;
-  size_t bytes_to_write = len;
+  ssize_t wbytes = 0;
+  ssize_t req_bytes = len;
+  ssize_t bytes_to_write = len;
+  size_t result = 0;
+
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+
+    oss << "could not write into pipe with process "
+        << this->jobDescr.executable.string()
+        << ", file "
+        << this->handle.string();
+    throw CArchiveIssue(oss.str());
+  }
 
   /*
    * Write directly into the writing end of our internal
-   * pipe, if successfully opened. This is pipe_out[1] in this
+   * pipe, if successfully opened. This is pipe_in[1] in this
    * case.
    *
    * Since we aren't using the FILE stream interface here, we
-   * use write instead of fwrite().
+   * use write() instead of fwrite().
    */
-  while ((wbytes += ::write(this->jobDescr.pipe_out[1], buf, bytes_to_write)) < len) {
+  while ((wbytes += ::write(this->jobDescr.pipe_out[1],
+                            (char *)buf +  wbytes, bytes_to_write)) < req_bytes) {
 
     if (wbytes == 0) {
       /* checkout errno if we were interrupted */
       if (errno == EINTR)
         bytes_to_write -= wbytes;
+      else {
+        std::ostringstream oss;
+
+        oss << "error writing pipe: " << strerror(errno);
+        throw CArchiveIssue(oss.str());
+      }
     }
+
+    result += wbytes;
 
   }
 
-  return wbytes;
+  return result;
+}
+
+size_t ArchivePipedProcess::read(char *buf, size_t len) {
+
+  ssize_t rbytes = 0;
+  ssize_t req_bytes = len;
+  ssize_t bytes_to_read = len;
+  size_t result = 0;
+
+  if (!this->isOpen()) {
+    std::ostringstream oss;
+
+    oss << "could not read from pipe with process "
+        << this->jobDescr.executable.string()
+        << ", file "
+        << this->handle.string();
+    throw CArchiveIssue(oss.str());
+  }
+
+  /*
+   * Read directly from the internal pipe. In this case
+   * the read end is pipe_out[0].
+   *
+   * As we can't use the FILE stream API here, we rely
+   * on read() instead of fread().
+   */
+  while ((rbytes = ::read(this->jobDescr.pipe_out[0],
+                          (char *)buf + rbytes, bytes_to_read)) < req_bytes) {
+
+    if (rbytes == 0) {
+      /* checkout errno */
+      if (errno == EINTR)
+        bytes_to_read -= rbytes;
+      else if (rbytes < 0) {
+        std::ostringstream oss;
+
+        oss << "error reading pipe: " << strerror(errno);
+        throw CArchiveIssue(oss.str());
+      }
+    }
+
+    result += rbytes;
+  }
+
+  return result;
+
+}
+
+void ArchivePipedProcess::fsync() {
+
+  /*
+   * We can't operate on a pipe. fsync() here is only
+   * supported of the attached file is closed and we don't
+   * operate in pipe mode anymore.
+   */
+  if (this->isOpen()) {
+    throw CArchiveIssue("Calling fsync() in pipe mode is not supported. Close the pipe before");
+  }
+
+  ArchiveFile afile(this->handle);
+  afile.setOpenMode("w");
+  afile.open();
+  afile.fsync();
+  afile.close();
+
+}
+
+void ArchivePipedProcess::rename(path& newname) {
+
+  if (this->isOpen()) {
+    std::ostringstream oss;
+
+    oss << "Cannot rename file " << this->handle.string()
+        << " into new file " << newname.string()
+        << " while opened in pipe mode";
+    throw CArchiveIssue(oss.str());
+  }
+
+  ArchiveFile afile(this->handle);
+
+  /*
+   * NOTE:
+   *
+   * We just rename() the file and thus are required
+   * to open the file in read-only mode.
+   */
+  afile.setOpenMode("r+");
+  afile.rename(newname);
+
+  /*
+   * NOTE: ne need to fsync(), rename() did the necessary work already.
+   */
+  afile.close();
+
+}
+
+void ArchivePipedProcess::close() {
+
+  /*
+   * close() here means we are closing our endpoints
+   * of the communication pipe. These are in particular:
+   *
+   * READ end: pipe_out[0]
+   * WRITE end: pipe_in[1]
+   */
+  if (this->isOpen()) {
+
+  }
 }
 
 /******************************************************************************
