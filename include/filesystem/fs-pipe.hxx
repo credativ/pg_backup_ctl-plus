@@ -38,6 +38,13 @@ namespace credativ {
      */
     bool opened = false;
 
+    /**
+     * Sets the mode for piped operations.
+     *
+     * Currently unused.
+     */
+    std::string mode = "";
+
   public:
     ArchivePipedProcess(path pathHandle);
     ArchivePipedProcess(path pathHandle, string executable, vector<string> execArgs);
@@ -50,6 +57,9 @@ namespace credativ {
     virtual void fsync();
     virtual void rename(path& newname);
     virtual void close();
+    virtual off_t lseek(off_t offset, int whence);
+    virtual void setOpenMode(std::string mode);
+
   };
 
 

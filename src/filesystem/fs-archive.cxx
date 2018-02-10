@@ -1049,6 +1049,14 @@ size_t ArchivePipedProcess::read(char *buf, size_t len) {
 
 }
 
+off_t ArchivePipedProcess::lseek(off_t offset, int whence) {
+  throw CArchiveIssue("piped I/O operation doesn't support seek");
+}
+
+void ArchivePipedProcess::setOpenMode(string mode) {
+  this->mode = mode;
+}
+
 void ArchivePipedProcess::fsync() {
 
   /*
@@ -1107,8 +1115,12 @@ void ArchivePipedProcess::close() {
    * WRITE end: pipe_in[1]
    */
   if (this->isOpen()) {
+    ::close(this->jobDescr.pipe_out[0]);
+    ::close(this->jobDescr.pipe_in[1]);
 
+    this->opened = false;
   }
+
 }
 
 /******************************************************************************
