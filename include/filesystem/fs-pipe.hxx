@@ -49,6 +49,7 @@ namespace credativ {
     virtual bool isOpen();
     virtual void fsync();
     virtual void rename(path& newname);
+    virtual void close();
   };
 
 
