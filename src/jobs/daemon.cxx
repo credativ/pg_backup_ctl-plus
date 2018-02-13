@@ -1740,7 +1740,7 @@ FILE * credativ::run_pipelined_command(job_info &info) {
    * the command string.
    */
   for(unsigned int i = 0; i < info.execArgs.size(); i++) {
-    if (i < info.execArgs.size() - 1) {
+    if (i <= info.execArgs.size() - 1) {
       cmd << " ";
     }
 

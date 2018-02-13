@@ -68,7 +68,14 @@ namespace credativ {
      * Special setter/getter methods
      */
     virtual void pushExecArgument(std::string arg);
-    virtual void setExecutable(path executable);
+    virtual void setExecutable(path executable,
+                               bool error_if_not_exists = false);
+
+    /**
+     * Determines wether the underlying pipe
+     * was opened in read or write-only mode.
+     */
+    virtual bool writeable();
 
   };
 

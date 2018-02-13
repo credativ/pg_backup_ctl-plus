@@ -115,7 +115,7 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
         = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".bz2"));
       std::string filename = myfile->getFilePath();
 
-      myfile->setExecutable("/usr/bin/pbzip2");
+      myfile->setExecutable("pbzip2");
       myfile->pushExecArgument("-c");
       myfile->pushExecArgument(">");
       myfile->pushExecArgument(filename);
@@ -913,14 +913,17 @@ ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
 
 }
 
-void ArchivePipedProcess::setExecutable(path executable) {
+void ArchivePipedProcess::setExecutable(path executable,
+                                        bool error_if_not_exists) {
 
-  if (!boost::filesystem::exists(executable)) {
-    ostringstream oss;
-    oss << "executable "
-        << executable.string()
-        << " for piped process does not exist";
-    throw CArchiveIssue(oss.str());
+  if (error_if_not_exists) {
+    if (!boost::filesystem::exists(executable)) {
+      ostringstream oss;
+      oss << "executable "
+          << executable.string()
+          << " for piped process does not exist";
+      throw CArchiveIssue(oss.str());
+    }
   }
 
   this->jobDescr.executable = executable;
@@ -971,6 +974,25 @@ bool ArchivePipedProcess::isOpen() {
 
 }
 
+bool ArchivePipedProcess::writeable() {
+
+  /*
+   * We need to test all various
+   * configurations for write modes. If any
+   * other configurations are found, this is treated
+   * read-only.
+   */
+  if (this->mode == "w"
+      || this->mode == "wb"
+      || this->mode == "w+"
+      || this->mode == "wb+") {
+    return true;
+  }
+
+  return false;
+
+}
+
 void ArchivePipedProcess::open() {
 
   if (this->isOpen()) {
@@ -987,9 +1009,13 @@ void ArchivePipedProcess::open() {
    * it does:
    *
    * - fork() the current process into a new one, execute
-   *   the specified binary with exec()
+   *   the specified binary with exec() (via run_pipelined_command())
    *
    * - establish pipe communication with the pipe
+   *
+   * The latter is dependent on the open mode which
+   * was passed to the instance. We treat everything we
+   * cannot interpret via writeable() as read-only.
    *
    */
 
@@ -997,7 +1023,11 @@ void ArchivePipedProcess::open() {
    * Initialize job handle
    */
   this->jobDescr.background_exec = true;
-  this->jobDescr.po_mode = "w";
+
+  if (this->writeable())
+    this->jobDescr.po_mode = "w";
+  else
+    this->jobDescr.po_mode = "r";
 
   /*
    * Do the fork()
@@ -1038,6 +1068,14 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
   }
 
   /*
+   * Check if the background process supports
+   * read.
+   */
+  if (this->jobDescr.po_mode != "w") {
+    throw CArchiveIssue("cannot write to piped archive file in read-only mode");
+  }
+
+  /*
    * Write directly into the writing end of our internal
    * pipe, if successfully opened. Since we use the popen()
    * API via run_pipelined_command(), we use fwrite().
@@ -1064,9 +1102,6 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
 size_t ArchivePipedProcess::read(char *buf, size_t len) {
 
-  ssize_t rbytes = 0;
-  ssize_t req_bytes = len;
-  ssize_t bytes_to_read = len;
   size_t result = 0;
 
   if (!this->isOpen()) {
@@ -1080,31 +1115,33 @@ size_t ArchivePipedProcess::read(char *buf, size_t len) {
   }
 
   /*
-   * Read directly from the internal pipe. In this case
-   * the read end is pipe_out[0].
-   *
-   * As we can't use the FILE stream API here, we rely
-   * on read() instead of fread().
+   * Check if the background process supports
+   * read.
    */
-  while ((rbytes += ::read(this->jobDescr.pipe_out[0],
-                           (char *)buf + rbytes, bytes_to_read)) < req_bytes) {
-
-    if (rbytes <= 0) {
-      /* checkout errno */
-      if (errno == EINTR)
-        bytes_to_read -= rbytes;
-      else if (rbytes < 0) {
-        std::ostringstream oss;
-
-        this->close();
-
-        oss << "error reading pipe: " << strerror(errno);
-        throw CArchiveIssue(oss.str());
-      }
-    }
+  if (this->jobDescr.po_mode != "r") {
+    throw CArchiveIssue("cannot read from piped archive file in write-only mode");
   }
 
-  result += rbytes;
+  if ((result = fread(buf, len, 1, this->fpipe_handle)) != 1) {
+
+    if ((::feof(this->fpipe_handle) == 0)
+        || (::ferror(this->fpipe_handle) != 0)) {
+      std::ostringstream oss;
+      oss << "read error for file (size="
+          << len
+          << ")"
+          << this->handle.string()
+          << ": "
+          << strerror(errno);
+      throw CArchiveIssue(oss.str());
+    }
+
+
+  }
+
+  if (result > 0)
+    this->currpos += len;
+
 
   return result;
 

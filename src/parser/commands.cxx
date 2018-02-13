@@ -2,6 +2,7 @@
 #include <commands.hxx>
 #include <daemon.hxx>
 #include <stream.hxx>
+#include <fs-pipe.hxx>
 
 using namespace credativ;
 
@@ -1821,6 +1822,71 @@ void CreateBackupProfileCatalogCommand::setProfile(std::shared_ptr<BackupProfile
   this->profileDescr = profileDescr;
 }
 
+void CreateBackupProfileCatalogCommand::verify(bool print_version) {
+
+  job_info jobDescr;
+
+  namespace bf = boost::filesystem;
+
+  jobDescr.background_exec = true;
+
+  /*
+   * When creating a backup profile we check
+   * if certain compression methods are possible
+   * since they are backed by command line tools. Atm
+   * these are:
+   *
+   * PBZIP - requires pbzip2 command line tool
+   * PLAIN - requires the tar command line tool
+   */
+  switch(this->profileDescr->compress_type) {
+
+  case BACKUP_COMPRESS_TYPE_PLAIN:
+    {
+      path tar("tar");
+      ArchivePipedProcess app(tar);
+      char buf[1];
+
+      app.setExecutable(tar);
+      app.pushExecArgument("--version");
+
+      app.setOpenMode("r");
+      app.open();
+
+      while(app.read(buf, 1) >= 1)
+        cout << buf;
+
+      break;
+    }
+
+  case BACKUP_COMPRESS_TYPE_PBZIP:
+    {
+      try {
+        path tar("pbzip2");
+        ArchivePipedProcess app(tar);
+        char buf[1];
+
+        app.setExecutable(tar);
+        app.pushExecArgument("--version");
+
+        app.setOpenMode("r");
+        app.open();
+
+        while(app.read(buf, 1) >= 1)
+          cout << buf;
+      } catch(std::exception &e) {
+        cerr << "ERROR: " << e.what() << endl;
+      }
+
+      break;
+    }
+
+  default:
+    break; /* nothing to do here */
+  }
+
+}
+
 void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
 
   if (this->catalog == nullptr)
@@ -1843,6 +1909,8 @@ void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
   }
 
   try {
+
+    this->verify();
 
     /*
      * Start catalog transaction.

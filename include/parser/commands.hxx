@@ -216,6 +216,13 @@ namespace credativ {
   class CreateBackupProfileCatalogCommand : public BaseCatalogCommand {
   private:
     std::shared_ptr<BackupProfileDescr> profileDescr;
+
+    /**
+     * Internal check for various settings passed
+     * to CREATE BACKUP PROFILE.
+     */
+    virtual void verify(bool print_version = false);
+
   public:
     CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     CreateBackupProfileCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
