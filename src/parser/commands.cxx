@@ -1861,22 +1861,18 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
 
   case BACKUP_COMPRESS_TYPE_PBZIP:
     {
-      try {
-        path tar("pbzip2");
-        ArchivePipedProcess app(tar);
-        char buf[1];
+      path tar("pbzip2");
+      ArchivePipedProcess app(tar);
+      char buf[1];
 
-        app.setExecutable(tar);
-        app.pushExecArgument("--version");
+      app.setExecutable(tar);
+      app.pushExecArgument("--version");
 
-        app.setOpenMode("r");
-        app.open();
+      app.setOpenMode("r");
+      app.open();
 
-        while(app.read(buf, 1) >= 1)
-          cout << buf;
-      } catch(std::exception &e) {
-        cerr << "ERROR: " << e.what() << endl;
-      }
+      while(app.read(buf, 1) >= 1)
+        cout << buf;
 
       break;
     }
@@ -1908,9 +1904,12 @@ void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
     this->catalog->open_rw();
   }
 
-  try {
+  /*
+   * Do some preliminary checks...
+   */
+  this->verify();
 
-    this->verify();
+  try {
 
     /*
      * Start catalog transaction.
