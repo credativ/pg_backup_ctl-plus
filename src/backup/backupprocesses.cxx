@@ -20,6 +20,7 @@ WALStreamerProcess::WALStreamerProcess(PGconn *prepared_connection,
   this->current_state = ARCHIVER_STARTUP;
   this->pgconn        = prepared_connection;
   this->streamident   = streamident;
+  this->stopHandler   = nullptr;
 
   /*
    * prepared_connection needs to be a connected
@@ -378,7 +379,6 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 bool WALStreamerProcess::stopHandlerWantsExit() {
 
   if (this->stopHandler != nullptr) {
-    cerr << "checking STOP handler" << endl;
     return this->stopHandler->check();
   } else
     return false;
@@ -890,6 +890,25 @@ BaseBackupProcess::~BaseBackupProcess() {
 
 }
 
+void BaseBackupProcess::assignStopHandler(JobSignalHandler *handler) {
+
+  /* if handler is NULL, this is a no-op */
+  if (handler == nullptr) {
+    return;
+  }
+
+  this->stopHandler = handler;
+}
+
+bool BaseBackupProcess::stopHandlerWantsExit() {
+
+  if (this->stopHandler != nullptr) {
+    return this->stopHandler->check();
+  } else
+    return false;
+
+}
+
 void BaseBackupProcess::start() {
 
   PGresult *result;
@@ -1251,6 +1270,7 @@ void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> 
 
   char *copybuf = NULL;
   int rc;
+  bool interrupted = false;
 
   while(true) {
 
@@ -1285,7 +1305,29 @@ void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> 
      *       will do this when necessary.
      */
     this->stepInfo.file->write(copybuf, rc);
+
+    /*
+     * Check if we are requested to stop.
+     *
+     * If true, we remember that we were interrupted.
+     */
+    if (this->stopHandlerWantsExit()) {
+      interrupted = true;
+      break;
+    }
   }
 
-  this->current_state = BASEBACKUP_TABLESPACE_READY;
+  /*
+   * Mark this tablespace as ready, but only in case we werent'
+   * interrupted.
+   */
+  if (!interrupted)
+    this->current_state = BASEBACKUP_TABLESPACE_READY;
+  else
+    this->current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
+
+}
+
+BaseBackupState BaseBackupProcess::getState() {
+  return this->current_state;
 }

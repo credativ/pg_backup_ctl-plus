@@ -114,6 +114,7 @@ completion_word create_bck_prof_max_rate[] = { { "<max rate in bytes>", COMPL_ID
 completion_word create_bck_prof_compr_type[] = { { "GZIP", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
                                                  { "NONE", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
                                                  { "ZSTD", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
+                                                 { "PBZIP", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
                                                  { "", COMPL_EOL, NULL } };
 
 completion_word create_bck_prof_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_bck_prof_param_full },

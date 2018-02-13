@@ -1719,8 +1719,53 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
 }
 
 /**
+ * run_pipelined_command() is some kind special
+ * compared to run_process in that it employs
+ * popen() to establish a unidirectional pipe.
+ *
+ * This also allows to pass down complex commands
+ * with shell interactions, e.g. redirect et al.
+ */
+FILE * credativ::run_pipelined_command(job_info &info) {
+
+  ostringstream cmd;
+
+  if (!info.background_exec)
+    throw WorkerFailure("running a pipelined command requires background execution");
+
+  cmd << info.executable.string();
+
+  /*
+   * The exec arguments must be iterated to create
+   * the command string.
+   */
+  for(unsigned int i = 0; i < info.execArgs.size(); i++) {
+    if (i < info.execArgs.size() - 1) {
+      cmd << " ";
+    }
+
+    cmd << info.execArgs[i];
+  }
+
+#ifdef __DEBUG__
+  cout << "DEBUG: executing " << cmd.str() << endl;
+#endif
+
+  info.fpipe_handle = popen(cmd.str().c_str(), info.po_mode.c_str());
+
+  if (info.fpipe_handle == NULL) {
+    ostringstream oss;
+
+    oss << "could not execute popen(): " << strerror(errno);
+    throw WorkerFailure(oss.str());
+  }
+
+  return info.fpipe_handle;
+}
+
+/**
  * run_process is supposed to run an executable
- * in a background process via execve() and
+ * in a background process via execv() and
  * a bidirectional pipe where the caller
  * can write to and read from.
  */
@@ -1827,7 +1872,7 @@ pid_t credativ::run_process(job_info& info) {
 
     }
 
-    if (::execve(execstr.c_str(), args, NULL) < 0) {
+    if (::execv(execstr.c_str(), args) < 0) {
       std::ostringstream oss;
       oss << "error executing "
           << info.executable.string()

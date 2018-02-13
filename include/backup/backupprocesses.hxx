@@ -36,6 +36,7 @@ namespace credativ {
     BASEBACKUP_TABLESPACE_READY,
     BASEBACKUP_STEP_TABLESPACE,
     BASEBACKUP_STEP_TABLESPACE_BASE,
+    BASEBACKUP_STEP_TABLESPACE_INTERRUPTED,
     BASEBACKUP_EOB,
     BASEBACKUP_INIT
 
@@ -79,6 +80,18 @@ namespace credativ {
    * Implementation of class WALStreamerProcess
    */
   class WALStreamerProcess : public CPGBackupCtlBase {
+  private:
+
+    /**
+     * Internal method to check wether a specified
+     * stop handler was set.
+     */
+    virtual bool stopHandlerWantsExit();
+
+    /**
+     * Signal handler instances.
+     */
+    JobSignalHandler *stopHandler = nullptr;
 
   protected:
 
@@ -157,17 +170,6 @@ namespace credativ {
      * be passed to select().
      */
     void timeoutSelectValue(timeval *timeoutptr);
-
-    /**
-     * Internal method to check wether a specified
-     * stop handler was set.
-     */
-    virtual bool stopHandlerWantsExit();
-
-    /**
-     * Signal handler instances.
-     */
-    JobSignalHandler *stopHandler = nullptr;
 
   public:
 
@@ -282,6 +284,18 @@ namespace credativ {
    * infrastructure.
    */
   class BaseBackupProcess : public CPGBackupCtlBase {
+  private:
+
+    /**
+     * Internal method to check wether a specified
+     * stop handler was set.
+     */
+    virtual bool stopHandlerWantsExit();
+
+    /**
+     * Signal handler instances.
+     */
+    JobSignalHandler *stopHandler = nullptr;
 
   protected:
     BaseBackupState current_state;
@@ -351,6 +365,11 @@ namespace credativ {
      */
     virtual void end();
 
+    /**
+     * Returns current status of a basebackup handle.
+     */
+    virtual BaseBackupState getState();
+
     /*
      * Step through the interal tablespace meta info
      * (initialized by calling readTablespaceInfo()), and
@@ -376,6 +395,13 @@ namespace credativ {
      */
     virtual bool stepTablespace(std::shared_ptr<StreamBaseBackup> backupHandle,
                                 std::shared_ptr<BackupTablespaceDescr> &descr);
+
+    /**
+     * Assign a stop signal handler to a WALStreamerProcess
+     * instance. This handler is used to check wether we
+     * received an asynchronous stop signal somehow.
+     */
+    virtual void assignStopHandler(JobSignalHandler *handler);
   };
 
 }

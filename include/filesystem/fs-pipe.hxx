@@ -1,6 +1,9 @@
 #ifndef __PIPED_ARCHIVE__
 #define __PIPED_ARCHIVE__
 
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #include <fs-archive.hxx>
 #include <jobhandles.hxx>
 
@@ -24,7 +27,7 @@ namespace credativ {
     /**
      * PID of piped executable.
      */
-    pid_t pid = -1;
+    FILE *fpipe_handle = NULL;
 
     /**
      * Internal job descriptor, controls
@@ -56,9 +59,16 @@ namespace credativ {
     virtual bool isOpen();
     virtual void fsync();
     virtual void rename(path& newname);
+    virtual void remove();
     virtual void close();
     virtual off_t lseek(off_t offset, int whence);
     virtual void setOpenMode(std::string mode);
+
+    /*
+     * Special setter/getter methods
+     */
+    virtual void pushExecArgument(std::string arg);
+    virtual void setExecutable(path executable);
 
   };
 

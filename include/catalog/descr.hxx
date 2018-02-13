@@ -52,7 +52,8 @@ namespace credativ {
 
     BACKUP_COMPRESS_TYPE_NONE = 0,
     BACKUP_COMPRESS_TYPE_GZIP = 1,
-    BACKUP_COMPRESS_TYPE_ZSTD
+    BACKUP_COMPRESS_TYPE_ZSTD = 2,
+    BACKUP_COMPRESS_TYPE_PBZIP = 3
 
   } BackupProfileCompressType;
 

@@ -96,6 +96,20 @@ namespace credativ {
     int pipe_out[2];
 
     /**
+     * FILE stream handle for pipelined background
+     * command via popen().
+     */
+    FILE *fpipe_handle = NULL;
+
+    /**
+     * Argument for popen() to open the
+     * pipe in either read or write-only mode. Allowed
+     * valus are (according to man(3) popen): "w" for write
+     * and "r" for read only. Default is "w".
+     */
+    std::string po_mode = "w";
+
+    /**
      * Tells the background job to execute either the specified
      * executable with execArgs arguments or the specified cmdHandle.
      * This uses Boost::Process and replaces the child process context

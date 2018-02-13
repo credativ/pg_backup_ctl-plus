@@ -109,6 +109,21 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
     throw CArchiveIssue("zstandard compression support not compiled in");
 #endif
 
+  case BACKUP_COMPRESS_TYPE_PBZIP:
+    {
+      std::shared_ptr<ArchivePipedProcess> myfile
+        = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".bz2"));
+      std::string filename = myfile->getFilePath();
+
+      myfile->setExecutable("/usr/bin/pbzip2");
+      myfile->pushExecArgument("-c");
+      myfile->pushExecArgument(">");
+      myfile->pushExecArgument(filename);
+
+      return myfile;
+      break;
+    }
+
   default:
     std::ostringstream oss;
     oss << "could not create archive file: invalid compression type: " << compression;
@@ -837,8 +852,18 @@ BackupFile::BackupFile(path handle) {
    */
   path file_ext = this->handle.extension();
 
-  if (file_ext.string() == ".gz")
+  if (file_ext.string() == ".gz") {
     this->setCompressed(true);
+  }
+
+  if (file_ext.string() == ".bz2") {
+    this->setCompressed(true);
+  }
+
+  if (file_ext.string() == ".zstd") {
+    this->setCompressed(true);
+  }
+
 }
 
 BackupFile::~BackupFile(){}
@@ -875,9 +900,7 @@ off_t BackupFile::current_position() {
  * ArchivePipedProcess Implementation
  ******************************************************************************/
 
-ArchivePipedProcess::ArchivePipedProcess(path pathHandle) : BackupFile(pathHandle) {
-
-}
+ArchivePipedProcess::ArchivePipedProcess(path pathHandle) : BackupFile(pathHandle) {}
 
 ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
                                          string executable,
@@ -886,19 +909,69 @@ ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
 
   this->jobDescr.executable = executable;
   this->jobDescr.execArgs = execArgs;
+  this->fpipe_handle = NULL;
 
 }
 
-ArchivePipedProcess::~ArchivePipedProcess() {}
+void ArchivePipedProcess::setExecutable(path executable) {
+
+  if (!boost::filesystem::exists(executable)) {
+    ostringstream oss;
+    oss << "executable "
+        << executable.string()
+        << " for piped process does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  this->jobDescr.executable = executable;
+
+}
+
+void ArchivePipedProcess::pushExecArgument(std::string arg) {
+
+  if (arg.length() > 0)
+    this->jobDescr.execArgs.push_back(arg);
+
+}
+
+void ArchivePipedProcess::remove() {
+
+  int rc;
+
+  /*
+   * Remove operation is supported in case the specified
+   * file is not open.
+   */
+  if (this->isOpen()) {
+    CArchiveIssue("cannot unlink opened file when used within a pipe");
+  }
+
+  rc = unlink(this->handle.string().c_str());
+
+  if (rc != 0) {
+    std::ostringstream oss;
+    oss << "cannot unlink file \"" << this->handle.string().c_str() << "\""
+        << " (errno) " << errno;
+    throw CArchiveIssue(oss.str());
+  }
+
+}
+
+ArchivePipedProcess::~ArchivePipedProcess() {
+
+  if (this->fpipe_handle != NULL) {
+    pclose(this->fpipe_handle);
+  }
+
+}
 
 bool ArchivePipedProcess::isOpen() {
 
-  return (this->pid > 0) && this->opened;
+  return (this->fpipe_handle != NULL) && this->opened;
 
 }
 
 void ArchivePipedProcess::open() {
-
 
   if (this->isOpen()) {
     throw CArchiveIssue("attempt to open piped process which is already open");
@@ -923,44 +996,35 @@ void ArchivePipedProcess::open() {
   /*
    * Initialize job handle
    */
-  this->jobDescr.use_pipe = true;
   this->jobDescr.background_exec = true;
+  this->jobDescr.po_mode = "w";
 
   /*
    * Do the fork()
    *
-   * run_process() returns the PID of the forked
+   * run_pipelined_command() returns the PID of the forked
    * process that actually execute the binary. This also replaces
    * the child process via execve(). So check if we are the parent
    * and, to be schizo, make sure we exit the child in any case.
    */
-  this->pid = run_process(this->jobDescr);
+  this->fpipe_handle = run_pipelined_command(this->jobDescr);
 
-  if (this->pid > 0) {
-
-#ifdef __DEBUG__
-    cerr << "executing piped process with PID " << this->pid << endl;
-#endif
+  if (this->fpipe_handle != NULL) {
 
     /*
      * Seems everything worked so far...
      */
     this->opened = true;
 
-  } else if (this->pid < 0) {
-    exit(0);
   } else {
     /* oops, something went wrong here */
-    throw CArchiveIssue("could not fork piped process");
+    throw CArchiveIssue("could not fork piped command");
   }
 
 }
 
 size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
-  ssize_t wbytes = 0;
-  ssize_t req_bytes = len;
-  ssize_t bytes_to_write = len;
   size_t result = 0;
 
   if (!this->isOpen()) {
@@ -975,30 +1039,25 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
   /*
    * Write directly into the writing end of our internal
-   * pipe, if successfully opened. This is pipe_in[1] in this
-   * case.
-   *
-   * Since we aren't using the FILE stream interface here, we
-   * use write() instead of fwrite().
+   * pipe, if successfully opened. Since we use the popen()
+   * API via run_pipelined_command(), we use fwrite().
    */
-  while ((wbytes += ::write(this->jobDescr.pipe_out[1],
-                            (char *)buf +  wbytes, bytes_to_write)) < req_bytes) {
-
-    if (wbytes == 0) {
-      /* checkout errno if we were interrupted */
-      if (errno == EINTR)
-        bytes_to_write -= wbytes;
-      else {
-        std::ostringstream oss;
-
-        oss << "error writing pipe: " << strerror(errno);
-        throw CArchiveIssue(oss.str());
-      }
-    }
-
-    result += wbytes;
-
+  if ((result = fwrite(buf, len, 1, this->fpipe_handle)) != 1) {
+    std::ostringstream oss;
+    oss << "write error for file (size="
+        << len
+        << ")"
+        << this->handle.string()
+        << ": "
+        << strerror(errno);
+    throw CArchiveIssue(oss.str());
   }
+
+  /*
+   * Update internal offset
+   */
+  if (result > 0)
+    this->currpos += len;
 
   return result;
 }
@@ -1027,23 +1086,25 @@ size_t ArchivePipedProcess::read(char *buf, size_t len) {
    * As we can't use the FILE stream API here, we rely
    * on read() instead of fread().
    */
-  while ((rbytes = ::read(this->jobDescr.pipe_out[0],
-                          (char *)buf + rbytes, bytes_to_read)) < req_bytes) {
+  while ((rbytes += ::read(this->jobDescr.pipe_out[0],
+                           (char *)buf + rbytes, bytes_to_read)) < req_bytes) {
 
-    if (rbytes == 0) {
+    if (rbytes <= 0) {
       /* checkout errno */
       if (errno == EINTR)
         bytes_to_read -= rbytes;
       else if (rbytes < 0) {
         std::ostringstream oss;
 
+        this->close();
+
         oss << "error reading pipe: " << strerror(errno);
         throw CArchiveIssue(oss.str());
       }
     }
-
-    result += rbytes;
   }
+
+  result += rbytes;
 
   return result;
 
@@ -1059,17 +1120,8 @@ void ArchivePipedProcess::setOpenMode(string mode) {
 
 void ArchivePipedProcess::fsync() {
 
-  /*
-   * We can't operate on a pipe. fsync() here is only
-   * supported of the attached file is closed and we don't
-   * operate in pipe mode anymore.
-   */
-  if (this->isOpen()) {
-    throw CArchiveIssue("Calling fsync() in pipe mode is not supported. Close the pipe before");
-  }
-
   ArchiveFile afile(this->handle);
-  afile.setOpenMode("w");
+
   afile.open();
   afile.fsync();
   afile.close();
@@ -1115,10 +1167,11 @@ void ArchivePipedProcess::close() {
    * WRITE end: pipe_in[1]
    */
   if (this->isOpen()) {
-    ::close(this->jobDescr.pipe_out[0]);
-    ::close(this->jobDescr.pipe_in[1]);
 
+    ::pclose(this->fpipe_handle);
+    this->fpipe_handle = NULL;
     this->opened = false;
+
   }
 
 }

@@ -1463,6 +1463,12 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     bbp = pgstream.basebackup(backupProfile);
 
+    /*
+     * Set signal handler
+     */
+    bbp->assignStopHandler(this->stopHandler);
+
+
 #ifdef __DEBUG__
     cerr << "DEBUG: basebackup stream handle initialize" << endl;
 #endif
@@ -1545,6 +1551,14 @@ void StartBasebackupCatalogCommand::execute(bool background) {
       tablespaceDescr->backup_id = basebackupDescr->id;
       catalog->registerTablespaceForBackup(tablespaceDescr);
       bbp->backupTablespace(tablespaceDescr);
+
+      /*
+       * Check the state of the last tablespace being
+       * copied. If we were interrupted, we abort the
+       * backup processing loop here immediately.
+       */
+      if (bbp->getState() != BASEBACKUP_TABLESPACE_READY)
+        throw StreamingFailure("streaming basebackup aborted");
     }
 
     /*
@@ -1744,6 +1758,9 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
         break;
       case BACKUP_COMPRESS_TYPE_ZSTD:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "ZSTD" << endl;
+        break;
+      case BACKUP_COMPRESS_TYPE_PBZIP:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PBZIP" << endl;
         break;
       default:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "UNKNOWN or N/A" << endl;

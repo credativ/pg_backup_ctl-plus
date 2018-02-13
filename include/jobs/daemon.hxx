@@ -187,6 +187,23 @@ namespace credativ {
    */
   pid_t run_process(job_info &info);
 
+  /**
+   * Runs a blocking child subprocess via popen().
+   *
+   * Allows unidirectional pipes only. This, job_info.use_pipe
+   * and its corresponding pipe_in/pipe_out handles are ignored.
+   *
+   * Since popen() uses the file stream API, calling run_pipelined_command()
+   * initializes the fpipe_handle and requires the correct po_mode fields
+   * in the specified job_info structure to be set. Thus, a valid job
+   * handle suitable to call run_pipelined_command() has these fields set:
+   *
+   * job_info.executable
+   * job_info.execArgs
+   * job_info.background_exec = true
+   * job_info.po_mode
+   */
+  FILE * run_pipelined_command(job_info &info);
 }
 
 #endif
