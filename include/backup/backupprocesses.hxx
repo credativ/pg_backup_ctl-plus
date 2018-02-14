@@ -108,9 +108,12 @@ namespace credativ {
      * Timeout for polling on WAL stream.
      *
      * Default is 10000ms
+     *
+     *
+     * NOTE: This timeout value should never be
+     * larger than the receiver_status_timeout below.
      */
     long timeout = 10000;
-
 
     /**
      * Timeout when to send status update to upstream, in milliseconds.
@@ -276,6 +279,18 @@ namespace credativ {
      * connected stream.
      */
     virtual ArchiverState sendStatusUpdate();
+
+    /**
+     * Assign a timeout value for receiver status updates.
+     * The default is 60s.
+     *
+     * NOTE: This will throw a StreamingFailure in case
+     *       the value is lower than 10s.
+     *
+     *       10s currently is the internal fixed timeout value for
+     *       polling on the PostgreSQL streaming socket.
+     */
+    virtual void setReceiverStatusTimeout(long value);
 
   };
 

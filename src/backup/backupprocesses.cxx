@@ -395,6 +395,21 @@ void WALStreamerProcess::assignStopHandler(JobSignalHandler *handler) {
   this->stopHandler = handler;
 }
 
+void WALStreamerProcess::setReceiverStatusTimeout(long value) {
+
+  /*
+   * We don't allow values lower than ower
+   * fixed internal select() timeout.
+   */
+  if (value < this->timeout) {
+    throw StreamingFailure("receiver status timeout cannot be lower than "
+                           + this->timeout);
+  }
+
+  this->receiver_status_timeout = value;
+
+}
+
 bool WALStreamerProcess::receive() {
 
   bool can_continue = false;
@@ -450,10 +465,18 @@ bool WALStreamerProcess::receive() {
      * Next we check wether we should send a status update message
      * to upstream. This is always the case if our internal
      * timeout value forces us to do.
+     *
+     * Since we also poll on the socket with a specific timeout, we
+     * also recognize this timeout value here.
      */
-    if (CPGBackupCtlBase::calculate_duration_ms(this->last_status_update,
+    if (CPGBackupCtlBase::calculate_duration_ms(this->last_status_update
+                                                - std::chrono::milliseconds(this->timeout),
                                                 CPGBackupCtlBase::current_hires_time_point())
         >= std::chrono::milliseconds(this->receiver_status_timeout)) {
+
+#ifdef __DEBUG_XLOG__
+      cerr << "standby status update overdue" << endl;
+#endif
 
       this->sendStatusUpdate();
       this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
