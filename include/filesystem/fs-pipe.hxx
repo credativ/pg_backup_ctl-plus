@@ -48,6 +48,12 @@ namespace credativ {
      */
     std::string mode = "";
 
+    /**
+     * path handle is referencing a directory, not
+     * a file.
+     */
+    bool path_is_directory = false;
+
   public:
     ArchivePipedProcess(path pathHandle);
     ArchivePipedProcess(path pathHandle, string executable, vector<string> execArgs);

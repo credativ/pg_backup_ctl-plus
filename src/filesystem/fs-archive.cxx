@@ -124,6 +124,29 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       break;
     }
 
+  case BACKUP_COMPRESS_TYPE_PLAIN:
+    {
+      /*
+       * When streaming into tar, we want
+       * to have the plain directory. Thus we cannot
+       * reference a single file here. ArchivePipeProcess
+       * should protect us for doing the wrong thing here (tm).
+       */
+      std::shared_ptr<ArchivePipedProcess> myfile
+        = std::make_shared<ArchivePipedProcess>(this->streaming_subdir);
+      std::string directory = myfile->getFilePath();
+
+      myfile->setExecutable("tar");
+      myfile->pushExecArgument("-C");
+      myfile->pushExecArgument(directory);
+      myfile->pushExecArgument("-x");
+      myfile->pushExecArgument("-f");
+      myfile->pushExecArgument("-");
+
+      return myfile;
+      break;
+    }
+
   default:
     std::ostringstream oss;
     oss << "could not create archive file: invalid compression type: " << compression;
@@ -132,6 +155,7 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
   }
 
 }
+
 
 path StreamingBaseBackupDirectory::getPath() {
   return this->streaming_subdir;
@@ -617,6 +641,44 @@ std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
 
 }
 
+void BackupDirectory::fsync_recursive(path handle) {
+
+  if (is_directory(handle)) {
+
+    for (directory_entry &entry : directory_iterator(handle)) {
+      path subhandle = entry.path();
+
+      /*
+       * fsync() contents of current directory, call
+       * fsync_worker() recursively on subdir.
+       */
+      try {
+        BackupDirectory::fsync(handle);
+      } catch(CArchiveIssue &e) {
+        /* ignore any errors while recursing */
+      }
+
+      BackupDirectory::fsync_recursive(subhandle);
+    }
+
+  } else if (is_regular_file(handle)) {
+
+    ArchiveFile file(handle);
+
+    file.setOpenMode("r");
+
+    try {
+      file.open();
+      file.fsync();
+      file.close();
+    } catch (CArchiveIssue &e) {
+      /* ignore any errors while recursing. */
+    }
+
+  }
+
+}
+
 void BackupDirectory::fsync() {
 
   /*
@@ -911,6 +973,15 @@ ArchivePipedProcess::ArchivePipedProcess(path pathHandle,
   this->jobDescr.execArgs = execArgs;
   this->fpipe_handle = NULL;
 
+  /*
+   * ArchivePipedProcess is allowed to reference a
+   * directory here. Check this and save this
+   * information.
+   */
+  if (is_directory(pathHandle)) {
+    this->path_is_directory = true;
+  }
+
 }
 
 void ArchivePipedProcess::setExecutable(path executable,
@@ -940,6 +1011,10 @@ void ArchivePipedProcess::pushExecArgument(std::string arg) {
 void ArchivePipedProcess::remove() {
 
   int rc;
+
+  if (this->path_is_directory) {
+    throw CArchiveIssue("deleting a directory with a piped archive handle is not allowed");
+  }
 
   /*
    * Remove operation is supported in case the specified
@@ -1057,6 +1132,10 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
   size_t result = 0;
 
+  if (this->path_is_directory) {
+    throw CArchiveIssue("write into a piped archive handle with a directory is not supported");
+  }
+
   if (!this->isOpen()) {
     std::ostringstream oss;
 
@@ -1103,6 +1182,10 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 size_t ArchivePipedProcess::read(char *buf, size_t len) {
 
   size_t result = 0;
+
+  if (this->path_is_directory) {
+    throw CArchiveIssue("write into a piped archive handle with a directory is not supported");
+  }
 
   if (!this->isOpen()) {
     std::ostringstream oss;
@@ -1157,11 +1240,15 @@ void ArchivePipedProcess::setOpenMode(string mode) {
 
 void ArchivePipedProcess::fsync() {
 
-  ArchiveFile afile(this->handle);
+  if (this->path_is_directory) {
+    ArchiveFile afile(this->handle);
 
-  afile.open();
-  afile.fsync();
-  afile.close();
+    afile.open();
+    afile.fsync();
+    afile.close();
+  } else {
+
+  }
 
 }
 

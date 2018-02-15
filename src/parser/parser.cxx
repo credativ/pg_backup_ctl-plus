@@ -387,7 +387,9 @@ namespace credativ {
              | no_case[lexeme[ lit("ZSTD") ]]
              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_ZSTD) ]
              | no_case[lexeme[ lit("PBZIP") ]]
-             [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PBZIP)] );
+             [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PBZIP)]
+             | no_case[lexeme[ lit("PLAIN") ]]
+             [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PLAIN)]);
 
         /*
          * CREATE BACKUP PROFILE ...  MAX_RATE=<kbps>

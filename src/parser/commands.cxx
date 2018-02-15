@@ -100,8 +100,8 @@ void ShowWorkersCommandHandle::execute(bool noop) {
 
       if (worker.pid > 0) {
         cout << "WORKER PID " << worker.pid
-             << " executing " << CatalogDescr::commandTagName(worker.cmdType)
-             << " started " << CPGBackupCtlBase::ptime_to_str(worker.started)
+             << " | executing " << CatalogDescr::commandTagName(worker.cmdType)
+             << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
              << endl;
       }
 
@@ -1763,6 +1763,9 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
       case BACKUP_COMPRESS_TYPE_PBZIP:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PBZIP" << endl;
         break;
+      case BACKUP_COMPRESS_TYPE_PLAIN:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PLAIN" << endl;
+        break;
       default:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "UNKNOWN or N/A" << endl;
         break;
@@ -1845,7 +1848,7 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
     {
       path tar("tar");
       ArchivePipedProcess app(tar);
-      char buf[1];
+      char buf[4];
 
       app.setExecutable(tar);
       app.pushExecArgument("--version");
@@ -1856,16 +1859,17 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       while(app.read(buf, 1) >= 1)
         cout << buf;
 
+      app.close();
       break;
     }
 
   case BACKUP_COMPRESS_TYPE_PBZIP:
     {
-      path tar("pbzip2");
-      ArchivePipedProcess app(tar);
-      char buf[1];
+      path pbzip("pbzip2");
+      ArchivePipedProcess app(pbzip);
+      char buf[4];
 
-      app.setExecutable(tar);
+      app.setExecutable(pbzip);
       app.pushExecArgument("--version");
 
       app.setOpenMode("r");
@@ -1874,6 +1878,7 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       while(app.read(buf, 1) >= 1)
         cout << buf;
 
+      app.close();
       break;
     }
 

@@ -329,6 +329,7 @@ namespace credativ {
      * Fsync a specific path.
      */
     static void fsync(path syncPath);
+
   public:
 
     BackupDirectory(path handle);
@@ -361,6 +362,18 @@ namespace credativ {
      * object instance.
      */
     virtual void fsync();
+
+    /**
+     * Recursively fsync the directory contents and
+     * the directory itself.
+     *
+     * This can also be used to fsync a file.
+     *
+     * This might be an expensive operation, if the
+     * the directory was just created and contains many
+     * new or large files.
+     */
+    static void fsync_recursive(path handle);
 
     /*
      * Returns the path handle this object instance
