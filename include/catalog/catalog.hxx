@@ -51,8 +51,8 @@
 #define SQL_BACKUP_STARTED_ATTNO 7
 #define SQL_BACKUP_STOPPED_ATTNO 8
 #define SQL_BACKUP_PINNED_ATTNO 9
-#define SQL_BACKUP_STATUS 10
-#define SQL_BACKUP_SYSTEMID 11
+#define SQL_BACKUP_STATUS_ATTNO 10
+#define SQL_BACKUP_SYSTEMID_ATTNO 11
 
 /*
  * Keep that in sync with above number of cols

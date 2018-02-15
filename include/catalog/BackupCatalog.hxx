@@ -120,9 +120,17 @@ namespace credativ {
       return CPGBackupCtlBase::intToStr(CATALOG_MAGIC);
     }
 
+    /**
+     * Bind affected backup attribute values
+     * to the given SQLite3 statement.
+     */
+    int SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbdescr,
+                                sqlite3_stmt *stmt,
+                                Range range);
+
     /*
      * Bind affected connection attribute values
-     * to the given SQLite3 statemenet.
+     * to the given SQLite3 statement.
      */
     int SQLbindConnectionAttributes(std::shared_ptr<ConnectionDescr> conDescr,
                                     std::vector<int> affectedAttributes,
@@ -381,6 +389,14 @@ namespace credativ {
     std::shared_ptr<StreamIdentification>
        fetchStreamData(sqlite3_stmt *stmt,
                        std::vector<int> affectedRows);
+
+    /**
+     * Fetch backup information from current stmt handle into
+     * the specified BaseBackupDescr handle.
+     */
+    std::shared_ptr<BaseBackupDescr> fetchBackupIntoDescr(sqlite3_stmt *stmt,
+                                                          std::shared_ptr<BaseBackupDescr> descr,
+                                                          Range colIdRange);
 
     /*
      * Fetch catalog process information from

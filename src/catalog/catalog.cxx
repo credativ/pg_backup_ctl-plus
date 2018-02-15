@@ -578,26 +578,32 @@ void BackupCatalog::fetchConnectionData(sqlite3_stmt *stmt,
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
         conDescr->type = (char *) sqlite3_column_text(stmt, currindex);
       break;
+
     case SQL_CON_PGHOST_ATTNO:
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
         conDescr->pghost = (char *) sqlite3_column_text(stmt, currindex);
       break;
+
     case SQL_CON_PGPORT_ATTNO:
       conDescr->pgport = sqlite3_column_int(stmt, currindex);
       break;
+
     case SQL_CON_PGUSER_ATTNO:
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
         conDescr->pguser = (char *) sqlite3_column_text(stmt, currindex);
       break;
+
     case SQL_CON_PGDATABASE_ATTNO:
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL)
         conDescr->pgdatabase = (char *) sqlite3_column_text(stmt, currindex);
       break;
+
     case SQL_CON_DSN_ATTNO:
       if (sqlite3_column_type(stmt, currindex) != SQLITE_NULL) {
         conDescr->dsn = (char *) sqlite3_column_text(stmt, currindex);
       }
       break;
+
     default:
       /* oops, should we throw a CCatalogIssue exception ? */
       break;
@@ -669,14 +675,125 @@ std::shared_ptr<StreamIdentification> BackupCatalog::fetchStreamData(sqlite3_stm
 
 }
 
+std::shared_ptr<BaseBackupDescr> BackupCatalog::fetchBackupIntoDescr(sqlite3_stmt *stmt,
+                                                                     std::shared_ptr<BaseBackupDescr> descr,
+                                                                     Range colIdRange) {
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot fetch backup data: uninitialized statement handle");
+
+  if (descr == nullptr)
+    throw CCatalogIssue("cannot fetch backup data: invalid descriptor handle");
+
+  std::vector<int> attr = descr->getAffectedAttributes();
+  int current_stmt_col = colIdRange.start();
+
+  for (auto &current : attr) {
+
+    /*
+     * Sanity check, stop if range end ist reached.
+     */
+    if (current_stmt_col > colIdRange.end()) {
+      break;
+    }
+
+    switch(current) {
+
+    case SQL_BACKUP_ID_ATTNO:
+      descr->id = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_ARCHIVE_ID_ATTNO:
+      descr->archive_id = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_XLOGPOS_ATTNO:
+      descr->xlogpos = (char *)sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_XLOGPOSEND_ATTNO:
+      descr->xlogposend = (char *)sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_TIMELINE_ATTNO:
+      descr->timeline = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_LABEL_ATTNO:
+      descr->label = (char *) sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_FSENTRY_ATTNO:
+      descr->fsentry = (char *) sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_STARTED_ATTNO:
+      {
+        /* can be null, so take care */
+        if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+          descr->started = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        else
+          descr->started = "";
+
+        break;
+      }
+
+    case SQL_BACKUP_STOPPED_ATTNO:
+      {
+        /* can be null, so take care */
+        if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+          descr->stopped = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        else
+          descr->stopped = "";
+
+        break;
+      }
+
+    case SQL_BACKUP_PINNED_ATTNO:
+      {
+        /* can be null, so take care */
+        if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+          descr->pinned = sqlite3_column_int(stmt, current_stmt_col);
+        else
+          descr->pinned = 0;
+
+        break;
+      }
+
+    case SQL_BACKUP_STATUS_ATTNO:
+      {
+        /* can be null, so take care */
+        if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+          descr->status = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        else
+          descr->status = "";
+
+        break;
+      }
+
+    case SQL_BACKUP_SYSTEMID_ATTNO:
+      descr->systemid = (char *) sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    default:
+      break;
+
+    }
+
+    current_stmt_col++;
+  }
+
+  return descr;
+}
+
 std::shared_ptr<BackupProfileDescr> BackupCatalog::fetchBackupProfileIntoDescr(sqlite3_stmt *stmt,
                                                                                std::shared_ptr<BackupProfileDescr> descr,
                                                                                Range colIdRange) {
   if (stmt == NULL)
-    throw("cannot fetch archive data: uninitialized statement handle");
+    throw CCatalogIssue("cannot fetch archive data: uninitialized statement handle");
 
   if (descr == nullptr)
-    throw("cannot fetch archive data: invalid descriptor handle");
+    throw CCatalogIssue("cannot fetch archive data: invalid descriptor handle");
 
   std::vector<int> attr = descr->getAffectedAttributes();
   int current_stmt_col = colIdRange.start();
@@ -1102,8 +1219,8 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
   backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
-  backupAttrs.push_back(SQL_BACKUP_STATUS);
-  backupAttrs.push_back(SQL_BACKUP_SYSTEMID);
+  backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
@@ -1723,6 +1840,92 @@ int BackupCatalog::SQLbindProcsAttributes(std::shared_ptr<CatalogProc> procInfo,
   }
 
   return result;
+}
+
+int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbdescr,
+                                           sqlite3_stmt *stmt,
+                                           Range range) {
+
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind attributes: invalid statement handle");
+
+  for (auto& colId : bbdescr->getAffectedAttributes()) {
+
+    /*
+     * Stop, if result has reached end of range.
+     */
+    switch(colId) {
+    case SQL_BACKUP_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, bbdescr->id);
+      break;
+
+    case SQL_BACKUP_ARCHIVE_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, bbdescr->archive_id);
+      break;
+
+    case SQL_BACKUP_XLOGPOS_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->xlogpos.c_str(), -1, SQLITE_STATIC);
+        break;
+
+    case SQL_BACKUP_XLOGPOSEND_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->xlogposend.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_TIMELINE_ATTNO:
+      sqlite3_bind_int(stmt, result, bbdescr->timeline);
+      break;
+
+    case SQL_BACKUP_LABEL_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->label.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_FSENTRY_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->fsentry.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_STARTED_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->started.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_STOPPED_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->stopped.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_PINNED_ATTNO:
+      sqlite3_bind_int(stmt, result, bbdescr->pinned);
+      break;
+
+    case SQL_BACKUP_STATUS_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->status.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    case SQL_BACKUP_SYSTEMID_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        bbdescr->systemid.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+  }
+
+  return result;
+
 }
 
 int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
