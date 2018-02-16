@@ -479,7 +479,7 @@ namespace credativ {
      * alle referenced tablespaces.
      */
     virtual std::vector<std::shared_ptr<BaseBackupDescr>>
-    getBackupList(std::shared_ptr<CatalogDescr> descr);
+    getBackupList(std::string archive_name);
 
     /*
      * Returns a catalog status view for the given archive.

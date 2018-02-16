@@ -1193,15 +1193,17 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
 }
 
 std::vector<std::shared_ptr<BaseBackupDescr>>
-BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
+BackupCatalog::getBackupList(std::string archive_name) {
 
   std::ostringstream query;
   std::vector<int> backupAttrs;
   std::vector<int> tblspcAttrs;
+  sqlite3_stmt *stmt;
 
   std::string backupCols;
   std::string tblspcCols;
   std::vector<std::shared_ptr<BaseBackupDescr>> list;
+  int rc;
 
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
@@ -1232,6 +1234,60 @@ BackupCatalog::getBackupList(shared_ptr<CatalogDescr> descr) {
                                                backupAttrs);
   tblspcCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_TBLSPC_ENTITY,
                                                tblspcAttrs);
+
+  /*
+   * Get the list of backups for the specified archive.
+   */
+  query << "SELECT "
+        << backupCols
+        << " FROM "
+        << "backup b JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
+        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1);";
+
+#ifdef __DEBUG__
+  cerr << "generate SQL: " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_bind_text(stmt, 1, archive_name.c_str(), -1, SQLITE_STATIC);
+
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+
+    ostringstream oss;
+
+    oss << "error retrieving backup list from catalog database: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * Retrieve list of backups.
+   */
+  while (rc == SQLITE_ROW) {
+
+    shared_ptr<BaseBackupDescr> bbdescr = make_shared<BaseBackupDescr>();
+
+    this->fetchBackupIntoDescr(stmt, bbdescr, Range(0, backupAttrs.size() - 1));
+    list.push_back(bbdescr);
+
+    /* next one */
+    rc = sqlite3_step(stmt);
+
+  }
 
   return list;
 }
@@ -1289,6 +1345,12 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
                           -1,
                           &stmt,
                           NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
 
   /*
    * Assign bind variables. Please note that we rely
