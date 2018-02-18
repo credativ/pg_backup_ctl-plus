@@ -1203,6 +1203,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
   std::string backupCols;
   std::string tblspcCols;
   std::vector<std::shared_ptr<BaseBackupDescr>> list;
+  int current_backup_id = -1;
   int rc;
 
   if (!this->available()) {
@@ -1281,7 +1282,17 @@ BackupCatalog::getBackupList(std::string archive_name) {
 
     shared_ptr<BaseBackupDescr> bbdescr = make_shared<BaseBackupDescr>();
 
-    this->fetchBackupIntoDescr(stmt, bbdescr, Range(0, backupAttrs.size() - 1));
+    /*
+     * Since we retrieve backup information and associated
+     * tablespaces in one SQL query, we compare the current backup ID
+     * if it has changed. If it's the same, we're still iterating through
+     * the same backup set, if it has changed, then we are iterating through
+     * a new set. -1 marks the start of the iteration.
+     */
+    if (current_backup_id == -1) {
+      this->fetchBackupIntoDescr(stmt, bbdescr, Range(0, backupAttrs.size() - 1));
+    }
+
     list.push_back(bbdescr);
 
     /* next one */
@@ -3188,6 +3199,76 @@ void BackupCatalog::registerStream(int archive_id,
   streamident.id = sqlite3_last_insert_rowid(this->db_handle);
 
   sqlite3_finalize(stmt);
+}
+
+vector<shared_ptr<BaseBackupDescr>>
+BackupCatalog::getBackupTablespaces(int backup_id,
+                                    vector<int> attrs) {
+
+  vector<shared_ptr<BaseBackupDescr>> result;
+  sqlite3_stmt *stmt;
+  int rc;
+  ostringstream query;
+
+  /*
+   * Sanity check, it doesn't make
+   * sense to fetch no attributes.
+   */
+  if (attrs.size() == 0)
+    throw CCatalogIssue("empty attribute list specified when fetching backup tablespaces");
+
+  query << "SELECT "
+        << this->affectedColumnsToString(SQL_BACKUP_TBLSPC_ENTITY,
+                                         attrs)
+        << " FROM backup_tablespaces bt "
+        << "WHERE backup_id = ?1;";
+
+  /*
+   * Prepare the query.
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query to get backup tablespaces: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  sqlite3_bind_int(stmt, 1, backup_id);
+
+  /*
+   * Seems everything went smooth so far, so execute
+   * the query.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc == SQLITE_ERROR) {
+    ostringstream oss;
+    oss << "error retrieving backup tablespaces from catalog: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * If we have some rows, add them
+   * to our result tablespace map.
+   */
+  while (rc == SQLITE_ROW) {
+
+    rc = sqlite3_step(stmt);
+
+  }
+
+  sqlite3_finalize(stmt);
+  return result;
+
 }
 
 void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespaceDescr> tblspcDescr) {

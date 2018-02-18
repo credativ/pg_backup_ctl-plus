@@ -462,7 +462,16 @@ namespace credativ {
      */
     virtual void finalizeBasebackup(std::shared_ptr<BaseBackupDescr> backupDescr);
 
-    /*
+    /**
+     * Returns a hash map with all backup tablespaces
+     * belonging to the specified backup_id. The key
+     * is the backup_id the tablespace belongs to.
+     */
+    virtual std::vector<std::shared_ptr<BaseBackupDescr>>
+    getBackupTablespaces(int backup_id,
+                         std::vector<int> attrs);
+
+    /**
      * Register the given tablespace descriptor in the
      * backup catalog.
      *
