@@ -1,8 +1,10 @@
 #include <unistd.h>
 #include <iostream>
+#include <iterator>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <boost/range/adaptors.hpp>
 #include <boost/range/iterator_range.hpp>
 
@@ -645,8 +647,12 @@ void BackupDirectory::fsync_recursive(path handle) {
 
   if (is_directory(handle)) {
 
-    for (directory_entry &entry : directory_iterator(handle)) {
-      path subhandle = entry.path();
+    vector<path> listing;
+
+    copy(directory_iterator(handle), directory_iterator(), std::back_inserter(listing));
+
+    for (vector<path>::const_iterator it(listing.begin()), it_end(listing.end()); it != it_end; ++it) {
+      path subhandle = *it;
 
       /*
        * fsync() contents of current directory, call
