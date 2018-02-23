@@ -387,8 +387,8 @@ namespace credativ {
      * from a result set based on the stream catalog table.
      */
     std::shared_ptr<StreamIdentification>
-       fetchStreamData(sqlite3_stmt *stmt,
-                       std::vector<int> affectedRows);
+    fetchStreamData(sqlite3_stmt *stmt,
+                    std::vector<int> affectedRows);
 
     /**
      * Fetch backup information from current stmt handle into
@@ -397,6 +397,15 @@ namespace credativ {
     std::shared_ptr<BaseBackupDescr> fetchBackupIntoDescr(sqlite3_stmt *stmt,
                                                           std::shared_ptr<BaseBackupDescr> descr,
                                                           Range colIdRange);
+
+    /**
+     * Returns a list of all tablespaces belonging
+     * to the specified base backup.
+     */
+    std::shared_ptr<BackupTablespaceDescr>
+    fetchBackupTablespaceIntoDescr(sqlite3_stmt *stmt,
+                                   std::shared_ptr<BackupTablespaceDescr> tablespace,
+                                   Range range);
 
     /*
      * Fetch catalog process information from
@@ -467,7 +476,7 @@ namespace credativ {
      * belonging to the specified backup_id. The key
      * is the backup_id the tablespace belongs to.
      */
-    virtual std::vector<std::shared_ptr<BaseBackupDescr>>
+    virtual std::vector<std::shared_ptr<BackupTablespaceDescr>>
     getBackupTablespaces(int backup_id,
                          std::vector<int> attrs);
 
