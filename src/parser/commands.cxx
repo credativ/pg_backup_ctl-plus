@@ -2005,6 +2005,9 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
     this->catalog->open_rw();
   }
 
+  /*
+   * Check archive directory structure.
+   */
   try {
 
     catalog->startTransaction();
@@ -2031,6 +2034,20 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
 
     this->catalog->rollbackTransaction();
     throw e;
+
+  }
+
+  /*
+   * If requested, check connection of the specified archive.
+   * We won't reached this in case the directory has failed.
+   *
+   * First, check if there is a streaming connection and test that.
+   * Next try is to check the basebackup connection.
+   */
+  if (this->check_connection) {
+
+    shared_ptr<CatalogDescr> checkDescr = nullptr;
+    catalog->startTransaction();
 
   }
 

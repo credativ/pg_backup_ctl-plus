@@ -318,6 +318,20 @@ void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
 
 }
 
+void CatalogDescr::setVerifyOption(VerifyOption const& option) {
+
+  switch(option) {
+
+  case VERIFY_DATABASE_CONNECTION:
+    this->check_connection = true;
+    break;
+
+  default:
+    /* unhandled option flag here, don't treat it as an error */
+    break;
+  }
+}
+
 void CatalogDescr::setIdent(std::string const& ident) {
   this->archive_name = ident;
   this->pushAffectedAttribute(SQL_ARCHIVE_NAME_ATTNO);

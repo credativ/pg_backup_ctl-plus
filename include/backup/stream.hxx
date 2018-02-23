@@ -41,6 +41,8 @@ namespace credativ {
 
   class StreamingConnectionFailure : public StreamingFailure {
   public:
+    StreamingConnectionFailure(const char *errstr) : StreamingFailure(errstr) {};
+    StreamingConnectionFailure(std::string errstring) : StreamingFailure(errstring) {};
     StreamingConnectionFailure(std::string errstring, ConnStatusType connStatus)
       : StreamingFailure(errstring, connStatus) {};
   };
@@ -186,6 +188,11 @@ namespace credativ {
      * Establish PostgreSQL streaming connection.
      */
     virtual void connect();
+
+    /**
+     * Tests the streaming connection.
+     */
+    PGPing testConnection(bool no_throw = false);
 
     /*
      * Disconnect from PostgreSQL instance.

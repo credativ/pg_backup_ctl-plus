@@ -253,7 +253,16 @@ namespace credativ {
 
   };
 
-  /*
+  /**
+   * Option flags for the VERIFY ARCHIVE command.
+   */
+  typedef enum {
+
+    VERIFY_DATABASE_CONNECTION
+
+  } VerifyOption;
+
+  /**
    * A catalog descriptor is a reference
    * into the catalog database, representing an interface
    * between CPGBackupCtlFS and BackupCatalog objects.
@@ -296,6 +305,11 @@ namespace credativ {
      */
     bool forceXLOGPosRestart = false;
 
+    /*
+     * VERIFY command options.
+     */
+    bool check_connection = false;
+
     /**
      * Used for executing shell commands.
      */
@@ -310,6 +324,11 @@ namespace credativ {
      * Returns command tag as string.
      */
     std::string getCommandTagAsStr();
+
+    /**
+     * Set VERIFY command options.
+     */
+    void setVerifyOption(VerifyOption const& option);
 
     /*
      * The methods below are used by our spirit::parser

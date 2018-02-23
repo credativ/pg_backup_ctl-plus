@@ -251,6 +251,46 @@ void PGStream::setNonBlocking() {
   }
 }
 
+PGPing PGStream::testConnection(bool no_throw) {
+
+  PGPing result;
+
+  /*
+   * Check wether we need to connect via
+   * DSN string or connection parameters. See connect()
+   * for details
+   */
+  if (this->descr->coninfo->dsn.length()) {
+    result = PQping(this->descr->coninfo->dsn.c_str());
+  } else {
+
+    ostringstream conninfo;
+
+    conninfo << "host=" << this->descr->coninfo->pghost;
+    conninfo << " " << "dbname=" << this->descr->coninfo->pgdatabase;
+    conninfo << " " << "user=" << this->descr->coninfo->pguser;
+    conninfo << " " << "port=" << this->descr->coninfo->pgport;
+    conninfo << " " << "replication=database";
+
+    result = PQping(conninfo.str().c_str());
+  }
+
+  if (!no_throw) {
+
+    if (result == PQPING_REJECT)
+      throw StreamingConnectionFailure("backup source currently doesn't accept connections");
+
+    if (result == PQPING_NO_RESPONSE)
+      throw StreamingConnectionFailure("backup source is not reachable");
+
+    if (result == PQPING_NO_ATTEMPT)
+      throw StreamingConnectionFailure("the connection to backup source cannot be established");
+
+  }
+
+  return result;
+}
+
 void PGStream::connect() {
 
   ConnStatusType cs;

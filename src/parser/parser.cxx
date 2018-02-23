@@ -146,7 +146,9 @@ namespace credativ {
                          * VERIFY ARCHIVE <name> command
                          */
                         | ( cmd_verify_archive > identifier
-                            [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
+                            [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                            > -verify_check_connection
+                            [ boost::bind(&CatalogDescr::setVerifyOption, &cmd, VERIFY_DATABASE_CONNECTION) ] )
 
                         /*
                          * START command
@@ -226,6 +228,8 @@ namespace credativ {
         cmd_alter = no_case[lexeme[ lit("ALTER") ]];
 
         cmd_start_command = no_case[lexeme[ lit("START") ]];
+
+        verify_check_connection = no_case[lexeme[ lit("CONNECTION") ]];
 
         /*
          * LIST CONNECTION FOR ARCHIVE <archive name > command
@@ -513,6 +517,7 @@ namespace credativ {
         dsn_connection_string.name("DSN=connection parameters key value pair");
         backup_profile_opts.name("backup profile parameters");
         with_profile.name("backup profile name");
+        verify_check_connection.name("CONNECTION");
       }
 
       /*
@@ -538,6 +543,7 @@ namespace credativ {
                           cmd_alter_backup_profile,
                           cmd_create_connection,
                           cmd_show,
+                          verify_check_connection,
                           show_command_type,
                           backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
