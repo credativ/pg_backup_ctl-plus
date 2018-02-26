@@ -173,7 +173,13 @@ completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_base
                                        { "STREAMING", COMPL_KEYWORD, start_streaming_for },
                                        { "", COMPL_EOL, NULL } };
 
-completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
+completion_word verify_archive_options[] = { { "CONNECTION", COMPL_KEYWORD, NULL },
+                                             { "", COMPL_EOL, NULL } };
+
+completion_word verify_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, verify_archive_options },
+                                                      { "", COMPL_EOL, NULL } };
+
+completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, verify_archive_ident_completion },
                                                 { "", COMPL_EOL, NULL } };
 
 completion_word drop_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },

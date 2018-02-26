@@ -16,6 +16,8 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->label        = source.label;
   this->compression  = source.compression;
   this->directory    = source.directory;
+  this->check_connection = source.check_connection;
+  this->forceXLOGPosRestart = source.forceXLOGPosRestart;
 
   /*
    * Connection properties
@@ -2005,6 +2007,8 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
     this->catalog->open_rw();
   }
 
+  cout << "checking archive structure: ";
+
   /*
    * Check archive directory structure.
    */
@@ -2027,6 +2031,7 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
      */
     shared_ptr<BackupDirectory> archivedir = CPGBackupCtlFS::getArchiveDirectoryDescr(temp_descr->directory);
     archivedir->verify();
+    cout << "OK" << endl;
 
     this->catalog->commitTransaction();
 
@@ -2041,14 +2046,58 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
    * If requested, check connection of the specified archive.
    * We won't reached this in case the directory has failed.
    *
-   * First, check if there is a streaming connection and test that.
-   * Next try is to check the basebackup connection.
+   * We get a list of all connections specified for
+   * the given archive ID and test CONNECTION_TYPE_BASEBACKUP
+   * and CONNECTION_TYPE_STREAMER.
    */
   if (this->check_connection) {
 
-    shared_ptr<CatalogDescr> checkDescr = nullptr;
-    catalog->startTransaction();
+    /*
+     * Get the list of (possible) streaming or basebackup connections.
+     * Other types are ignored (if any).
+     *
+     * We rely on existsByName() to have initialized temp_descr properly, if
+     * the specified archive exists.
+     */
+    if (temp_descr != nullptr && temp_descr->id >= 0) {
 
+      vector<shared_ptr<ConnectionDescr>> connection_list;
+
+      connection_list = catalog->getCatalogConnection(temp_descr->id);
+
+      /*
+       * At least on connection (type basebackup is expected)
+       */
+      if (connection_list.size() == 0) {
+        throw CArchiveIssue("specified archive does not have a database connection");
+      }
+
+      for (auto &con : connection_list) {
+
+        temp_descr->coninfo = con;
+
+        if (con->type == ConnectionDescr::CONNECTION_TYPE_BASEBACKUP) {
+
+
+          PGStream stream(temp_descr);
+
+          cout << "check basebackup database connection: ";
+          stream.testConnection();
+          cout << "OK" << endl;
+
+        }
+
+        if (con->type == ConnectionDescr::CONNECTION_TYPE_STREAMER) {
+
+          PGStream stream(temp_descr);
+
+          cout << "check streaming database connection: ";
+          stream.testConnection();
+          cout << "OK" << endl;
+        }
+
+      }
+    }
   }
 
 }

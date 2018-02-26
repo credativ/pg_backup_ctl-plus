@@ -167,6 +167,7 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   this->label = source.label;
   this->compression = source.compression;
   this->directory = source.directory;
+  this->check_connection = source.check_connection;
   this->coninfo->pghost = source.coninfo->pghost;
   this->coninfo->pgport = source.coninfo->pgport;
   this->coninfo->pguser = source.coninfo->pguser;
