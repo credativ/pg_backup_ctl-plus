@@ -167,6 +167,14 @@ namespace credativ {
                                                 )
                            )
 
+                        /*
+                         * STOP command
+                         */
+                        | (
+                           cmd_stop_command > ( ( cmd_stop_streaming > identifier
+                                                  [boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] ) )
+                           )
+
                         ); /* start rule end */
 
         /*
@@ -228,6 +236,8 @@ namespace credativ {
         cmd_alter = no_case[lexeme[ lit("ALTER") ]];
 
         cmd_start_command = no_case[lexeme[ lit("START") ]];
+
+        cmd_stop_command = no_case[lexeme[ lit("STOP") ]];
 
         verify_check_connection = no_case[lexeme[ lit("CONNECTION") ]];
 
@@ -368,6 +378,10 @@ namespace credativ {
           > no_case[lexeme[ lit("FOR") ]] > no_case[lexeme[ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_BASEBACKUP) ];
 
+        cmd_stop_streaming = no_case[lexeme[ lit("STREAMING") ]]
+          > no_case[lexeme[ lit("FOR") ]] > no_case[lexeme[ lit("ARCHIVE") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, STOP_STREAMING_FOR_ARCHIVE) ];
+
         /*
          * Property clauses
          */
@@ -477,14 +491,16 @@ namespace credativ {
                        << std::endl
                        );
 
-        start.name("command start");
-        cmd_create.name("CREATE start");
-        cmd_drop.name("DROP start");
-        cmd_list.name("LIST start");
-        cmd_alter.name("ALTER start");
-        cmd_start_command.name("START start");
+        start.name("command");
+        cmd_create.name("CREATE");
+        cmd_drop.name("DROP");
+        cmd_list.name("LIST");
+        cmd_alter.name("ALTER");
+        cmd_start_command.name("START");
         cmd_start_launcher.name("LAUNCHER");
         cmd_start_streaming.name("STREAMING");
+        cmd_stop_command.name("STOP");
+        cmd_stop_streaming.name("STREAMING FOR ARCHIVE");
         cmd_show.name("SHOW");
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
@@ -531,10 +547,12 @@ namespace credativ {
                           cmd_drop_connection,
                           cmd_alter_archive,
                           cmd_start_command,
+                          cmd_stop_command,
                           cmd_alter_archive_opt,
                           cmd_start_basebackup,
                           cmd_start_launcher,
                           cmd_start_streaming,
+                          cmd_stop_streaming,
                           cmd_list_archive,
                           cmd_list_connection,
                           cmd_create_backup_profile,
@@ -579,6 +597,19 @@ PGBackupCtlCommand::PGBackupCtlCommand(CatalogDescr descr) {
 }
 
 PGBackupCtlCommand::~PGBackupCtlCommand() {}
+
+std::string PGBackupCtlCommand::archive_name() {
+
+  if (this->catalogDescr != nullptr) {
+
+    if (this->catalogDescr->tag != EMPTY_DESCR)
+      return this->catalogDescr->archive_name;
+
+  }
+
+  return "";
+
+}
 
 CatalogTag PGBackupCtlCommand::getCommandTag() {
 
@@ -768,6 +799,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case START_STREAMING_FOR_ARCHIVE:
     result = make_shared<StartStreamingForArchiveCommand>(this->catalogDescr);
+    break;
+
+  case STOP_STREAMING_FOR_ARCHIVE:
+    result = make_shared<StopStreamingForArchiveCommandHandle>(this->catalogDescr);
     break;
 
   case EXEC_COMMAND:

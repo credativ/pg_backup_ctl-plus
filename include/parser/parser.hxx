@@ -85,6 +85,16 @@ namespace credativ {
      * doesn't hold a valid command handle yet.
      */
     virtual CatalogTag getCommandTag();
+
+    /**
+     * Returns the archive name of a handler instance, if
+     * attached to a archive. If no archive is attached, an empty string
+     * is returned.
+     *
+     * An empty string is also returned, of the catalog descriptor is EMPTY_DESCR
+     * or not yet initialized.
+     */
+    virtual std::string archive_name();
   };
 
   class PGBackupCtlParser : CPGBackupCtlBase {

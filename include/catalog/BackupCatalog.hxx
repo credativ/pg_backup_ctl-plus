@@ -172,7 +172,7 @@ namespace credativ {
                                  sqlite3_stmt *stmt,
                                  Range range);
 
-    /*
+    /**
      * Bind affected tablespace descriptor attributes to the
      * given sqlite3 statement handle.
      */
@@ -181,25 +181,32 @@ namespace credativ {
                                           sqlite3_stmt *stmt,
                                           Range range);
 
-    /*
+    /**
      * Rollback an existing catalog transaction.
      */
     virtual void rollbackTransaction();
 
-    /*
+    /**
      * Checks if the specified archive directory is already registered
      * in the catalog. Returns a valid CatalogDescr handle if true, otherwise
      * the returned CatalogDescr handle is initialized with id = -1.
      */
     virtual std::shared_ptr<CatalogDescr> exists(std::string directory);
 
-    /*
+    /**
      * Checks if the specified archive name is already
      * registered in the catalog. Returns a valid CatalogDescr handle if
      * true, otherwise the returned CatalogDescr handle is initialized
      * with id = -1
      */
     virtual std::shared_ptr<CatalogDescr> existsByName(std::string name);
+
+    /**
+     * Checks if the specified archive id exists in the backup
+     * catalog. Returns a valid CatalogDescr handle if true, otherwise the returned
+     * CatalogDescr handle is initialized with -1.
+     */
+    virtual std::shared_ptr<CatalogDescr> existsById(int archive_id);
 
     /*
      * Commits the current catalog transaction.

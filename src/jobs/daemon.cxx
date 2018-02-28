@@ -329,6 +329,13 @@ void BackgroundWorker::initialize() {
   try {
 
     /*
+     * Re-open backup catalog database. The parent
+     * closed it previously to make sure we get our
+     * own child handle here.
+     */
+    this->catalog->open_rw();
+
+    /*
      * Sanity check, are we still alone?
      */
     if (this->my_shm.getNumberOfAttached() > 1) {
@@ -671,6 +678,7 @@ void WorkerSHM::write(unsigned int slot_index,
   if (ptr != NULL) {
     ptr->pid = item.pid;
     ptr->cmdType = item.cmdType;
+    ptr->archive_id = item.archive_id;
     ptr->started = item.started;
   }
 
@@ -715,6 +723,7 @@ void WorkerSHM::reset() {
     if (ptr != NULL) {
       ptr->pid = 0;
       ptr->cmdType = EMPTY_DESCR;
+      ptr->archive_id = -1;
       ptr->started = boost::posix_time::ptime();
     }
 
@@ -744,6 +753,7 @@ void WorkerSHM::free(unsigned int slot_index) {
 
   ptr->pid = 0;
   ptr->cmdType = EMPTY_DESCR;
+  ptr->archive_id = -1;
   ptr->started = boost::posix_time::ptime();
 
   this->allocated--;
@@ -780,7 +790,7 @@ unsigned int WorkerSHM::getFreeIndex() {
 
     ptr = (shm_worker_area *)(this->shm_mem_ptr + i);
 
-    if (ptr->cmdType == EMPTY_DESCR) {
+    if (ptr->pid == 0) {
       return i;
     }
   }
@@ -811,6 +821,7 @@ shm_worker_area WorkerSHM::read(unsigned int slot_index) {
   ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
   result.pid = ptr->pid;
   result.started = ptr->started;
+  result.archive_id = ptr->archive_id;
   result.cmdType = ptr->cmdType;
 
   return result;
@@ -1161,6 +1172,12 @@ static pid_t daemonize(job_info &info) {
   signal(SIGHUP, _pgbckctl_sighandler);
   signal(SIGUSR1, _pgbckctl_sighandler);
   signal(SIGCHLD, _pgbckctl_sigchld_handler);
+
+  /*
+   * Close the catalog handler here. It will
+   * be opened again in the final launcher process.
+   */
+  info.cmdHandle->getCatalog()->close();
 
   /*
    * Now launch the background job.
@@ -1639,6 +1656,33 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     worker_info.cmdType = bgrnd_cmd_handler->getCommandTag();
 
     /*
+     * If the PGBackupCtlCommand handler encapsulates a
+     * command attached to an archive, we record the archive id
+     * in the shared memory, too.
+     */
+    if (bgrnd_cmd_handler->archive_name().length() > 0) {
+
+      /*
+       * catalog access can throw here, don't suppress errors
+       * at this point but remap that to a WorkerFailure exception.
+       */
+      try {
+
+        std::shared_ptr<CatalogDescr> temp_descr
+          = info.cmdHandle->getCatalog()->existsByName(bgrnd_cmd_handler->archive_name());
+
+        if (temp_descr->id >= 0) {
+          worker_info.archive_id = temp_descr->id;
+        }
+
+      } catch(CPGBackupCtlFailure &e) {
+
+        throw WorkerFailure(e.what());
+
+      }
+    }
+
+    /*
      * Set signal handlers.
      */
     cmdSignalHandler = dynamic_cast<JobSignalHandler *>(termHandler);
@@ -1659,6 +1703,11 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
       throw WorkerFailure("could not attach to worker shared memory area");
     }
 
+    /*
+     * WorkerSHM::allocate() can throw, but since
+     * the real memory allocation is done before we're
+     * probably safe here.
+     */
     worker_shm->lock();
     worker_slot_index = worker_shm->allocate(worker_info);
     worker_shm->unlock();

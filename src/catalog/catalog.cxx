@@ -222,6 +222,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "DROP CONNECTION";
   case START_STREAMING_FOR_ARCHIVE:
     return "START STREAMING FOR ARCHIVE";
+  case STOP_STREAMING_FOR_ARCHIVE:
+    return "STOP STREAMING FOR ARCHIVE";
   case EXEC_COMMAND:
     return "EXEC";
   case SHOW_WORKERS:
@@ -921,6 +923,57 @@ shared_ptr<CatalogDescr> BackupCatalog::fetchArchiveDataIntoDescr(sqlite3_stmt *
     descr->coninfo->dsn = (char *)sqlite3_column_text(stmt, SQL_ARCHIVE_DSN_ATTNO);
 
   return descr;
+
+}
+
+shared_ptr<CatalogDescr> BackupCatalog::existsById(int archive_id) {
+
+  sqlite3_stmt *stmt;
+  int rc;
+  shared_ptr<CatalogDescr> result = make_shared<CatalogDescr>();
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Check for the specified directory. Note that SQLite3 here
+   * uses filesystem locking, so we can't just do row-level
+   * locking on our own.
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "SELECT * FROM archive WHERE id = ?1;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  rc = sqlite3_bind_int(stmt, 1, archive_id);
+
+  /* ... perform SELECT */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    sqlite3_finalize(stmt);
+    oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  while(rc == SQLITE_ROW && rc != SQLITE_DONE) {
+
+    this->fetchArchiveDataIntoDescr(stmt, result);
+    rc = sqlite3_step(stmt);
+
+    if (rc != SQLITE_DONE) {
+      throw CArchiveIssue("unexpected result by retrieving archive by id");
+    }
+
+  }
+
+  sqlite3_finalize(stmt);
+
+  /* result->id >= 0 means valid result */
+  return result;
 
 }
 

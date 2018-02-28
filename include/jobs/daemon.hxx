@@ -3,6 +3,7 @@
 
 #include <common.hxx>
 #include <jobhandles.hxx>
+#include <shm.hxx>
 #include <BackupCatalog.hxx>
 
 #define DAEMON_RUN 0

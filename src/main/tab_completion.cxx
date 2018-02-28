@@ -214,6 +214,18 @@ completion_word alter_completion[] = { { "ARCHIVE", COMPL_KEYWORD, alter_archive
 completion_word show_completion[] = { { "WORKERS", COMPL_KEYWORD, NULL },
                                       { "", COMPL_EOL, NULL } };
 
+completion_word stop_completion_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                            { "", COMPL_EOL, NULL } };
+
+completion_word stop_completion_archive[] = { { "ARCHIVE", COMPL_KEYWORD, stop_completion_ident },
+                                              { "", COMPL_EOL, NULL } };
+
+completion_word stop_completion_streaming_for[] = { { "FOR", COMPL_KEYWORD, stop_completion_archive },
+                                                    { "", COMPL_EOL, NULL } };
+
+completion_word stop_completion[] = { { "STREAMING" , COMPL_KEYWORD, stop_completion_streaming_for },
+                                      { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
@@ -221,6 +233,7 @@ completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion
                                     { "DROP", COMPL_KEYWORD, drop_completion },
                                     { "ALTER", COMPL_KEYWORD, alter_completion },
                                     { "SHOW", COMPL_KEYWORD, show_completion },
+                                    { "STOP", COMPL_KEYWORD, stop_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */

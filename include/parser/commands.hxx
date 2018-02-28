@@ -330,6 +330,22 @@ namespace credativ {
   };
 
   /**
+   * Implements the STOP STREAMING FOR ARCHIVE command.
+   *
+   */
+  class StopStreamingForArchiveCommandHandle : public BaseCatalogCommand {
+  private:
+  public:
+    StopStreamingForArchiveCommandHandle(std::shared_ptr<BackupCatalog> catalog);
+    StopStreamingForArchiveCommandHandle(std::shared_ptr<CatalogDescr> descr);
+    StopStreamingForArchiveCommandHandle();
+
+    virtual ~StopStreamingForArchiveCommandHandle();
+
+    virtual void execute(bool noop);
+  };
+
+  /**
    * Implements a dummy command to be passed to background workers.
    *
    * This commmand is a wrapper around commands, that

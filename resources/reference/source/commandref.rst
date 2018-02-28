@@ -69,6 +69,38 @@ Syntax::
 The ``CREATE RETENTION POLICY`` command creates a retention policy
 rule which can be applied to clean up backup archives.
 
+CREATE STREAMING CONNECTION
+===========================
+
+Syntax::
+
+  CREATE STREAMING CONNECTION FOR ARCHIVE <identifier>
+     { DSN "<database connection string>"
+       | PGHOST=<hostname>
+         [PGDATABASE=<database name>]
+         [PGUSER=<username>]
+         [PGPORT=<port number>] }
+
+The ``CREATE STREAMING CONNECTION`` command creates a dedicated
+streaming connection for the specified archive. This connection is
+used by a streaming worker exclusively. That way it is possible to define
+connections which doesn't influence basebackups during high peaks
+of WAL traffic.
+
+.. note::
+
+   The ``CREATE ARCHIVE`` command creates a connection which
+   is used by basebackups and streaming workers. These connnections
+   are of type ``basebackup`` and are managed via the
+   various ``ARCHIVE`` commands. The ``LIST CONNECTIONS`` command
+   will also display these connection types, but they cannot
+   be dropped specifically.
+
+Examples::
+
+  CREATE STREAMING CONNECTION FOR ARCHIVE pg10
+     DSN "host=localhost port=5433 dbname=bar user=foo";
+
 CREATE BACKUP PROFILE
 =====================
 
@@ -147,6 +179,50 @@ Examples::
 
   LIST BACKUP PROFILE my_profile;
 
+LIST CONNECTION FOR ARCHIVE
+===========================
+
+Syntax::
+
+  LIST CONNECTION FOR ARCHIVE <identifier>
+
+The ``LIST CONNECTION`` commands lists the connection
+defined for the given archive. Currently there are two types
+of connections: ``basebackup`` and ``streaming``. The latter
+is created by the ``CREATE STREAMING CONNECTION`` command and
+represents a database streaming connection dedicated to WAL streaming
+connections. The ``basebackup`` connections are created via
+``CREATE ARCHIVE`` and cannot be dropped without dropping
+the archive itself. Basebackups always use the ``basebackup``
+connection types, whereas streaming workers are using either
+``basebackup`` connections or, if existing, dedicated
+``streaming`` connections.
+
+Examples::
+
+  LIST CONNECTION FOR ARCHIVE pg10;
+
+  List of connections for archive "pg10"
+  connection type basebackup
+  --------------------------------------------------------------------------------
+  Attribute      	Setting
+  --------------------------------------------------------------------------------
+  DSN            	host=db_basebackup port=5455 user=bernd dbname=bernd
+  PGHOST         	                                                            
+  PGDATABASE     	                                                            
+  PGUSER         	                                                            
+  PGPORT         	0                                                           
+  connection type streamer
+  --------------------------------------------------------------------------------
+  Attribute      	Setting                                                     
+  --------------------------------------------------------------------------------
+  DSN            	host=db_streamer port=5455 dbname=bernd user=bernd
+  PGHOST         	                                                            
+  PGDATABASE     	                                                            
+  PGUSER         	                                                            
+  PGPORT         	0                                                           
+  LIST CONNECTION
+
 DROP ARCHIVE
 ============
 
@@ -164,6 +240,18 @@ Drops the specified archive from the current catalog.
 .. warning::
   There is currently no code to ensure that there is no background workers (e.g. streaming)
   running for an archive, which is about being dropped.
+
+DROP STREAMING CONNECTION
+=========================
+
+Syntax::
+
+  DROP STREAMING CONNECTION FROM ARCHIVE <identifier>
+
+Drops a ``streaming`` connection from the specified archive. If
+a streaming worker is still running for the specified archive, it
+won't be notified or interrupted, but a restart of the worker will
+cause it to fall back to the ``basebackup`` connection.
 
 START BASEBACKUP FOR ARCHIVE
 ============================
@@ -204,3 +292,24 @@ Examples::
   START STREAMING FOR ARCHIVE pg10 NODETACH;
 
   START STREAMING FOR ARCHIVE pg10 RESTART NODETACH;
+
+VERIFY ARCHIVE
+==============
+
+Syntax::
+
+  VERIFY ARCHIVE <identifier> [CONNECTION]
+
+Verify the archive structure. ``VERIFY ARCHIVE`` currently
+checks wether the archive directory exists and is writable. To
+perform this check, ``VERIFY ARCHIVE`` creates and writes a
+file PG_BACKUP_CTL_MAGIC into the archive directory. If the
+optional ``CONNECTION`` keyword is specified, the verification
+includes wether any specified database server used by the
+archive via ``basebackup`` or ``streaming`` connection types are
+reachable.
+
+Examples::
+
+  VERIFY ARCHIVE pg10 CONNECTION;
+

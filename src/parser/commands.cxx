@@ -3,6 +3,7 @@
 #include <daemon.hxx>
 #include <stream.hxx>
 #include <fs-pipe.hxx>
+#include <shm.hxx>
 
 using namespace credativ;
 
@@ -88,8 +89,14 @@ void ShowWorkersCommandHandle::execute(bool noop) {
    * To get the list of all currently running workers
    * in catalog, we need to attach to the shared memory
    * area for background workers.
+   *
+   * We fetch all occupied worker shared memory
+   * slots into a local vector in one step to avoid
+   * doing catalog lookups while holding the shared memory
+   * lock.
    */
   WorkerSHM shm;
+  vector<shm_worker_area> slots_used;
 
   shm.attach(this->catalog->fullname(), true);
 
@@ -101,10 +108,9 @@ void ShowWorkersCommandHandle::execute(bool noop) {
       shm_worker_area worker = shm.read(i);
 
       if (worker.pid > 0) {
-        cout << "WORKER PID " << worker.pid
-             << " | executing " << CatalogDescr::commandTagName(worker.cmdType)
-             << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
-             << endl;
+
+        slots_used.push_back(worker);
+
       }
 
     } catch(SHMFailure &e) {
@@ -118,6 +124,30 @@ void ShowWorkersCommandHandle::execute(bool noop) {
   shm.unlock();
   shm.detach();
 
+  /*
+   * Now it's time to print the contents. We can do
+   * whatever we want now, since no critical locks
+   * are held.
+   */
+  for(auto &worker : slots_used) {
+
+    string archive_name = "N/A";
+
+    if (worker.archive_id >= 0) {
+      shared_ptr<CatalogDescr> archive_descr = this->catalog->existsById(worker.archive_id);
+
+      if (archive_descr->id >= 0) {
+        archive_name = archive_descr->archive_name;
+      }
+    }
+
+    cout << "WORKER PID " << worker.pid
+         << " | executing " << CatalogDescr::commandTagName(worker.cmdType)
+         << " | archive name " << archive_name
+         << " | archive ID " << worker.archive_id
+         << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
+         << endl;
+  }
 }
 
 ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
@@ -566,6 +596,99 @@ void StartLauncherCatalogCommand::execute(bool flag) {
      */
     exit(0);
   }
+}
+
+StopStreamingForArchiveCommandHandle::StopStreamingForArchiveCommandHandle(std::shared_ptr<BackupCatalog> catalog) {
+  this->tag = STOP_STREAMING_FOR_ARCHIVE;
+  this->catalog = catalog;
+}
+
+StopStreamingForArchiveCommandHandle::StopStreamingForArchiveCommandHandle(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+StopStreamingForArchiveCommandHandle::StopStreamingForArchiveCommandHandle() {}
+
+StopStreamingForArchiveCommandHandle::~StopStreamingForArchiveCommandHandle() {}
+
+void StopStreamingForArchiveCommandHandle::execute(bool noop) {
+
+  /*
+   * Get the archive id for the specified archive name.
+   * Delay any operation on the worker shared memory
+   * area until we're done with our database work.
+   */
+  shared_ptr<CatalogDescr> temp_descr = this->catalog->existsByName(this->archive_name);
+
+  /*
+   * Archive worker PID we got from SHM, 0 if not found.
+   */
+  pid_t archive_pid = -1;
+
+  /*
+   * Shared memory handle.
+   */
+  WorkerSHM shmhandle;
+
+  if (temp_descr->id < 0) {
+    throw CArchiveIssue("archive " + this->archive_name + "does not exist");
+  }
+
+  shmhandle.attach(this->catalog->fullname(), false);
+
+  /*
+   * Operation on the worker shared memory is done
+   * under a lock. We need to scan the shared memory
+   * area for the specified archive id. We do this in one
+   * go without any other interaction to keep the critical
+   * section as short as possible.
+   *
+   * Another thing to note: Don't send a signal right
+   * out of the loop to the victim process, since it would have to
+   * wait for our critical section anyways. The launcher will try
+   * clean up the worker SHM slot index right away.
+   */
+  shmhandle.lock();
+
+  try {
+
+    shm_worker_area worker_info;
+
+    for (unsigned int i = 0; i < shmhandle.getMaxWorkers(); i++) {
+
+      worker_info = shmhandle.read(i);
+
+      if (worker_info.archive_id == temp_descr->id) {
+
+        /* Matching archive ID, store it away and exit loop */
+        archive_pid = worker_info.pid;
+        break;
+
+      }
+
+    }
+
+  } catch(SHMFailure &shme) {
+    /* if something goes wrong here, make sure
+     * we detach from SHM and unlock */
+    shmhandle.unlock();
+    shmhandle.detach();
+
+    throw CArchiveIssue(shme.what());
+  }
+
+  shmhandle.unlock();
+  shmhandle.detach();
+
+  if (archive_pid > 0) {
+    ::kill(archive_pid, SIGTERM);
+    cout << "NOTICE: terminated worker pid " << archive_pid << " for archive " << temp_descr->archive_name << endl;
+  } else {
+    throw CArchiveIssue("no streaming worker for archive " + temp_descr->archive_name + " found");
+  }
+
 }
 
 StartStreamingForArchiveCommand::StartStreamingForArchiveCommand(std::shared_ptr<BackupCatalog> catalog) {
