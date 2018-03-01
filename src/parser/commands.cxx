@@ -731,8 +731,6 @@ void StartStreamingForArchiveCommand::prepareStream() {
 
   for (auto &stream : streamList) {
 
-    cerr << "FOUND a stream handle" << endl;
-
     if (stream->stype == ConnectionDescr::CONNECTION_TYPE_STREAMER) {
       /* Looks like we found one */
       myStream = stream;
@@ -1043,6 +1041,30 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
   }
 
   /*
+   * IMPORTANT:
+   *
+   * Don't employ transactions here! Status updates will
+   * be lost otherwise!
+   */
+
+  /*
+   * Check, if archive exists.
+   */
+  temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    /*
+     * Don't need to rollback, outer exception handler will do this
+     */
+    std::ostringstream oss;
+    oss << "archive\""
+        << this->archive_name
+        << "\" does not exist";
+
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
    * Check if we are supposed to run a background streaming
    * process via launcher.
    */
@@ -1075,30 +1097,6 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     /* All done, we should exit this command handler */
     return;
 
-  }
-
-  /*
-   * IMPORTANT:
-   *
-   * Don't employ transactions here! Status updates will
-   * be lost otherwise!
-   */
-
-  /*
-   * Check, if archive exists.
-   */
-  temp_descr = this->catalog->existsByName(this->archive_name);
-
-  if (temp_descr->id < 0) {
-    /*
-     * Don't need to rollback, outer exception handler will do this
-     */
-    std::ostringstream oss;
-    oss << "archive\""
-        << this->archive_name
-        << "\" does not exist";
-
-    throw CCatalogIssue(oss.str());
   }
 
   /*
@@ -1192,7 +1190,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     pgstream->streamident.xlogpos = PGStream::encodeXLOGPos(startpos);
 
 
-#ifdef __DEBUG__
+#ifdef __DEBUG_XLOG__
     cerr << "IDENTIFICATION (TLI/XLOGPOS) "
          << pgstream->streamident.timeline
          << "/"
