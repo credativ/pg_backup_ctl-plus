@@ -109,6 +109,7 @@ namespace credativ {
                                        cmd_list_archive
                                        | cmd_list_backup
                                        | cmd_list_connection
+                                       | cmd_list_backup_list
                                        )
                            )
 
@@ -251,9 +252,9 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
-         * LIST BACKUPS IN ARCHIVE <identifier>
+         * LIST BASEBACKUPS IN ARCHIVE <identifier>
          */
-        cmd_list_backup_list = no_case[ lexeme[ lit("BACKUPS") ] ]
+        cmd_list_backup_list = no_case[ lexeme[ lit("BASEBACKUPS") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_LIST) ]
           > no_case[ lexeme[ lit("IN") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
           > identifier
@@ -522,7 +523,7 @@ namespace credativ {
         cmd_alter_archive_opt.name("ALTER ARCHIVE options");
         cmd_start_basebackup.name("START BASEBACKUP");
         cmd_list_archive.name("LIST ARCHIVE");
-        cmd_list_backup.name("LIST BACKUP");
+        cmd_list_backup.name("LIST BASEBACKUPS");
         cmd_list_backup_list.name("LIST BACKUPS");
         cmd_list_connection.name("LIST CONNECTION");
         identifier.name("object identifier");

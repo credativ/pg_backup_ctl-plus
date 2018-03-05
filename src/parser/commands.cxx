@@ -1356,6 +1356,42 @@ void ListBackupListCommand::execute(bool flag) {
   if (!this->catalog->available())
     this->catalog->open_rw();
 
+  /*
+   * Check if the requested archive identifier is known
+   * to the backup catalog.
+   */
+  shared_ptr<CatalogDescr> temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    this->catalog->close();
+    throw CArchiveIssue("archive \"" + this->archive_name + "\" does not exist");
+  }
+
+  /*
+   * Get a vector with all basebackups listed.
+   *
+   * This also includes all tablespaces and additional information
+   * we need to give a detailed overview about the stored backups.
+   */
+  vector<shared_ptr<BaseBackupDescr>> backupList = this->catalog->getBackupList(this->archive_name);
+
+  /*
+   * Format the output.
+   */
+  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + this->archive_name,
+                                       boost::format("%-15s\t-%60s") % "Property" % "Value",
+                                       80);
+
+  for (auto &basebackup : backupList) {
+
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+                                       % "Directory" % basebackup->fsentry);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+                                       % "Started" % basebackup->started);
+
+  }
+
+  this->catalog->close();
 }
 
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

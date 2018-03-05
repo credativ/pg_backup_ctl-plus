@@ -228,6 +228,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "EXEC";
   case SHOW_WORKERS:
     return "SHOW WORKERS";
+  case LIST_BACKUP_LIST:
+    return "LIST BASEBACKUPS";
   default:
     return "UNKNOWN";
   }
@@ -1318,7 +1320,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "COALESCE(bt.backup_id, -1) AS backup_id, "
         << "COALESCE(bt.spcoid, -1) AS spcoid, "
         << "COALESCE(spclocation, 'no location') AS spclocation, "
-        << "COALESCE(spcsize, -1) AS spcsize"
+        << "COALESCE(spcsize, -1) AS spcsize "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
         << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1);";
@@ -1353,12 +1355,15 @@ BackupCatalog::getBackupList(std::string archive_name) {
 
   }
 
+  cerr << "about to fetch backup result set into list" << endl;
+
   /*
    * Retrieve list of backups.
    */
   while (rc == SQLITE_ROW) {
 
     shared_ptr<BaseBackupDescr> bbdescr = make_shared<BaseBackupDescr>();
+    bbdescr->setAffectedAttributes(backupAttrs);
 
     /*
      * Since we retrieve backup information and associated
@@ -1369,6 +1374,8 @@ BackupCatalog::getBackupList(std::string archive_name) {
      */
 
     this->fetchBackupIntoDescr(stmt, bbdescr, Range(0, backupAttrs.size() - 1));
+
+    cerr << "FETCHED " << bbdescr->fsentry << endl;
 
     if (current_backup_id == bbdescr->id) {
 
@@ -1393,6 +1400,8 @@ BackupCatalog::getBackupList(std::string archive_name) {
                                             */
 
                                            Range(backupAttrs.size(), backupAttrs.size() + tblspcAttrs.size() - 1));
+
+      cerr << "FETCHED TABLESPACE" << endl;
 
       if (tablespace->backup_id >= 0) {
 
