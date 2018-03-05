@@ -98,6 +98,14 @@ namespace credativ {
     virtual void execute(bool flag);
   };
 
+  class ListBackupListCommand : public BaseCatalogCommand {
+  public:
+    ListBackupListCommand(std::shared_ptr<CatalogDescr> descr);
+    ListBackupListCommand(std::shared_ptr<BackupCatalog> catalog);
+
+    virtual void execute(bool flag);
+  };
+
   class ListBackupCatalogCommand : public BaseCatalogCommand {
   public:
     ListBackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);

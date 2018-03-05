@@ -251,6 +251,15 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
+         * LIST BACKUPS IN ARCHIVE <identifier>
+         */
+        cmd_list_backup_list = no_case[ lexeme[ lit("BACKUPS") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_LIST) ]
+          > no_case[ lexeme[ lit("IN") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+
+        /*
          * LIST BACKUP CATALOG [<backup>] ...
          *             | PROFILE [ <profile> ] ... command
          */
@@ -514,6 +523,7 @@ namespace credativ {
         cmd_start_basebackup.name("START BASEBACKUP");
         cmd_list_archive.name("LIST ARCHIVE");
         cmd_list_backup.name("LIST BACKUP");
+        cmd_list_backup_list.name("LIST BACKUPS");
         cmd_list_connection.name("LIST CONNECTION");
         identifier.name("object identifier");
         executable.name("executable name");
@@ -557,6 +567,7 @@ namespace credativ {
                           cmd_list_connection,
                           cmd_create_backup_profile,
                           cmd_list_backup,
+                          cmd_list_backup_list,
                           cmd_drop_backup_profile,
                           cmd_alter_backup_profile,
                           cmd_create_connection,
@@ -750,6 +761,11 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case LIST_BACKUP_CATALOG: {
     result = make_shared<ListBackupCatalogCommand>(this->catalogDescr);
+    break;
+  }
+
+  case LIST_BACKUP_LIST: {
+    result = make_shared<ListBackupListCommand>(this->catalogDescr);
     break;
   }
 

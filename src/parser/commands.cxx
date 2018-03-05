@@ -1332,6 +1332,32 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
   }
 }
 
+ListBackupListCommand::ListBackupListCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ListBackupListCommand::ListBackupListCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->catalog = catalog;
+  this->tag = LIST_BACKUP_LIST;
+
+}
+
+void ListBackupListCommand::execute(bool flag) {
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+
+  if (!this->catalog->available())
+    this->catalog->open_rw();
+
+}
+
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
   this->tag = LIST_BACKUP_CATALOG;
   this->catalog = catalog;
