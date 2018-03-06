@@ -84,6 +84,80 @@ void StreamingBaseBackupDirectory::remove() {
   remove_all(this->streaming_subdir);
 }
 
+StreamingBaseBackupDirectory *StreamingBaseBackupDirectory::getInstance(string dirname,
+                                                                        path archiveDir) {
+
+  StreamingBaseBackupDirectory *backupdir
+    = new StreamingBaseBackupDirectory(dirname, archiveDir);
+
+  return backupdir;
+
+}
+
+BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<BaseBackupDescr> bbdescr) {
+
+  /*
+   * Sanity check for specified basebackup descriptor.
+   */
+  if (bbdescr == nullptr) {
+    return BASEBACKUP_DESCR_INVALID;
+  }
+
+  if (bbdescr->id < 0) {
+    return BASEBACKUP_DESCR_INVALID;
+  }
+
+  /*
+   * Check specific status codes.
+   */
+  if (bbdescr->status == "in progress") {
+    return BASEBACKUP_IN_PROGRESS;
+  }
+
+  if (bbdescr->status == "aborted") {
+    return BASEBACKUP_ABORTED;
+  }
+
+  /*
+   * Before we do any on-disk verification, make
+   * sure the backup descriptor and this
+   * StreamingBaseBackupDirectory instance point to the
+   * same path. We use boost::filesystem::equivalent() here, since
+   * we want to make sure we point to exactly the same
+   * phyiscal filesystem entity.
+   */
+  if (!equivalent(this->streaming_subdir, path(bbdescr->fsentry))) {
+    return BASEBACKUP_DIRECTORY_MISMATCH;
+  }
+
+  /*
+   * Check if streaming directory exists.
+   */
+  if (!exists(this->streaming_subdir)) {
+    return BASEBACKUP_DIRECTORY_MISSING;
+  }
+
+  /*
+   * TODO: Verify WAL start and end position.
+   */
+  return BASEBACKUP_GENERIC_VERIFICATION_FAILURE;
+}
+
+size_t StreamingBaseBackupDirectory::size() {
+
+  size_t result = 0;
+
+  for(recursive_directory_iterator it(this->streaming_subdir);
+      it != recursive_directory_iterator(); ++it) {
+
+      if(!is_directory(*it))
+        result += file_size(*it);
+
+    }
+
+  return result;
+}
+
 std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string name,
                                                                      BackupProfileCompressType compression) {
 
@@ -522,9 +596,11 @@ path BackupDirectory::getArchiveDir() {
 }
 
 BackupDirectory::BackupDirectory(path handle) {
+
   this->handle = canonical(handle);
   this->base = handle / "base";
   this->log  = handle / "log";
+
 }
 
 BackupDirectory::~BackupDirectory() {}

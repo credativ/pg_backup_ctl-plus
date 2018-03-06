@@ -304,6 +304,11 @@ namespace credativ {
      *
      */
     void strReplaceAll(std::string& str, const std::string& from, const std::string& to);
+
+    /**
+     * Format given size value into kB, Mb or Gb
+     */
+    static std::string prettySize(size_t size);
   };
 
 }

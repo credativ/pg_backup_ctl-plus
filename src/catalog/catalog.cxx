@@ -80,7 +80,6 @@ std::vector<std::string>BackupCatalog::backupProfilesCatalogCols =
 
 std::vector<std::string>BackupCatalog::backupTablespacesCatalogCols =
   {
-    "id",
     "backup_id",
     "spcoid",
     "spclocation",
@@ -731,8 +730,15 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::fetchBackupIntoDescr(sqlite3_stm
       break;
 
     case SQL_BACKUP_XLOGPOSEND_ATTNO:
-      descr->xlogposend = (char *)sqlite3_column_text(stmt, current_stmt_col);
-      break;
+      {
+        /* can be null in case of aborted basebackups */
+        if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+          descr->xlogposend = (char *)sqlite3_column_text(stmt, current_stmt_col);
+        else
+          descr->xlogposend = "";
+
+        break;
+      }
 
     case SQL_BACKUP_TIMELINE_ATTNO:
       descr->timeline = sqlite3_column_int(stmt, current_stmt_col);
@@ -1295,7 +1301,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
   backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
 
-  tblspcAttrs.push_back(SQL_BCK_TBLSPC_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
@@ -1323,7 +1329,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "COALESCE(spcsize, -1) AS spcsize "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
-        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1);";
+        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started ASC;";
 
 #ifdef __DEBUG__
   cerr << "generate SQL: " << query.str() << endl;
@@ -1363,77 +1369,64 @@ BackupCatalog::getBackupList(std::string archive_name) {
   while (rc == SQLITE_ROW) {
 
     shared_ptr<BaseBackupDescr> bbdescr = make_shared<BaseBackupDescr>();
+    shared_ptr<BackupTablespaceDescr> tablespace = make_shared<BackupTablespaceDescr>();
+
+    /* pivot pointer */
+    shared_ptr<BaseBackupDescr> curr_descr = nullptr;
+
     bbdescr->setAffectedAttributes(backupAttrs);
+    tablespace->setAffectedAttributes(tblspcAttrs);
+
+    this->fetchBackupIntoDescr(stmt,
+                               bbdescr,
+                               Range(0, backupAttrs.size() - 1));
 
     /*
-     * Since we retrieve backup information and associated
-     * tablespaces in one SQL query, we compare the current backup ID
-     * if it has changed. If it's the same, we're still iterating through
-     * the same backup set, if it has changed, then we are iterating through
-     * a new set (by calling sqlite3_step()). -1 marks the start of the iteration.
+     * Since we fetch tablespace and basebackup information in one
+     * query, we only push basebackup information if the last
+     * encountered backup_id differs into the our result list.
      */
-
-    this->fetchBackupIntoDescr(stmt, bbdescr, Range(0, backupAttrs.size() - 1));
-
-    cerr << "FETCHED " << bbdescr->fsentry << endl;
-
-    if (current_backup_id == bbdescr->id) {
-
-      /*
-       * We're still fetching the same base backup, but another
-       * tablespace member.
-       */
-
-      shared_ptr<BackupTablespaceDescr> tablespace = make_shared<BackupTablespaceDescr>();
-      shared_ptr<BaseBackupDescr> curr_descr = nullptr;
-
-      tablespace->setAffectedAttributes(tblspcAttrs);
-      this->fetchBackupTablespaceIntoDescr(stmt,
-                                           tablespace,
-
-                                           /*
-                                            * NOTE:
-                                            *
-                                            * The offset for tablespace columns always
-                                            * starts after the attributes from the backup
-                                            * catalog table
-                                            */
-
-                                           Range(backupAttrs.size(), backupAttrs.size() + tblspcAttrs.size() - 1));
-
-      cerr << "FETCHED TABLESPACE" << endl;
-
-      if (tablespace->backup_id >= 0) {
-
-        /* Okay, looks like a valid tablespace entry */
-        curr_descr = list.back();
-
-        if (curr_descr == nullptr) {
-          /* oops */
-          throw CCatalogIssue("unexpected state in base backup list in getBackupList()");
-        }
-
-        curr_descr->tablespaces.push_back(tablespace);
-
-      }
-
-      /* Now move the result forward to the next row */
-      rc = sqlite3_step(stmt);
-
-    } else {
+    if (current_backup_id != bbdescr->id) {
 
       list.push_back(bbdescr);
       current_backup_id = bbdescr->id;
 
-      /*
-       * Move the cursor forward.
-       */
-      rc = sqlite3_step(stmt);
+    }
+
+    this->fetchBackupTablespaceIntoDescr(stmt,
+                                         tablespace,
+
+                                         /*
+                                          * NOTE:
+                                          *
+                                          * The offset for tablespace columns always
+                                          * starts after the attributes from the backup
+                                          * catalog table
+                                          */
+
+                                         Range(backupAttrs.size(), backupAttrs.size() + tblspcAttrs.size() - 1));
+
+    if (tablespace->backup_id >= 0) {
+
+      /* Okay, looks like a valid tablespace entry */
+      curr_descr = list.back();
+
+      if (curr_descr == nullptr) {
+        /* oops */
+        sqlite3_finalize(stmt);
+        throw CCatalogIssue("unexpected state in base backup list in getBackupList()");
+      }
+
+      curr_descr->tablespaces.push_back(tablespace);
 
     }
 
+    /* Now move the result forward to the next row */
+    rc = sqlite3_step(stmt);
+
   }
 
+  sqlite3_finalize(stmt);
   return list;
 }
 
@@ -1871,10 +1864,6 @@ int BackupCatalog::SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTable
       break;
 
     switch(colId) {
-
-    case SQL_BCK_TBLSPC_ID_ATTNO:
-      sqlite3_bind_int(stmt, result, tblspcDescr->id);
-      break;
 
     case SQL_BCK_TBLSPC_BCK_ID_ATTNO:
       sqlite3_bind_int(stmt, result, tblspcDescr->backup_id);
@@ -3358,12 +3347,6 @@ BackupCatalog::fetchBackupTablespaceIntoDescr(sqlite3_stmt *stmt,
       break;
 
     switch(current) {
-
-    case SQL_BCK_TBLSPC_ID_ATTNO:
-      {
-        tablespace->id = sqlite3_column_int(stmt, current_stmt_col);
-        break;
-      }
 
     case SQL_BCK_TBLSPC_BCK_ID_ATTNO:
       {

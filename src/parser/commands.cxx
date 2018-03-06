@@ -1368,26 +1368,88 @@ void ListBackupListCommand::execute(bool flag) {
   }
 
   /*
+   * NOTE: Use the temp_descr for catalog lookups now, since this is the only
+   *       one having a full fletched catalog descriptor content.
+   *
+   *       The local command object instance just carries the parser
+   *       information.
+   */
+
+  /*
    * Get a vector with all basebackups listed.
    *
    * This also includes all tablespaces and additional information
    * we need to give a detailed overview about the stored backups.
    */
-  vector<shared_ptr<BaseBackupDescr>> backupList = this->catalog->getBackupList(this->archive_name);
+  vector<shared_ptr<BaseBackupDescr>> backupList
+    = this->catalog->getBackupList(temp_descr->archive_name);
 
   /*
    * Format the output.
    */
-  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + this->archive_name,
-                                       boost::format("%-15s\t-%60s") % "Property" % "Value",
+  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + temp_descr->archive_name,
+                                       boost::format("%-15s\t%-60s") % "Property" % "Value",
                                        80);
 
   for (auto &basebackup : backupList) {
 
+    size_t upstream_total_size = 0;
+
+    /*
+     * Directory handle for basebackup directory on disk.
+     */
+    StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
+                                           temp_descr->directory);
+
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
-                                       % "Directory" % basebackup->fsentry);
+                                       % "Backup" % basebackup->fsentry);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+                                       % "Status" % basebackup->status);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+                                       % "Label" % basebackup->label);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
                                        % "Started" % basebackup->started);
+
+    /*
+     * Print tablespace information belonging to the current basebackup
+     */
+    cout << CPGBackupCtlBase::makeHeader("tablespaces",
+                                         boost::format("%-20s\t%-60s")
+                                         % "tablespace property"
+                                         % "value", 80);
+
+    for (auto &tablespace : basebackup->tablespaces) {
+
+      /* Check for parent tablespace (also known as pg_default) */
+      if (tablespace->spcoid == 0) {
+
+        cout << " - " << boost::format("%-20s\%-60s")
+          % "upstream location" % "pg_default" << endl;
+        cout << " - " << boost::format("%-20s\%-60s")
+          % "upstream size" % tablespace->spcsize << endl;
+
+      } else {
+
+        cout << " - " << boost::format("%-20s\%-60s")
+          % "oid" % tablespace->spcoid << endl;
+        cout << " - " << boost::format("%-20s\%-60s")
+          % "upstream location" % tablespace->spclocation << endl;
+        cout << " - " << boost::format("%-20s\%-60s")
+          % "upstream size" % tablespace->spcsize << endl;
+
+      }
+
+      upstream_total_size += tablespace->spcsize;
+    }
+
+    cout << "Summary:" << endl;
+    cout << boost::format("%-25s\t%-40s")
+      % "Total size upstream:" % CPGBackupCtlBase::prettySize(upstream_total_size * 1024) << endl;
+    cout << boost::format("%-25s\t%-40s")
+      % "Total local backup size:"
+      % CPGBackupCtlBase::prettySize(directory.size()) << endl;
+
+    cout << CPGBackupCtlBase::makeLine(80) << endl;
 
   }
 

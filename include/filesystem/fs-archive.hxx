@@ -415,13 +415,13 @@ namespace credativ {
                                                    BackupProfileCompressType compression);
   };
 
-  /*
+  /**
    * Describes types of WAL segment files that
    * can be live within a log/ directory represented
    * by an ArchiveLogDirectory instance.
    */
   typedef enum {
-    WAL_SEGMENT_COMPLETE,
+    WAL_SEGMENT_COMPLETE = 1,
     WAL_SEGMENT_PARTIAL,
     WAL_SEGMENT_COMPLETE_COMPRESSED,
     WAL_SEGMENT_PARTIAL_COMPRESSED, /* NOTE: XLOG segments are gzipped only! */
@@ -429,7 +429,26 @@ namespace credativ {
     WAL_SEGMENT_UNKNOWN
   } WALSegmentFileStatus;
 
-  /*
+  /**
+   * Verification codes returned by
+   * StreamingBaseBackupDirectory::verify().
+   */
+  typedef enum {
+
+    BASEBACKUP_OK = 100,
+    BASEBACKUP_ABORTED,
+    BASEBACKUP_IN_PROGRESS,
+    BASEBACKUP_START_WAL_MISSING,
+    BASEBACKUP_END_WAL_MISSING,
+    BASEBACKUP_DIRECTORY_MISSING,
+    BASEBACKUP_DESCR_INVALID,
+    BASEBACKUP_DIRECTORY_MISMATCH,
+    BASEBACKUP_GENERIC_VERIFICATION_FAILURE
+
+
+  } BaseBackupVerificationCode;
+
+  /**
    * Specialized class for archive log directories.
    *
    * This is a specialized descendant class of BackupDirectory,
@@ -528,7 +547,7 @@ namespace credativ {
     virtual std::shared_ptr<BackupFile> basebackup(std::string name,
                                                    BackupProfileCompressType compression);
 
-    /*
+    /**
      * Instantiate the directory.
      *
      * This creates a streaming base backup subdirectory in
@@ -536,16 +555,45 @@ namespace credativ {
      */
     virtual void create();
 
-    /*
+    /**
+     * Returns the size of an existing streaming basebackup
+     * directory.
+     *
+     * This loops through the directory, summing up all files
+     * found there.
+     *
+     * If the streaming basebackup does not exist, size() will
+     * throw a CArchiveIssue() exception.
+     */
+    virtual size_t size();
+
+    /**
      * Fsync directories.
      */
     virtual void fsync();
 
-    /*
+    /**
      * Remove streaming base backup, including files and directory
      * from the filesystem.
      */
     virtual void remove();
+
+    /**
+     * Verification of content of the specified
+     * base backup.
+     *
+     * The verify() method here takes the properties from
+     * the fully initialized basebackup descriptor and verifies
+     * that it matches the on-disk representation.
+     */
+    virtual BaseBackupVerificationCode verify(std::shared_ptr<BaseBackupDescr> bbdescr);
+
+    /**
+     * Factory method. Returns a new instance
+     * of StreamingBaseBackupDirectory.
+     */
+    static StreamingBaseBackupDirectory *getInstance(std::string dirname,
+                                                     path archiveDir);
   };
 
   /*

@@ -104,16 +104,15 @@
  */
 #define SQL_BACKUP_TBLSPC_ENTITY 5
 
-#define SQL_BCK_TBLSPC_ID_ATTNO 0
-#define SQL_BCK_TBLSPC_BCK_ID_ATTNO 1
-#define SQL_BCK_TBLSPC_SPCOID_ATTNO 2
-#define SQL_BCK_TBLSPC_SPCLOC_ATTNO 3
-#define SQL_BCK_TBLSPC_SPCSZ_ATTNO 4
+#define SQL_BCK_TBLSPC_BCK_ID_ATTNO 0
+#define SQL_BCK_TBLSPC_SPCOID_ATTNO 1
+#define SQL_BCK_TBLSPC_SPCLOC_ATTNO 2
+#define SQL_BCK_TBLSPC_SPCSZ_ATTNO 3
 
 /*
  * Keep number of columns in sync with above definitions
  */
-#define SQL_BCK_TBLSPC_NCOLS 5
+#define SQL_BCK_TBLSPC_NCOLS 4
 
 /*
  * Attributes belonging to procs catalog table.

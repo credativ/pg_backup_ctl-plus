@@ -516,3 +516,51 @@ std::string CPGBackupCtlBase::basebackup_filename() {
   return filename.str();
 
 }
+
+/*
+ * This code is borrowed from PostgreSQL's pg_size_pretty()
+ * function, see src/backend/utils/adt/dbsize.c
+ */
+std::string CPGBackupCtlBase::prettySize(size_t size) {
+
+  std::ostringstream result;
+  /*
+   * bytes are converted into kB starting above 10240 bytes.
+   */
+  size_t limit_plain = 10 * 1024;
+  size_t limit = (2 * limit_plain) - 1;
+
+  if (size < limit_plain) {
+    result << size << " bytes";
+    return result.str();
+  } else {
+
+    size >>= 10;
+
+    if (size < limit) {
+      result << size << " kB";
+      return result.str();
+    } else {
+
+      size >>= 10;
+
+      if (size < limit) {
+        result << size << " MB";
+        return result.str();
+      } else {
+
+        size >>= 10;
+
+        if (size < limit) {
+          result << size << " GB";
+          return result.str();
+        } else {
+          result << size << " TB";
+          return result.str();
+        }
+      }
+    }
+  }
+
+  return "NaN";
+}
