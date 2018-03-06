@@ -179,6 +179,44 @@ Examples::
 
   LIST BACKUP PROFILE my_profile;
 
+LIST BASEBACKUPS IN ARCHIVE
+===========================
+
+Syntax::
+
+  LIST BASEBACKUPS IN ARCHIVE <identifier>
+
+The ``LIST BASEBACKUPS`` command gives a list of
+basebackups and its status in the specified archive.
+
+Examples::
+
+  LIST BASEBACKUPS IN ARCHIVE pg10;
+
+  Basebackups in archive pg10
+  --------------------------------------------------------------------------------
+  Property       	Value                                                       
+  --------------------------------------------------------------------------------
+  Backup         	/srv/test/pgarchive/10/base/streambackup-20180306114858     
+  Status         	ready                                                       
+  Label          	PG_BACKUP_CTL BASEBACKUP                                    
+  Started        	2018-03-06 11:48:58                                         
+  tablespaces
+  --------------------------------------------------------------------------------
+  tablespace property 	value                                                       
+  --------------------------------------------------------------------------------
+  - oid                 16407                                                       
+  - upstream location   /srv/test/pgdata/tablespaces/10.0                           
+  - upstream size       9                                                           
+  - oid                 32561                                                       
+  - upstream location                                                               
+  - upstream size       15407193                                                    
+  Summary:
+  Total size upstream:     	15046 MB                                
+  Total local backup size: 	15046 MB                                
+  --------------------------------------------------------------------------------
+
+
 LIST CONNECTION FOR ARCHIVE
 ===========================
 
