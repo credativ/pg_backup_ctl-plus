@@ -1,6 +1,7 @@
-pg_backup_ctl-plus is a rewrite of the old sophisticated pg_backup_ctl script.
+ pg_backup_ctl-plus is a rewrite of the old sophisticated pg_backup_ctl script.
 
 Compiling:
+==========
 
 Checkout the repository:
 
@@ -16,18 +17,26 @@ pg_backup_ctl++ currently depends on the following packages:
 - boost-date_time
 - boost-iostreams
 
-(yes, you don't have a nightmare, its true, we rely on boost)
+(yes, you don't have a nightmare, its true, we rely on boost). The
+easiest way is to install the boost-devel package (at least on Fedora).
 
 - libpopt
 - libreadline
+- zlib
+- postgresql-devel
+
+pg_backup_ctl++ links against PostgreSQL 9.6, though
+the newest upstream version 10 is recommended. Version below
+9.6 might work, but aren't officially supported.
 
 If everything is present, type
 
-$ cd build
-$ cmake ..
-$ make
+    $ cd build
+    $ cmake ..
+    $ make
 
 Notes on OSX:
+=============
 
 Tested with MacPorts and AppleClang C++ compiler. Other compilers
 (especially the ones from MacPorts) aren't supported!.
@@ -36,9 +45,10 @@ Linux: clang/g++ seem to work
 
 If you want some debugging output information, use:
 
-$ CXXFLAGS="-D__DEBUG__" cmake ..
+    $ CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake ..
 
 Preparation steps:
+==================
 
 You need a sqlite3 database for the pg_backup_ctl++ catalog. If you don't
 want to use --catalog everytime, you can rely on a compiled-in default.
@@ -46,11 +56,18 @@ Currently this is hardwired to /home/bernd/.pg_backup_ctl.sqlite, which
 obviously won't work on other dev machines. To override this default, just
 pass your favorite path to cmake like this:
 
-$ cmake -DPG_BACKUP_CTL_SQLITE:FILEPATH=/Users/bernd/.pg_backup_ctl.sqlite ..
-$ make
+    $ cmake -DPG_BACKUP_CTL_SQLITE:FILEPATH=/Users/bernd/.pg_backup_ctl.sqlite ..
+    $ make
 
 Then prepare the database files:
 
-$ sqlite3 /your/sqlite/database < src/sql/catalog.sql
+    $ sqlite3 /your/sqlite/database < src/sql/catalog.sql
 
-...and have fun.
+Theres a command reference available, though building requires
+python-sphinx. On Fedora 27, where python3-sphinx is available, you
+can build the command reference as shown below:
+
+    $ cd <pg_backup_ctl++ source dir>/resources/reference
+    $ make SPHINXBUILD=sphinx-build-3 html
+
+The documentation can then be found in the build/ subdirectory.
