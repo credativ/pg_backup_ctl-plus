@@ -398,6 +398,17 @@ namespace credativ {
                     std::vector<int> affectedRows);
 
     /**
+     * Creates a pin on the specified basebackup ID.
+     *
+     * A pin is a lock placed on the basebackup catalog entry,
+     * so that any retention policy applied will not delete
+     * it. pin() won't check if a pin is already placed
+     * on the specified basebackup ID, this should be done
+     * by the caller before.
+     */
+    virtual void pin(int basebackupId);
+
+    /**
      * Fetch backup information from current stmt handle into
      * the specified BaseBackupDescr handle.
      */

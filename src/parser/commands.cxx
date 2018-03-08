@@ -1401,6 +1401,8 @@ void ListBackupListCommand::execute(bool flag) {
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
                                            temp_descr->directory);
 
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s%-60s")
+                                       % "ID" % basebackup->id);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
                                        % "Backup" % basebackup->fsentry);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")

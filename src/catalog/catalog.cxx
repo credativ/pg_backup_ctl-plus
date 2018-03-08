@@ -158,6 +158,97 @@ std::string StatCatalogArchive::gimmeFormattedString() {
   return formatted.str();
 }
 
+BasicPinDescr::BasicPinDescr() {}
+
+BasicPinDescr::~BasicPinDescr() {}
+
+BasicPinDescr *BasicPinDescr::instance(CatalogTag action,
+                                       PinOperationType operation) {
+
+  switch(action) {
+
+  case PIN_BASEBACKUP:
+    return new PinDescr(operation);
+  case UNPIN_BASEBACKUP:
+    return new UnpinDescr(operation);
+  default:
+    {
+      throw CPGBackupCtlFailure("could not generate pin action based on command tag "
+                                + CatalogDescr::commandTagName(action));
+    }
+
+  }
+
+  /* should not be reached */
+  return nullptr;
+
+}
+
+void BasicPinDescr::setBackupID(int backupid) {
+  this->backupid = backupid;
+}
+
+void BasicPinDescr::setBackupID(string backupid) {
+  this->backupid = CPGBackupCtlBase::strToInt(backupid);
+}
+
+void BasicPinDescr::setCount(string count) {
+  this->count = CPGBackupCtlBase::strToUInt(count);
+}
+
+void BasicPinDescr::setCount(unsigned int count) {
+  this->count = count;
+}
+
+int BasicPinDescr::getBackupID() {
+
+  if (this->operation != ACTION_ID)
+    throw CPGBackupCtlFailure("attempt to read  backup id in PIN/UNPIN not referencing a backup ID");
+
+  return this->backupid;
+
+}
+
+unsigned int BasicPinDescr::getCount() {
+
+  if (this->operation != ACTION_COUNT)
+    throw CPGBackupCtlFailure("attempt to read number to keep in PIN/UNPIN not using a count action");
+
+  return this->count;
+
+}
+
+PinOperationType BasicPinDescr::getOperationType() {
+
+  return this->operation;
+
+}
+
+int BasicPinDescr::bckIDStr(std::string backupid) {
+
+  return CPGBackupCtlBase::strToInt(backupid);
+
+}
+
+PinDescr::PinDescr(PinOperationType operation) {
+
+  this->operation = operation;
+
+}
+
+UnpinDescr::UnpinDescr(PinOperationType operation) {
+
+  this->operation = operation;
+
+}
+
+CatalogDescr::~CatalogDescr() {
+
+  if (this->pinDescr != nullptr)
+    delete this->pinDescr;
+
+}
+
 CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
   this->tag = source.tag;
@@ -182,6 +273,53 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
 
 void CatalogDescr::setStreamingForceXLOGPositionRestart( bool const& restart ) {
   this->forceXLOGPosRestart = restart;
+}
+
+void CatalogDescr::makePinDescr(PinOperationType const& operation) {
+
+  /*
+   * Release a previously allocated BasicPinDescr instance,
+   * if present.
+   */
+  if (this->pinDescr != nullptr) {
+    delete this->pinDescr;
+  }
+
+  /*
+   * The BasicPinDescr::instance() already checks for
+   * valid command tags.
+   */
+  this->pinDescr = BasicPinDescr::instance(this->tag,
+                                           operation);
+
+}
+
+void CatalogDescr::makePinDescr(PinOperationType const& operation,
+                                string const& argument) {
+
+
+  /*
+   * Release a previously allocated BasicPinDescr instance,
+   * if present.
+   */
+  if (this->pinDescr != nullptr) {
+    delete this->pinDescr;
+  }
+
+  /*
+   * The BasicPinDescr::instance() already checks for valid
+   * command tags, so leave error checking to it.
+   *
+   */
+  this->pinDescr = BasicPinDescr::instance(this->tag,
+                                           operation);
+
+  if (operation == ACTION_ID) {
+    this->pinDescr->setBackupID(argument);
+  } else if (operation == ACTION_COUNT) {
+    this->pinDescr->setCount(argument);
+  }
+
 }
 
 std::string CatalogDescr::commandTagName(CatalogTag tag) {
@@ -229,6 +367,11 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "SHOW WORKERS";
   case LIST_BACKUP_LIST:
     return "LIST BASEBACKUPS";
+  case PIN_BASEBACKUP:
+    return "PIN";
+  case UNPIN_BASEBACKUP:
+    return "UNPIN";
+
   default:
     return "UNKNOWN";
   }
@@ -1266,6 +1409,52 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
   sqlite3_finalize(stmt);
 
   return result;
+}
+
+void BackupCatalog::pin(int basebackupId) {
+
+  ostringstream update;
+  sqlite3_stmt *stmt;
+  int rc;
+
+  /*
+   * Negative values indicate an error
+   */
+  if (basebackupId < 0) {
+    throw CArchiveIssue("invalid basebackup ID to pin");
+  }
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  update << "UPDATE backup SET pinned = 1 WHERE id = ?1;";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          update.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query:" << sqlite3_errmsg(db_handle);
+  }
+
+  sqlite3_bind_int(stmt, 1, basebackupId);
+
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "failed to pin basebackup ID "
+        << basebackupId
+        << ": " << sqlite3_errmsg(db_handle);
+    sqlite3_finalize(stmt);
+    throw CArchiveIssue(oss.str());
+  }
+
+  sqlite3_finalize(stmt);
 }
 
 std::vector<std::shared_ptr<BaseBackupDescr>>

@@ -188,6 +188,9 @@ Syntax::
 
 The ``LIST BASEBACKUPS`` command gives a list of
 basebackups and its status in the specified archive.
+Basebackups are always listed in ascending order, sorted
+by their creation date. Thus, the oldest basebackup is the
+first in the list.
 
 Examples::
 
@@ -291,6 +294,25 @@ a streaming worker is still running for the specified archive, it
 won't be notified or interrupted, but a restart of the worker will
 cause it to fall back to the ``basebackup`` connection.
 
+PIN
+===
+
+Syntax::
+
+  PIN { <basebackup ID> | OLDEST | NEWEST | +<COUNT> }
+     IN ARCHIVE <identifier>
+
+The ``PIN`` command creates a pin on the specified basebackups. To pin
+a basebackup, ``PIN`` supports the following action modes:
+
+* basebackup ID
+
+  If specified a number to ``PIN``, this will be treated as the
+  ID of a basebackup currently stored in the specified archive.
+  If the ID isn't found, an error will raised. If the ID is already
+  pinned, nothing will happen.
+
+
 START BASEBACKUP FOR ARCHIVE
 ============================
 
@@ -330,6 +352,58 @@ Examples::
   START STREAMING FOR ARCHIVE pg10 NODETACH;
 
   START STREAMING FOR ARCHIVE pg10 RESTART NODETACH;
+
+UNPIN
+=====
+
+Syntax::
+
+  UNPIN { <basebackup ID> | OLDEST | NEWEST | CURRENT | +<COUNT> }
+     IN ARCHIVE <identifier>
+
+The ``UNPIN`` command removes any pins on basebackup specified
+by one of the following actions:
+
+* basebackup ID
+
+  When specified a basebackup ID, the specified ID is unpinned.
+  The ``UNPIN`` command does not check, if the basebackup ID was
+  pinned before. Though, if the ID cannot be found, an error
+  occurs.
+
+* OLDEST
+
+  The ``OLDEST`` keyword references the oldest basebackup
+  in the specified archive. If there is one, it will be unpinned.
+  This action has no effect, if no basebackup is currently
+  present, or if the the oldest basebackup is not pinned.
+
+* NEWEST
+
+  The ``NEWEST`` keyword lets the ``UNPIN`` command
+  to unpin the newest basebackup in the specified archive. If no
+  basebackup exists or the newest basebackup wasn't pinned, this
+  is effectively a no op.
+
+* +COUNT
+
+  If the argument to UNPIN is a number, prefix by the ``+`` literal,
+  then UNPIN treats this number as the number of basebackups to
+  unpin. It will travers the list of basebackups down in ascending
+  order, whereas the list is sorted by creation date, oldest first.
+  It will stop, if ``COUNT`` number of basebackups are unpinned.
+  ``UNPIN`` will stop, as soon as the end of list is reached.
+
+In general, if any basebackups referenced by one of the
+specified actions is not yet pinned, ``UNPIN`` won't complain.
+
+If the specified archive doesn't exist, ``UNPIN`` will throw
+an error.
+
+.. note::
+
+  Aborted basebackups cannot be pinned, and ``UNPIN`` will
+  ignore basebackups in such a state, too.
 
 VERIFY ARCHIVE
 ==============

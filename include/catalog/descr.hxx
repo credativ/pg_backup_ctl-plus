@@ -12,6 +12,9 @@ namespace credativ {
   class BackupTableSpaceDescr;
   class BaseBackupDescr;
   class PushableCols;
+  class BasicPinDescr;
+  class PinDesc;
+  class UnpinDescr;
 
   /*
    * Defines flags to characterize the
@@ -40,6 +43,8 @@ namespace credativ {
     LIST_BACKUP_CATALOG,
     LIST_BACKUP_LIST,
     LIST_CONNECTION,
+    PIN_BASEBACKUP,
+    UNPIN_BASEBACKUP,
     START_LAUNCHER,
     START_STREAMING_FOR_ARCHIVE,
     STOP_STREAMING_FOR_ARCHIVE,
@@ -256,6 +261,148 @@ namespace credativ {
   };
 
   /**
+   * PIN/UNPIN operation actions. Used to identify
+   * the actions a PinDescr instance needs to perform.
+   */
+  typedef enum {
+
+    /**
+     * References a basebackup to PIN or UNPIN by its ID.
+     */
+    ACTION_ID = 100,
+
+    /**
+     * Gives the number of basebackups to PIN or UNPIN. The number is always
+     * applied to the number of basebackups in ascending order, sorted by
+     * their creation date.
+     */
+    ACTION_COUNT,
+
+    /**
+     * PIN/UNPIN newest basebackup
+     */
+    ACTION_NEWEST,
+
+    /**
+     * PIN/UNPIN oldest basebackup
+     */
+    ACTION_OLDEST,
+
+    /**
+     * For uninitialized PinDescr instances
+     */
+    ACTION_UNDEFINED
+
+  } PinOperationType;
+
+  /**
+   * A BasicPinDescr is the ancestor of either a PinDescr or UnpinDescr
+   * instance. Both encapsulate a PIN or UNPIN action respectively.
+   *
+   * A BasicPinDescr isn't really usable, to identify a PIN or
+   * UNPIN action you need an instance of either UnpinDescr
+   * or PinDescr.
+   */
+  class BasicPinDescr {
+  protected:
+
+    /*
+     * Operation type for UNPIN/PIN action.
+     */
+    PinOperationType operation = ACTION_UNDEFINED;
+
+    /**
+     * If operation == ACTION_ID, then backupid is set to
+     * the backup ID to operate on.
+     *
+     * If operation == ACTION_COUNT, we set the number of
+     * basebackups to PIN or UNPIN in count.
+     */
+    union {
+      int backupid = -1;
+      unsigned int count;
+    };
+
+    /**
+     * Converts the backup ID into an integer value
+     * and assigns it to a PinDescr/UnpinDescr instance.
+     */
+    int bckIDStr(std::string backupid);
+
+  public:
+
+    BasicPinDescr();
+    virtual ~BasicPinDescr();
+
+    /**
+     * Set backup ID
+     */
+    virtual void setBackupID(int backupid);
+    virtual void setBackupID(std::string backupid);
+
+    /**
+     * Set number of PIN/UNPIN basebackups
+     */
+    virtual void setCount(std::string count);
+    virtual void setCount(unsigned int count);
+
+    /**
+     * Returns the number of basebackups for
+     * the PIN/UNPIN action.
+     *
+     * If the operation type of a BasicPinDescr instance
+     * (specifically on if its descendants PinDescr/UnpinDescr)
+     * doesn't reference a ACTION_COUNT flag, an CPGBackupCtlFailure
+     * exception is thrown.
+     */
+    virtual unsigned int getCount();
+
+    /**
+     * Returns the backup ID associated with
+     * PIN/UNPIN action. Throws a CPGBackupCtlFailure
+     * exception in case the command type is not
+     * referencing a backup ID.
+     */
+    virtual int getBackupID();
+
+    /**
+     * Returns the PIN/UNPIN operationt type.
+     */
+    virtual PinOperationType getOperationType();
+
+    static BasicPinDescr * instance(CatalogTag action,
+                                    PinOperationType type);
+
+    virtual CatalogTag action() = 0;
+  };
+
+  class PinDescr : public BasicPinDescr {
+  public:
+
+    PinDescr(PinOperationType operation);
+
+    /**
+     * Returns the PIN_BASEBACKUP catalog tag, identifying
+     * the command type.
+     */
+    virtual CatalogTag action() { return PIN_BASEBACKUP; }
+
+  };
+
+  class UnpinDescr : public BasicPinDescr {
+  public:
+
+    UnpinDescr(PinOperationType operation);
+
+    /**
+     * Returns the PIN_BASEBACKUP catalog tag, identifying
+     * the command type.
+     */
+    virtual CatalogTag action() { return UNPIN_BASEBACKUP; }
+
+  };
+
+  /**
    * Option flags for the VERIFY ARCHIVE command.
    */
   typedef enum {
@@ -278,9 +425,16 @@ namespace credativ {
   class CatalogDescr : protected CPGBackupCtlBase, public PushableCols {
   protected:
     std::shared_ptr<BackupProfileDescr> backup_profile = std::make_shared<BackupProfileDescr>();
+
+    /**
+     * A PinDescr instance is initialized by the parser when
+     * handling a PIN command. By default, its set to PIN_OPER_UNDEFINED.
+     */
+    BasicPinDescr *pinDescr = nullptr;
+
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
-    ~CatalogDescr() {};
+    ~CatalogDescr();
 
     CatalogTag tag;
     int id = -1;
@@ -326,6 +480,21 @@ namespace credativ {
      * Returns command tag as string.
      */
     std::string getCommandTagAsStr();
+
+    /**
+     * Initialize a PinDescr attached to a catalog
+     * descr.
+     */
+    void makePinDescr(PinOperationType const &operation,
+                      std::string const &argument);
+
+    /**
+     * Initialize a PinDescr attached to a catalog descr.
+     * Overloaded version which doesn't require a action
+     * argument, e.g. for ACTION_OLDEST or ACTION_NEWEST
+     * pin operation actions.
+     */
+    void makePinDescr(PinOperationType const& operation);
 
     /**
      * Set VERIFY command options.
