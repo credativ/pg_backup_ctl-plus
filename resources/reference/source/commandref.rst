@@ -312,6 +312,35 @@ a basebackup, ``PIN`` supports the following action modes:
   If the ID isn't found, an error will raised. If the ID is already
   pinned, nothing will happen.
 
+* OLDEST
+
+  Pin the oldest basebackup in the specified archive.
+
+* NEWEST
+
+  Pin the newest basebackup in the specified archive.
+
+* +COUNT
+
+  If the specified number is prefixed with a ``+`` literal,
+  the number is treated as the number of basebackups to pin. The basebackups
+  are pinned in asccending order, where the basebackups are sorted by
+  their creation date, starting with the newest. Thus, a argument of
+  ``+2`` pins the two newest basebackups in the archive. ``PIN`` stops
+  as soon as the end of the list is reached. If there aren't any basebackups
+  to pin, this command is effectively a noop. If a basebackup was already pinned,
+  it is treated as where it wasn't previously pinned, so it counts to the
+  number of basebackup to be pinned.
+
+.. note::
+
+   If a basebackup was marked aborted or is still in progress, it won't
+   be recognized for a pin action. If ``+COUNT`` was specified for example,
+   such basebackups won't be part of ``COUNT``. The same applies to ``NEWEST``
+   or ``OLDEST``, if an aborted or in-progress basebackup is either the newest
+   or oldest basebackup, it will be ignored. Instead the next valid basebackup
+   meeting the criteria is choosen. If there aren't any, an error will be
+   raised.
 
 START BASEBACKUP FOR ARCHIVE
 ============================
@@ -390,7 +419,7 @@ by one of the following actions:
   If the argument to UNPIN is a number, prefix by the ``+`` literal,
   then UNPIN treats this number as the number of basebackups to
   unpin. It will travers the list of basebackups down in ascending
-  order, whereas the list is sorted by creation date, oldest first.
+  order, whereas the list is sorted by creation date, newest first.
   It will stop, if ``COUNT`` number of basebackups are unpinned.
   ``UNPIN`` will stop, as soon as the end of list is reached.
 
