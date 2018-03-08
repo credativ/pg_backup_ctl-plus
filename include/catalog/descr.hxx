@@ -22,7 +22,7 @@ namespace credativ {
    *
    * IMPORTANT:
    *
-   * Adding tags here requires CatalogDesc::setCommandTag()
+   * Adding tags here requires CatalogDescr::setCommandTag()
    * being teached about the new tag, too (src/catalog/catalog.cxx).
    */
   typedef enum {
@@ -370,10 +370,10 @@ namespace credativ {
      */
     virtual PinOperationType getOperationType();
 
-    static BasicPinDescr * instance(CatalogTag action,
-                                    PinOperationType type);
+    static BasicPinDescr instance(CatalogTag action,
+                                  PinOperationType type);
 
-    virtual CatalogTag action() = 0;
+    virtual CatalogTag action() { return EMPTY_DESCR; }
   };
 
   class PinDescr : public BasicPinDescr {
@@ -424,13 +424,8 @@ namespace credativ {
    */
   class CatalogDescr : protected CPGBackupCtlBase, public PushableCols {
   protected:
-    std::shared_ptr<BackupProfileDescr> backup_profile = std::make_shared<BackupProfileDescr>();
 
-    /**
-     * A PinDescr instance is initialized by the parser when
-     * handling a PIN command. By default, its set to PIN_OPER_UNDEFINED.
-     */
-    BasicPinDescr *pinDescr = nullptr;
+    std::shared_ptr<BackupProfileDescr> backup_profile = std::make_shared<BackupProfileDescr>();
 
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
@@ -442,6 +437,16 @@ namespace credativ {
     std::string label;
     bool compression = false;
     std::string directory;
+
+    /**
+     * A PinDescr instance is initialized by the parser when
+     * handling a PIN command. By default, a caller can only
+     * be sure if a pin descriptor instance is correctly
+     * initialized when the catalog tag is set to
+     * either PIN_BASEBACKUP or UNPIN_BASEBACKUP _and_
+     * the makePinDescr() method was called!
+     */
+    BasicPinDescr pinDescr;
 
     /**
      * Connection identifier used by the descriptor instance.
@@ -497,6 +502,13 @@ namespace credativ {
     void makePinDescr(PinOperationType const& operation);
 
     /**
+     * Returns the PIN/UNPIN operation type assigned
+     * to this catalog descriptor. If not initialized,
+     * ACTION_UNDEFINED is returned.
+     */
+    PinOperationType pinOperation();
+
+    /**
      * Set VERIFY command options.
      */
     void setVerifyOption(VerifyOption const& option);
@@ -549,7 +561,7 @@ namespace credativ {
 
     void setStreamingForceXLOGPositionRestart( bool const& restart );
 
-    CatalogDescr& operator=(const CatalogDescr& source);
+    CatalogDescr& operator=(CatalogDescr& source);
   };
 
   /*

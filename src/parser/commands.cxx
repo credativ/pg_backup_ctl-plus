@@ -37,6 +37,13 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->detach = source.detach;
   this->execString = source.execString;
 
+  /*
+   * Copy over a possible initialized instance
+   * of BasicPinDescr.
+   */
+  this->pinDescr = BasicPinDescr::instance(source.pinDescr.action(),
+                                           source.pinDescr.getOperationType());
+
   this->setAffectedAttributes(source.getAffectedAttributes());
   this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
 

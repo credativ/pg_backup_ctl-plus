@@ -162,25 +162,21 @@ BasicPinDescr::BasicPinDescr() {}
 
 BasicPinDescr::~BasicPinDescr() {}
 
-BasicPinDescr *BasicPinDescr::instance(CatalogTag action,
-                                       PinOperationType operation) {
+BasicPinDescr BasicPinDescr::instance(CatalogTag action,
+                                      PinOperationType operation) {
 
   switch(action) {
 
   case PIN_BASEBACKUP:
-    return new PinDescr(operation);
+    return PinDescr(operation);
   case UNPIN_BASEBACKUP:
-    return new UnpinDescr(operation);
+    return UnpinDescr(operation);
   default:
-    {
-      throw CPGBackupCtlFailure("could not generate pin action based on command tag "
-                                + CatalogDescr::commandTagName(action));
-    }
+    break;
 
   }
 
-  /* should not be reached */
-  return nullptr;
+  return BasicPinDescr();
 
 }
 
@@ -242,14 +238,9 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 }
 
-CatalogDescr::~CatalogDescr() {
+CatalogDescr::~CatalogDescr() {}
 
-  if (this->pinDescr != nullptr)
-    delete this->pinDescr;
-
-}
-
-CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
+CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
 
   this->tag = source.tag;
   this->id = source.id;
@@ -268,6 +259,10 @@ CatalogDescr& CatalogDescr::operator=(const CatalogDescr& source) {
   /* job control */
   this->detach = source.detach;
 
+  /* if a pinDescr was initialized, we need to make a copy */
+  this->pinDescr = BasicPinDescr::instance(source.pinDescr.action(),
+                                           source.pinDescr.getOperationType());
+
   return *this;
 }
 
@@ -275,15 +270,13 @@ void CatalogDescr::setStreamingForceXLOGPositionRestart( bool const& restart ) {
   this->forceXLOGPosRestart = restart;
 }
 
-void CatalogDescr::makePinDescr(PinOperationType const& operation) {
+PinOperationType CatalogDescr::pinOperation() {
 
-  /*
-   * Release a previously allocated BasicPinDescr instance,
-   * if present.
-   */
-  if (this->pinDescr != nullptr) {
-    delete this->pinDescr;
-  }
+  return this->pinDescr.getOperationType();
+
+}
+
+void CatalogDescr::makePinDescr(PinOperationType const& operation) {
 
   /*
    * The BasicPinDescr::instance() already checks for
@@ -297,15 +290,6 @@ void CatalogDescr::makePinDescr(PinOperationType const& operation) {
 void CatalogDescr::makePinDescr(PinOperationType const& operation,
                                 string const& argument) {
 
-
-  /*
-   * Release a previously allocated BasicPinDescr instance,
-   * if present.
-   */
-  if (this->pinDescr != nullptr) {
-    delete this->pinDescr;
-  }
-
   /*
    * The BasicPinDescr::instance() already checks for valid
    * command tags, so leave error checking to it.
@@ -315,9 +299,9 @@ void CatalogDescr::makePinDescr(PinOperationType const& operation,
                                            operation);
 
   if (operation == ACTION_ID) {
-    this->pinDescr->setBackupID(argument);
+    this->pinDescr.setBackupID(argument);
   } else if (operation == ACTION_COUNT) {
-    this->pinDescr->setCount(argument);
+    this->pinDescr.setCount(argument);
   }
 
 }
