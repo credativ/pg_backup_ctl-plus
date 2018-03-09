@@ -188,8 +188,8 @@ Syntax::
 
 The ``LIST BASEBACKUPS`` command gives a list of
 basebackups and its status in the specified archive.
-Basebackups are always listed in ascending order, sorted
-by their creation date. Thus, the oldest basebackup is the
+Basebackups are always listed in descending order, sorted
+by their creation date. Thus, the newest basebackup is the
 first in the list.
 
 Examples::
@@ -200,10 +200,11 @@ Examples::
   --------------------------------------------------------------------------------
   Property       	Value                                                       
   --------------------------------------------------------------------------------
-  Backup         	/srv/test/pgarchive/10/base/streambackup-20180306114858     
+  ID             5                                                           
+  Backup         	/srv/test/pgarchive/10/base/streambackup-20180306184203     
   Status         	ready                                                       
-  Label          	PG_BACKUP_CTL BASEBACKUP                                    
-  Started        	2018-03-06 11:48:58                                         
+  Label          	PG_BCK_CTL BASEBACKUP                                       
+  Started        	2018-03-06 18:42:03                                         
   tablespaces
   --------------------------------------------------------------------------------
   tablespace property 	value                                                       
@@ -211,13 +212,12 @@ Examples::
   - oid                 16407                                                       
   - upstream location   /srv/test/pgdata/tablespaces/10.0                           
   - upstream size       9                                                           
-  - oid                 32561                                                       
+  - oid                 32730                                                       
   - upstream location                                                               
   - upstream size       15407193                                                    
   Summary:
   Total size upstream:     	15046 MB                                
-  Total local backup size: 	15046 MB                                
-  --------------------------------------------------------------------------------
+  Total local backup size: 	15045 MB
 
 
 LIST CONNECTION FOR ARCHIVE
@@ -418,7 +418,7 @@ by one of the following actions:
 
   If the argument to UNPIN is a number, prefix by the ``+`` literal,
   then UNPIN treats this number as the number of basebackups to
-  unpin. It will travers the list of basebackups down in ascending
+  unpin. It will travers the list of basebackups down in descending
   order, whereas the list is sorted by creation date, newest first.
   It will stop, if ``COUNT`` number of basebackups are unpinned.
   ``UNPIN`` will stop, as soon as the end of list is reached.
