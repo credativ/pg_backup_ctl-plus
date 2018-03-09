@@ -1502,7 +1502,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "COALESCE(spcsize, -1) AS spcsize "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
-        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started ASC;";
+        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started DESC;";
 
 #ifdef __DEBUG__
   cerr << "generate SQL: " << query.str() << endl;

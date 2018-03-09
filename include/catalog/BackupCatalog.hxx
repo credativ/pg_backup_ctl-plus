@@ -507,12 +507,15 @@ namespace credativ {
      */
     virtual void registerTablespaceForBackup(std::shared_ptr<BackupTablespaceDescr> tblspcDescr);
 
-    /*
+    /**
      * Retrieve a complete list of backups stored in
      * the current catalog.
      *
      * This creates a list of backup handles with
      * alle referenced tablespaces.
+     *
+     * The returned list is pre-sorted by creation date,
+     * the newest basebackup appears first in the list.
      */
     virtual std::vector<std::shared_ptr<BaseBackupDescr>>
     getBackupList(std::string archive_name);

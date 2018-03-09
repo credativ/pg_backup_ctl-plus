@@ -35,6 +35,12 @@ namespace credativ {
     static std::shared_ptr<Retention> get(string retention_name,
                                           std::shared_ptr<BackupCatalog> catalog);
 
+    /**
+     * Applies a retention policy on the given list of
+     * basebackups.
+     */
+    virtual int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) = 0;
+
   };
 
   /**
@@ -69,6 +75,14 @@ namespace credativ {
                  std::shared_ptr<BackupCatalog> catalog);
     virtual ~PinRetention();
 
+    /**
+     * Apply the pin/unpin retention to the list
+     * of basebackups.
+     *
+     * Any basebackups which met the pin or unpin criteria
+     * are pinned or unpinned afterwards.
+     */
+    virtual int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
   };
 
 }

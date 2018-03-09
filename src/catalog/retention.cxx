@@ -19,7 +19,7 @@ void Retention::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
 std::shared_ptr<Retention> get(string retention_name,
                                std::shared_ptr<BackupCatalog> catalog) {
 
-  return std::make_shared<Retention>(catalog);
+  return nullptr;
 
 }
 
@@ -42,3 +42,9 @@ PinRetention::PinRetention(BasicPinDescr *descr,
 }
 
 PinRetention::~PinRetention() {}
+
+int PinRetention::apply(vector<shared_ptr<BaseBackupDescr>> list) {
+
+  int result = 0;
+
+}
