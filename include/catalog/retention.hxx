@@ -64,12 +64,42 @@ namespace credativ {
    * the action on what to do.
    */
   class PinRetention : public Retention {
+  private:
+
+    struct _count_pin_context {
+      unsigned int performed = 0;
+      unsigned int count = 0;
+    };
+
+    /*
+     * An instance of BasicPinDescr (either PinDescr
+     * or UnpinDescr) does a PIN or UNPIN on the
+     * specified basebackups meeting the criteria
+     * transported by this descriptor.
+     */
+    BasicPinDescr *pinDescr = nullptr;
+
+    /**
+     * Performs a PIN action with the pin
+     * policy defined in pinDescr.
+     */
+    void performPin(std::shared_ptr<BaseBackupDescr> bbdescr);
+
+    /**
+     * Performs an UNPIN action with the
+     * unpin policy defined in pinDescr.
+     */
+    void performUnpin(std::shared_ptr<BaseBackupDescr> bbdescr);
+
   public:
 
     /*
      * The BasicPinDescr is either a PinDescr or UnpinDescr
      * instance, describing the actions for either PIN or
      * UNPIN.
+     *
+     * Will throw if the specified BasicPinDescr pointer
+     * is a nullptr or set to ACTION_UNDEFINED.
      */
     PinRetention(BasicPinDescr *descr,
                  std::shared_ptr<BackupCatalog> catalog);
@@ -81,6 +111,17 @@ namespace credativ {
      *
      * Any basebackups which met the pin or unpin criteria
      * are pinned or unpinned afterwards.
+     *
+     * The caller should pass a list of basebackup descriptors which
+     * are sorted in descending order by their started timestamp (like
+     * getBackupList() already returns). If a basebackup descriptor
+     * is flagged with the aborted tag or in progress, it will be not
+     * considered and apply() will step to the next one, if any.
+     *
+     * If the list is empty, -1 will be returned, otherwise
+     * the number of basebackups meeting the pin/unpin criteria
+     * is returned. Can throw if catalog database access violations
+     * or errors occur (mainly CArchiveIssue exceptions).
      */
     virtual int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
   };
