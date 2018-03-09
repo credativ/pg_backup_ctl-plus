@@ -289,6 +289,12 @@ namespace credativ {
     ACTION_OLDEST,
 
     /**
+     * For unpin only, ACTION CURRENT references
+     * currently pinned basebackups.
+     */
+    ACTION_CURRENT,
+
+    /**
      * For uninitialized PinDescr instances
      */
     ACTION_UNDEFINED
@@ -616,6 +622,13 @@ namespace credativ {
     int pinned = 0;
     std::string status = "in progress";
     std::string systemid;
+
+    /*
+     * Static const specifiers for status flags.
+     */
+    static constexpr const char *BASEBACKUP_STATUS_IN_PROGRESS = "in postgress";
+    static constexpr const char *BASEBACKUP_STATUS_ABORTED = "aborted";
+    static constexpr const char *BASEBACKUP_STATUS_READY   = "ready";
 
     /* List of tablespaces descriptors in backup */
     std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;

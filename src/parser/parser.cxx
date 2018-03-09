@@ -222,9 +222,20 @@ namespace credativ {
         cmd_unpin_basebackup = no_case[ lexeme[ lit("UNPIN") ] ] >> ( number_ID                                                                                                                       [ boost::bind(&CatalogDescr::setCommandTag, &cmd, UNPIN_BASEBACKUP) ]
                                                                       [ boost::bind(&CatalogDescr::makePinDescr, &cmd, ACTION_ID, ::_1) ]
                                                                       | no_case[ lexeme[ lit("OLDEST") ]  ]
+                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                                    &cmd,
+                                                                                    ACTION_OLDEST) ]
                                                                       | no_case[ lexeme[ lit("NEWEST") ] ]
+                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                                    &cmd,
+                                                                                    ACTION_NEWEST) ]
                                                                       | no_case[ lexeme[ lit("CURRENT") ] ]
-                                                                      | ( lexeme[ lit("+") ] >> number_ID )
+                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                                    &cmd,
+                                                                                    ACTION_CURRENT) ]
+                                                                      | ( lexeme[ lit("+") ] >> number_ID
+                                                                          [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                                        &cmd, ACTION_COUNT, ::_1)])
                                                                       )
                                                                  >> no_case[ lexeme[ lit("IN") ] ]
                                                                  >> no_case[ lexeme[ lit("ARCHIVE") ] ]
