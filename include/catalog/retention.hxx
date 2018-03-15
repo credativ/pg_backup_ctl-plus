@@ -14,14 +14,21 @@ namespace credativ {
   protected:
 
     /**
-     * Internal catalog handle.
+     * Internal catalog database handler.
      */
     std::shared_ptr<BackupCatalog> catalog = nullptr;
+
+    /**
+     * Internal catalog descriptor, identifies
+     * the archive we are operating on.
+     */
+    std::shared_ptr<CatalogDescr> archiveDescr = nullptr;
 
   public:
 
     Retention();
-    Retention(std::shared_ptr<BackupCatalog> catalog);
+    Retention(std::shared_ptr<CatalogDescr> archiveDescr,
+              std::shared_ptr<BackupCatalog> catalog);
     virtual ~Retention();
 
     /**
@@ -37,9 +44,10 @@ namespace credativ {
 
     /**
      * Applies a retention policy on the given list of
-     * basebackups.
+     * basebackups. Returns the number of basebackups
+     * which got the retention policy applied.
      */
-    virtual int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) = 0;
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) = 0;
 
   };
 
@@ -62,14 +70,36 @@ namespace credativ {
    * UNPIN actions to the basebackup catalog entries, depending
    * on the action passed to it. A PinDescr or UnpinDescr describes
    * the action on what to do.
+   *
+   * Since a pin/unpin operation interacts with the backup catalog
+   * database, any method might throw.
    */
   class PinRetention : public Retention {
   private:
 
+    /*
+     * Private execution counters, summarized
+     * in this struct.
+     */
     struct _count_pin_context {
+
+      /*
+       * number of basebackups choosen
+       */
       unsigned int performed = 0;
+
+      /*
+       * If ACTION_COUNT, the number of basebackups
+       * to pin
+       */
       unsigned int count = 0;
-    };
+
+      /*
+       * Number of basebackups to consider
+       */
+      unsigned int expected = 0;
+
+    } count_pin_context;
 
     /*
      * An instance of BasicPinDescr (either PinDescr
@@ -80,16 +110,64 @@ namespace credativ {
     BasicPinDescr *pinDescr = nullptr;
 
     /**
-     * Performs a PIN action with the pin
-     * policy defined in pinDescr.
+     * Performs the change on the backup catalog database.
+     * The specified list contains all vectors which are
+     * affected by the current action described with the
+     * PinDescr instance.
      */
-    void performPin(std::shared_ptr<BaseBackupDescr> bbdescr);
+    void performDatabaseAction(std::vector<int> &basebackupIds);
 
     /**
-     * Performs an UNPIN action with the
-     * unpin policy defined in pinDescr.
+     * Dispatches the BasicPinDescr
+     * to its specific routine.
      */
-    void performUnpin(std::shared_ptr<BaseBackupDescr> bbdescr);
+    unsigned int dispatchPinAction(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+    /**
+     * Perform a ACTION_COUNT pin action. Will pin or
+     * unpin, depending on the PinDesr associated
+     * with a PinRetention instance.
+     *
+     * The action_Count() requires the specified list to be
+     * presorted in descending order, sorted by the started date
+     * to work properly!
+     */
+    unsigned int action_Count(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+    /**
+     * action_Current() implements the algorithm for UNPIN CURRENT
+     * commands (ACTION_CURRENT).
+     *
+     * Currently, we support the CURRENT operation for UNPIN
+     * actions only, so this function will throw when called
+     * within a PIN_BASEBACKUP context.
+     *
+     * Returns the number of basebackups unpinned.
+     */
+    unsigned int action_Current(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+    /**
+     * Do a pin/unpin operation for a specified basebackup ID.
+     *
+     * We accept an vector of basebackupIds nevertheless (for being
+     * consistent with the other action_* methods), though the
+     * interface currently just provides a single basebackup ID. This
+     * is en par with the other action_* methods.
+     */
+    unsigned int action_ID(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+    /**
+     * Perform PIN/UNPIN on the newest or oldest basebackup
+     * derived from the specified basebackup descriptor list.
+     *
+     * NOTE: action_NewestOrOldest() expects the list to be sorted
+     *       descending order by their started timestamp. See
+     *       BackupCatalog::getBackupList() for details.
+     *
+     *       If the list is not correctly sorted, the choosen
+     *       basebackup for the pin/unpin operation is abitrary.
+     */
+    unsigned int action_NewestOrOldest(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
 
   public:
 
@@ -102,6 +180,7 @@ namespace credativ {
      * is a nullptr or set to ACTION_UNDEFINED.
      */
     PinRetention(BasicPinDescr *descr,
+                 std::shared_ptr<CatalogDescr> archiveDescr,
                  std::shared_ptr<BackupCatalog> catalog);
     virtual ~PinRetention();
 
@@ -115,15 +194,30 @@ namespace credativ {
      * The caller should pass a list of basebackup descriptors which
      * are sorted in descending order by their started timestamp (like
      * getBackupList() already returns). If a basebackup descriptor
-     * is flagged with the aborted tag or in progress, it will be not
-     * considered and apply() will step to the next one, if any.
+     * is flagged *not* ready, it will be not considered and apply()
+     * will step to the next one, if any.
      *
-     * If the list is empty, -1 will be returned, otherwise
-     * the number of basebackups meeting the pin/unpin criteria
+     * If list is empty, apply() will do nothing and return 0.
+     *
+     * The number of basebackups meeting the pin/unpin criteria
      * is returned. Can throw if catalog database access violations
      * or errors occur (mainly CArchiveIssue exceptions).
      */
-    virtual int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+
+    /*
+     * After having called apply(), returns the number of
+     * objects identified for pin(), unpin().
+     */
+    virtual unsigned int pinsPerformed();
+
+    /**
+     * If a PinRetention should be applied multiple times,
+     * the caller should use reset() to reset the internal state
+     * of a PinRetention instance before calling apply() again on a
+     * new backup ID set.
+     */
+    virtual void reset();
   };
 
 }

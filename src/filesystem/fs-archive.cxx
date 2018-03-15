@@ -82,6 +82,7 @@ void StreamingBaseBackupDirectory::remove() {
   }
 
   remove_all(this->streaming_subdir);
+
 }
 
 StreamingBaseBackupDirectory *StreamingBaseBackupDirectory::getInstance(string dirname,
@@ -140,7 +141,8 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<
   /*
    * TODO: Verify WAL start and end position.
    */
-  return BASEBACKUP_GENERIC_VERIFICATION_FAILURE;
+
+  return BASEBACKUP_OK;
 }
 
 size_t StreamingBaseBackupDirectory::size() {
