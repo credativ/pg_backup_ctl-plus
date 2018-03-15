@@ -398,15 +398,20 @@ namespace credativ {
                     std::vector<int> affectedRows);
 
     /**
-     * Creates a pin on the specified basebackup ID.
+     * Creates a or removes a pin on the specified basebackup ID(s).
      *
      * A pin is a lock placed on the basebackup catalog entry,
      * so that any retention policy applied will not delete
-     * it. pin() won't check if a pin is already placed
+     * it. performPinAction() won't check if a pin is already placed
      * on the specified basebackup ID, this should be done
      * by the caller before.
+     *
+     * The same applies if a UNPIN action is specified, if
+     * the specified backup id is not pinned, we will
+     * execute the unpin, nevertheless.
      */
-    virtual void pin(int basebackupId);
+    virtual void performPinAction(BasicPinDescr *descr,
+                                  std::vector<int> basebackupIds);
 
     /**
      * Fetch backup information from current stmt handle into
@@ -520,7 +525,19 @@ namespace credativ {
     virtual std::vector<std::shared_ptr<BaseBackupDescr>>
     getBackupList(std::string archive_name);
 
-    /*
+    /**
+     * Returns a basebackup descriptor, describing the
+     * specified basebackup referenced within the given archive_id
+     * and by the basebackup ID.
+     *
+     * The returned pointer is always
+     * initialized, if the specified basebackup cannot be
+     * found the returned BaseBackupDescr has an ID set to -1.
+     */
+    virtual std::shared_ptr<BaseBackupDescr> getBaseBackup(int basebackupId,
+                                                           int archive_Id);
+
+    /**
      * Returns a catalog status view for the given archive.
      */
     virtual std::shared_ptr<StatCatalogArchive> statCatalog(std::string archive_name);

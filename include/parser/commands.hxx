@@ -60,6 +60,17 @@ namespace credativ {
     virtual void execute(bool flag);
   };
 
+  class PinCatalogCommand : public BaseCatalogCommand {
+  public:
+    PinCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    PinCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    PinCatalogCommand();
+
+    virtual ~PinCatalogCommand() {};
+
+    virtual void execute(bool flag);
+  };
+
   class DropConnectionCatalogCommand : public BaseCatalogCommand {
   public:
     DropConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr);

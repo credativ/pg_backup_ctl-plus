@@ -313,6 +313,11 @@ namespace credativ {
   protected:
 
     /*
+     * Catalog command tag.
+     */
+    CatalogTag tag;
+
+    /*
      * Operation type for UNPIN/PIN action.
      */
     PinOperationType operation = ACTION_UNDEFINED;
@@ -376,10 +381,10 @@ namespace credativ {
      */
     virtual PinOperationType getOperationType();
 
-    static BasicPinDescr instance(CatalogTag action,
-                                  PinOperationType type);
+    static BasicPinDescr *instance(CatalogTag action,
+                                   PinOperationType type);
 
-    virtual CatalogTag action() { return EMPTY_DESCR; }
+    virtual CatalogTag action();
   };
 
   class PinDescr : public BasicPinDescr {
@@ -387,24 +392,12 @@ namespace credativ {
 
     PinDescr(PinOperationType operation);
 
-    /**
-     * Returns the PIN_BASEBACKUP catalog tag, identifying
-     * the command type.
-     */
-    virtual CatalogTag action() { return PIN_BASEBACKUP; }
-
   };
 
   class UnpinDescr : public BasicPinDescr {
   public:
 
     UnpinDescr(PinOperationType operation);
-
-    /**
-     * Returns the PIN_BASEBACKUP catalog tag, identifying
-     * the command type.
-     */
-    virtual CatalogTag action() { return UNPIN_BASEBACKUP; }
 
   };
 

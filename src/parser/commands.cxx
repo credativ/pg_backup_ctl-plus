@@ -4,6 +4,7 @@
 #include <stream.hxx>
 #include <fs-pipe.hxx>
 #include <shm.hxx>
+#include <retention.hxx>
 
 using namespace credativ;
 
@@ -37,12 +38,36 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->detach = source.detach;
   this->execString = source.execString;
 
-  /*
-   * Copy over a possible initialized instance
-   * of BasicPinDescr.
-   */
-  this->pinDescr = BasicPinDescr::instance(source.pinDescr.action(),
-                                           source.pinDescr.getOperationType());
+  /* if a pinDescr was initialized, we need to make our own instance */
+  switch (source.tag) {
+  case PIN_BASEBACKUP:
+    {
+      this->pinDescr = PinDescr(source.pinDescr.getOperationType());
+
+      if (source.pinDescr.getOperationType() == ACTION_ID)
+        this->pinDescr.setBackupID(source.pinDescr.getBackupID());
+
+      if (source.pinDescr.getOperationType() == ACTION_COUNT)
+        this->pinDescr.setCount(source.pinDescr.getCount());
+
+      break;
+    }
+  case UNPIN_BASEBACKUP:
+    {
+      this->pinDescr = UnpinDescr(source.pinDescr.getOperationType());
+
+      if (source.pinDescr.getOperationType() == ACTION_ID)
+        this->pinDescr.setBackupID(source.pinDescr.getBackupID());
+
+      if (source.pinDescr.getOperationType() == ACTION_COUNT)
+        this->pinDescr.setCount(source.pinDescr.getCount());
+
+      break;
+    }
+  default:
+    /* nothing to do here */
+    break;
+  }
 
   this->setAffectedAttributes(source.getAffectedAttributes());
   this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
@@ -73,6 +98,137 @@ void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
   }
 
   this->intHandler = handler;
+}
+
+PinCatalogCommand::PinCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+PinCatalogCommand::PinCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+PinCatalogCommand::PinCatalogCommand() {}
+
+void PinCatalogCommand::execute(bool flag) {
+
+  std::shared_ptr<CatalogDescr> checkDescr = nullptr;
+
+  /*
+   * PIN operation should occur within a transaction.
+   *
+   * Certain PIN operations are done in a batched fashion.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute PIN command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  try {
+
+    shared_ptr<BaseBackupDescr> bbdescr = nullptr;
+    vector<shared_ptr<BaseBackupDescr>> bblist;
+
+    this->catalog->startTransaction();
+
+    /*
+     * We derived the PinDescr from the original CatalogDescr from
+     * the parser. But check if the archive we should operate on, really
+     * exists. We also need the catalog ID of the archive for further
+     * database operations.
+     */
+    checkDescr = this->catalog->existsByName(this->archive_name);
+
+    if (checkDescr->id < 0) {
+      ostringstream oss;
+      oss << "archive \"" << this->archive_name << "\" does not exist";
+      throw CArchiveIssue(oss.str());
+    }
+
+    /*
+     * The catalog descriptor copy we get doesn't have
+     * a valid catalog tag set, copy over the tag used
+     * by this command instance. This is required, since the
+     * sanity checks in PinRetention wants to verify
+     * that the right catalog context was choosen.
+     */
+    checkDescr->setCommandTag(this->pinDescr.action());
+
+    /*
+     * Get the list of basebackups, in default sorted order
+     * as BackupCatalog::getBackupList() already does: sorted
+     * on started timestamp in descending order, from newest to
+     * oldest. The Retention API expects the list that way...
+     *
+     * An exception is the ACTION_ID pin operation. If we got this
+     * operation tag, we fetch the basebackup from our archive directly
+     * via the basebackup ID.
+     */
+    if (this->pinDescr.getOperationType() == ACTION_ID) {
+
+      /* Extract the specified basebackup ID */
+      bbdescr = this->catalog->getBaseBackup(this->pinDescr.getBackupID(),
+                                             checkDescr->id);
+      if (bbdescr->id < 0) {
+        /* Looks like the basebackup ID we got is invalid */
+        ostringstream oss;
+        oss << "basebackup with ID "
+            << this->pinDescr.getBackupID()
+            << "doesn not exist";
+
+        /* Don't forget to rollback our current database transaction */
+        this->catalog->rollbackTransaction();
+
+        /* and throw ... */
+        throw CArchiveIssue(oss.str());
+      }
+
+      bblist.push_back(bbdescr);
+
+    } else {
+
+      /* any other PIN action */
+      bblist = this->catalog->getBackupList(this->archive_name);
+
+      /* if the list is empty, there's nothing to do. we treat this
+       * as an error */
+      if (bblist.size() == 0) {
+        this->catalog->rollbackTransaction();
+        throw CArchiveIssue("no basebackups for pin operation found");
+      }
+    }
+
+    /*
+     * Now perform the necessary actions and try
+     * to execute the pinning operation based on the
+     * definitions we got from the parser.
+     */
+    PinRetention retention(&this->pinDescr,
+                           checkDescr,
+                           this->catalog);
+
+    int pinned = retention.apply(bblist);
+
+    cout << "pinning on " << pinned << " basebackups successful" << endl;
+
+  } catch(CPGBackupCtlFailure &e) {
+
+    this->catalog->rollbackTransaction();
+    throw e;
+
+  }
+
+  /* Finally commit database transaction */
+  this->catalog->commitTransaction();
+
 }
 
 ShowWorkersCommandHandle::ShowWorkersCommandHandle(std::shared_ptr<BackupCatalog> catalog) {
@@ -1410,6 +1566,8 @@ void ListBackupListCommand::execute(bool flag) {
 
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s%-60s")
                                        % "ID" % basebackup->id);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s%-60s")
+                                       % "Pinned" % ( (basebackup->pinned == 0) ? "NO" : "YES" ));
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
                                        % "Backup" % basebackup->fsentry);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")

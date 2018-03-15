@@ -194,54 +194,56 @@ namespace credativ {
         /*
          * PIN { basebackup ID | OLDEST | NEWEST | +n }
          */
-        cmd_pin_basebackup = no_case[ lexeme[ lit("PIN") ] ] >> ( number_ID
-                                                                  [ boost::bind(&CatalogDescr::setCommandTag,
-                                                                                &cmd, PIN_BASEBACKUP) ]
-                                                                  [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                &cmd, ACTION_ID, ::_1) ]
-                                                                  | no_case[ lexeme[ lit("OLDEST") ]  ]
-                                                                  [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                &cmd, ACTION_OLDEST) ]
-                                                                  | no_case[ lexeme[ lit("NEWEST") ] ]
-                                                                  [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                &cmd, ACTION_NEWEST) ]
-                                                                  | ( lexeme[ lit("+") ] >> number_ID
-                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                    &cmd, ACTION_COUNT, ::_1)]
-                                                                      )
-                                                                  )
-                                                             >> no_case[ lexeme[ lit("IN") ] ]
-                                                             >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-                                                             >> identifier [ boost::bind(&CatalogDescr::setIdent,
-                                                                                         &cmd,
-                                                                                         ::_1) ] ;
+        cmd_pin_basebackup = no_case[ lexeme[ lit("PIN") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag,
+                        &cmd, PIN_BASEBACKUP) ]>> ( number_ID
+                                                    [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                  &cmd, ACTION_ID, ::_1) ]
+                                                    | no_case[ lexeme[ lit("OLDEST") ]  ]
+                                                    [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                  &cmd, ACTION_OLDEST) ]
+                                                    | no_case[ lexeme[ lit("NEWEST") ] ]
+                                                    [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                  &cmd, ACTION_NEWEST) ]
+                                                    | ( lexeme[ lit("+") ] >> number_ID
+                                                        [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                      &cmd, ACTION_COUNT, ::_1)]
+                                                        )
+                                                    )
+                                               >> no_case[ lexeme[ lit("IN") ] ]
+                                               >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+                                               >> identifier [ boost::bind(&CatalogDescr::setIdent,
+                                                                           &cmd,
+                                                                           ::_1) ] ;
 
         /*
          * UNPIN { basebackup ID | OLDEST | NEWEST | CURRENT | +n }
          */
-        cmd_unpin_basebackup = no_case[ lexeme[ lit("UNPIN") ] ] >> ( number_ID                                                                                                                       [ boost::bind(&CatalogDescr::setCommandTag, &cmd, UNPIN_BASEBACKUP) ]
-                                                                      [ boost::bind(&CatalogDescr::makePinDescr, &cmd, ACTION_ID, ::_1) ]
-                                                                      | no_case[ lexeme[ lit("OLDEST") ]  ]
-                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                    &cmd,
-                                                                                    ACTION_OLDEST) ]
-                                                                      | no_case[ lexeme[ lit("NEWEST") ] ]
-                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                    &cmd,
-                                                                                    ACTION_NEWEST) ]
-                                                                      | no_case[ lexeme[ lit("CURRENT") ] ]
-                                                                      [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                    &cmd,
-                                                                                    ACTION_CURRENT) ]
-                                                                      | ( lexeme[ lit("+") ] >> number_ID
-                                                                          [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                                        &cmd, ACTION_COUNT, ::_1)])
-                                                                      )
-                                                                 >> no_case[ lexeme[ lit("IN") ] ]
-                                                                 >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-                                                                 >> identifier [ boost::bind(&CatalogDescr::setIdent,
-                                                                                             &cmd,
-                                                                                             ::_1) ];
+        cmd_unpin_basebackup = no_case[ lexeme[ lit("UNPIN") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag,
+                        &cmd, UNPIN_BASEBACKUP) ] >> ( number_ID
+                                                       [ boost::bind(&CatalogDescr::makePinDescr, &cmd, ACTION_ID, ::_1) ]
+                                                       | no_case[ lexeme[ lit("OLDEST") ]  ]
+                                                       [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                     &cmd,
+                                                                     ACTION_OLDEST) ]
+                                                       | no_case[ lexeme[ lit("NEWEST") ] ]
+                                                       [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                     &cmd,
+                                                                     ACTION_NEWEST) ]
+                                                       | no_case[ lexeme[ lit("CURRENT") ] ]
+                                                       [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                     &cmd,
+                                                                     ACTION_CURRENT) ]
+                                                       | ( lexeme[ lit("+") ] >> number_ID
+                                                           [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                         &cmd, ACTION_COUNT, ::_1)])
+                                                       )
+                                                  >> no_case[ lexeme[ lit("IN") ] ]
+                                                  >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+                                                  >> identifier [ boost::bind(&CatalogDescr::setIdent,
+                                                                              &cmd,
+                                                                              ::_1) ];
 
         /* parses ID */
         number_ID = +char_("0-9");
@@ -902,9 +904,8 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
     break;
 
   case PIN_BASEBACKUP:
-    break;
-
   case UNPIN_BASEBACKUP:
+    result = make_shared<PinCatalogCommand>(this->catalogDescr);
     break;
 
   default:

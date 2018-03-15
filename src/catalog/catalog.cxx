@@ -158,25 +158,27 @@ std::string StatCatalogArchive::gimmeFormattedString() {
   return formatted.str();
 }
 
-BasicPinDescr::BasicPinDescr() {}
+BasicPinDescr::BasicPinDescr() {
+  this->tag = EMPTY_DESCR;
+}
 
 BasicPinDescr::~BasicPinDescr() {}
 
-BasicPinDescr BasicPinDescr::instance(CatalogTag action,
-                                      PinOperationType operation) {
+BasicPinDescr *BasicPinDescr::instance(CatalogTag action,
+                                       PinOperationType operation) {
 
   switch(action) {
 
   case PIN_BASEBACKUP:
-    return PinDescr(operation);
+    return new PinDescr(operation);
   case UNPIN_BASEBACKUP:
-    return UnpinDescr(operation);
+    return new UnpinDescr(operation);
   default:
     break;
 
   }
 
-  return BasicPinDescr();
+  return new BasicPinDescr();
 
 }
 
@@ -226,14 +228,20 @@ int BasicPinDescr::bckIDStr(std::string backupid) {
 
 }
 
+CatalogTag BasicPinDescr::action() {
+  return this->tag;
+}
+
 PinDescr::PinDescr(PinOperationType operation) {
 
+  this->tag = PIN_BASEBACKUP;
   this->operation = operation;
 
 }
 
 UnpinDescr::UnpinDescr(PinOperationType operation) {
 
+  this->tag = UNPIN_BASEBACKUP;
   this->operation = operation;
 
 }
@@ -259,9 +267,36 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   /* job control */
   this->detach = source.detach;
 
-  /* if a pinDescr was initialized, we need to make a copy */
-  this->pinDescr = BasicPinDescr::instance(source.pinDescr.action(),
-                                           source.pinDescr.getOperationType());
+  /* if a pinDescr was initialized, we need to make our own instance */
+  switch (source.tag) {
+  case PIN_BASEBACKUP:
+    {
+      this->pinDescr = PinDescr(source.pinDescr.getOperationType());
+
+      if (source.pinDescr.getOperationType() == ACTION_ID)
+        this->pinDescr.setBackupID(source.pinDescr.getBackupID());
+
+      if (source.pinDescr.getOperationType() == ACTION_COUNT)
+        this->pinDescr.setCount(source.pinDescr.getCount());
+
+      break;
+    }
+  case UNPIN_BASEBACKUP:
+    {
+      this->pinDescr = UnpinDescr(source.pinDescr.getOperationType());
+
+      if (source.pinDescr.getOperationType() == ACTION_ID)
+        this->pinDescr.setBackupID(source.pinDescr.getBackupID());
+
+      if (source.pinDescr.getOperationType() == ACTION_COUNT)
+        this->pinDescr.setCount(source.pinDescr.getCount());
+
+      break;
+    }
+  default:
+    /* nothing to do here */
+    break;
+  }
 
   return *this;
 }
@@ -278,25 +313,35 @@ PinOperationType CatalogDescr::pinOperation() {
 
 void CatalogDescr::makePinDescr(PinOperationType const& operation) {
 
-  /*
-   * The BasicPinDescr::instance() already checks for
-   * valid command tags.
-   */
-  this->pinDescr = BasicPinDescr::instance(this->tag,
-                                           operation);
+  switch(this->tag) {
 
+  case PIN_BASEBACKUP:
+    this->pinDescr = PinDescr(operation);
+    break;
+  case UNPIN_BASEBACKUP:
+    this->pinDescr = UnpinDescr(operation);
+    break;
+  default:
+    {
+      ostringstream oss;
+      oss << "invalid command tag "
+          << CatalogDescr::commandTagName(this->tag)
+          << " to create a pin/unpin operation";
+      throw CPGBackupCtlFailure(oss.str());
+    }
+
+  }
 }
 
 void CatalogDescr::makePinDescr(PinOperationType const& operation,
                                 string const& argument) {
 
   /*
-   * The BasicPinDescr::instance() already checks for valid
+   * The makePinDescr(PinOperationType) method already checks for valid
    * command tags, so leave error checking to it.
    *
    */
-  this->pinDescr = BasicPinDescr::instance(this->tag,
-                                           operation);
+  this->makePinDescr(operation);
 
   if (operation == ACTION_ID) {
     this->pinDescr.setBackupID(argument);
@@ -1395,24 +1440,52 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
   return result;
 }
 
-void BackupCatalog::pin(int basebackupId) {
+void BackupCatalog::performPinAction(BasicPinDescr *descr,
+                                     std::vector<int> basebackupIds) {
 
   ostringstream update;
   sqlite3_stmt *stmt;
   int rc;
+  unsigned int num_bind_id;
 
   /*
    * Negative values indicate an error
    */
-  if (basebackupId < 0) {
-    throw CArchiveIssue("invalid basebackup ID to pin");
+  if (basebackupIds.size() == 0) {
+    throw CArchiveIssue("no basebackup IDs to pin or unpin specified");
   }
 
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
   }
 
-  update << "UPDATE backup SET pinned = 1 WHERE id = ?1;";
+  if (descr->action() == PIN_BASEBACKUP)
+    update << "UPDATE backup SET pinned = 1 WHERE id IN (";
+  else
+    update << "UPDATE backup SET pinned = 0 WHERE id IN (";
+
+  /*
+   * Build basebackup ID bind list.
+   */
+  for (num_bind_id = 1; num_bind_id <= basebackupIds.size(); num_bind_id++) {
+
+    update << "?" << num_bind_id;
+
+    if (num_bind_id < basebackupIds.size())
+      update << ", ";
+
+  }
+
+  /*
+   * Finalize update statement
+   */
+  update << ");";
+
+#ifdef __DEBUG__
+  cerr << "generate UPDATE SQL: "
+       << update.str()
+       << endl;
+#endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
                           update.str().c_str(),
@@ -1425,20 +1498,182 @@ void BackupCatalog::pin(int basebackupId) {
     oss << "cannot prepare query:" << sqlite3_errmsg(db_handle);
   }
 
-  sqlite3_bind_int(stmt, 1, basebackupId);
+  /*
+   * Bind ID values.
+   */
+  for (num_bind_id = 1; num_bind_id <= basebackupIds.size(); num_bind_id++) {
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: binding basebackup ID " << basebackupIds[num_bind_id - 1] << endl;
+#endif
+
+    sqlite3_bind_int(stmt, num_bind_id, basebackupIds[num_bind_id - 1]);
+  }
 
   rc = sqlite3_step(stmt);
 
-  if (rc != SQLITE_OK) {
+  if (rc != SQLITE_DONE) {
     ostringstream oss;
-    oss << "failed to pin basebackup ID "
-        << basebackupId
+    oss << "failed to pin/unpin basebackup IDs "
         << ": " << sqlite3_errmsg(db_handle);
     sqlite3_finalize(stmt);
     throw CArchiveIssue(oss.str());
   }
 
   sqlite3_finalize(stmt);
+}
+
+std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
+                                                              int archive_id) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+  ostringstream query;
+  string backupCols;
+  shared_ptr<BaseBackupDescr> basebackup = make_shared<BaseBackupDescr>();
+  vector<int> backupAttrs;
+  vector<int> tblspcAttrs;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Generate list of columns to retrieve...
+   */
+  backupAttrs.push_back(SQL_BACKUP_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_ARCHIVE_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOSEND_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_TIMELINE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_LABEL_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
+
+  backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                               backupAttrs);
+
+  query << "SELECT "
+        << backupCols
+        << ", "
+
+    /*
+     * IMPORTANT:
+     *
+     * We can't use SQLgetColumnList here(), since we want to
+     * prevent NULL
+     */
+
+        << "COALESCE(bt.backup_id, -1) AS backup_id, "
+        << "COALESCE(bt.spcoid, -1) AS spcoid, "
+        << "COALESCE(spclocation, 'no location') AS spclocation, "
+        << "COALESCE(spcsize, -1) AS spcsize "
+        << "FROM "
+        << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
+        << "WHERE b.id = ?1 AND b.archive_id = ?2;";
+
+#ifdef __DEBUG__
+  cerr << "generate SQL: " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind WHERE conditions.
+   */
+  sqlite3_bind_int(stmt, 1, basebackupId);
+  sqlite3_bind_int(stmt, 2, archive_id);
+
+  /*
+   * Execute the statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  /*
+   * If multiple tablespaces are in the basebackup,
+   * there are more than one row to process!
+   */
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+
+    ostringstream oss;
+
+    oss << "error retrieving backup list from catalog database: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * If only a single tablespace is part of the
+   * basebackup, make sure we loop through it.
+   *
+   * Code here is doubled in getBackupList() (except the loop header),
+   * but it's not sure wether the code retains here this way. So just
+   * repeat it and leave it to some future work to optimize it.
+   */
+
+  do {
+
+    shared_ptr<BackupTablespaceDescr> tablespace = make_shared<BackupTablespaceDescr>();
+
+    basebackup->setAffectedAttributes(backupAttrs);
+    tablespace->setAffectedAttributes(tblspcAttrs);
+
+    /*
+     * If not initialized, retrieve properties into
+     * our BaseBackupDescr instance.
+     */
+    if (basebackup->id < 0) {
+      this->fetchBackupIntoDescr(stmt, basebackup, Range(0, backupAttrs.size() - 1));
+    }
+
+    /*
+     * Since we fetch tablespace and basebackup information in one
+     * query, we only push basebackup information if the last
+     * encountered backup_id differs into the our result list.
+     *
+     * In opposite to getBackupList(), we have only a single backup id
+     * here to fetch, so there's no need to check if we have to
+     * create a new BaseBackupDescr instance.
+     */
+    this->fetchBackupTablespaceIntoDescr(stmt,
+                                         tablespace,
+                                         Range(backupAttrs.size(), backupAttrs.size()
+                                               + tblspcAttrs.size() -1));
+
+    if (tablespace->backup_id >= 0) {
+      basebackup->tablespaces.push_back(tablespace);
+    }
+
+    rc = sqlite3_step(stmt);
+
+  } while(rc == SQLITE_ROW);
+
+  /* clean up */
+  sqlite3_finalize(stmt);
+
+  return basebackup;
 }
 
 std::vector<std::shared_ptr<BaseBackupDescr>>
@@ -1450,7 +1685,6 @@ BackupCatalog::getBackupList(std::string archive_name) {
   sqlite3_stmt *stmt;
 
   std::string backupCols;
-  std::string tblspcCols;
   std::vector<std::shared_ptr<BaseBackupDescr>> list;
   int current_backup_id = -1;
   int rc;
@@ -1473,6 +1707,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
   backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -1533,8 +1768,6 @@ BackupCatalog::getBackupList(std::string archive_name) {
     throw CCatalogIssue(oss.str());
 
   }
-
-  cerr << "about to fetch backup result set into list" << endl;
 
   /*
    * Retrieve list of backups.
