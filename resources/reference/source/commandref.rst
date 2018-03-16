@@ -387,7 +387,7 @@ UNPIN
 
 Syntax::
 
-  UNPIN { <basebackup ID> | OLDEST | NEWEST | CURRENT | +<COUNT> }
+  UNPIN { <basebackup ID> | OLDEST | NEWEST | PINNED | +<COUNT> }
      IN ARCHIVE <identifier>
 
 The ``UNPIN`` command removes any pins on basebackup specified
@@ -422,6 +422,12 @@ by one of the following actions:
   order, whereas the list is sorted by creation date, newest first.
   It will stop, if ``COUNT`` number of basebackups are unpinned.
   ``UNPIN`` will stop, as soon as the end of list is reached.
+
+* PINNED
+
+  If ``PINNED`` is specified to the ``UNPIN`` command, all
+  currently existing pins on all basebackups in the specified
+  archive will be removed.
 
 In general, if any basebackups referenced by one of the
 specified actions is not yet pinned, ``UNPIN`` won't complain.

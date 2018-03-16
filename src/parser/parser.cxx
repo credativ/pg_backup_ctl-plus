@@ -217,7 +217,7 @@ namespace credativ {
                                                                            ::_1) ] ;
 
         /*
-         * UNPIN { basebackup ID | OLDEST | NEWEST | CURRENT | +n }
+         * UNPIN { basebackup ID | OLDEST | NEWEST | PINNED | +n }
          */
         cmd_unpin_basebackup = no_case[ lexeme[ lit("UNPIN") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag,
@@ -231,10 +231,10 @@ namespace credativ {
                                                        [ boost::bind(&CatalogDescr::makePinDescr,
                                                                      &cmd,
                                                                      ACTION_NEWEST) ]
-                                                       | no_case[ lexeme[ lit("CURRENT") ] ]
+                                                       | no_case[ lexeme[ lit("PINNED") ] ]
                                                        [ boost::bind(&CatalogDescr::makePinDescr,
                                                                      &cmd,
-                                                                     ACTION_CURRENT) ]
+                                                                     ACTION_PINNED) ]
                                                        | ( lexeme[ lit("+") ] >> number_ID
                                                            [ boost::bind(&CatalogDescr::makePinDescr,
                                                                          &cmd, ACTION_COUNT, ::_1)])

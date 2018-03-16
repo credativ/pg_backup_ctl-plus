@@ -135,16 +135,16 @@ namespace credativ {
     unsigned int action_Count(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
 
     /**
-     * action_Current() implements the algorithm for UNPIN CURRENT
-     * commands (ACTION_CURRENT).
+     * action_Pinned() implements the algorithm for UNPIN PINNED
+     * commands (ACTION_PINNED).
      *
-     * Currently, we support the CURRENT operation for UNPIN
+     * Currently, we support the PINNED operation for UNPIN
      * actions only, so this function will throw when called
      * within a PIN_BASEBACKUP context.
      *
      * Returns the number of basebackups unpinned.
      */
-    unsigned int action_Current(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+    unsigned int action_Pinned(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
 
     /**
      * Do a pin/unpin operation for a specified basebackup ID.
