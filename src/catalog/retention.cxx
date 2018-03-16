@@ -73,7 +73,7 @@ void PinRetention::reset() {
 
 }
 
-unsigned int PinRetention::action_Current(vector<shared_ptr<BaseBackupDescr>> &list) {
+unsigned int PinRetention::action_Pinned(vector<shared_ptr<BaseBackupDescr>> &list) {
 
   /*
    * NOTE: pin statistics are set in count_pin_context, too!
@@ -85,9 +85,9 @@ unsigned int PinRetention::action_Current(vector<shared_ptr<BaseBackupDescr>> &l
   vector <int> basebackupIds;
 
   /*
-   * Currently, action_Current() implements the CURRENT action
+   * Currently, action_Pinned() implements the PINNED action
    * which can only be specified via an UNPIN command. Thus, we
-   * protect action_Current() from being called within
+   * protect action_Pinned() from being called within
    * a PIN_BASEBACKUP command context.
    */
   if (this->pinDescr->action() == PIN_BASEBACKUP)
@@ -437,14 +437,14 @@ unsigned int PinRetention::dispatchPinAction(vector<shared_ptr<BaseBackupDescr>>
 
       break;
     }
-  case ACTION_CURRENT:
+  case ACTION_PINNED:
     {
       this->count_pin_context.count = list.size();
       this->count_pin_context.performed = 0;
       this->count_pin_context.expected = list.size();
 
       /* Execute */
-      result = this->action_Current(list);
+      result = this->action_Pinned(list);
 
       break;
     }

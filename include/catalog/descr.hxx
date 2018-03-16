@@ -289,10 +289,10 @@ namespace credativ {
     ACTION_OLDEST,
 
     /**
-     * For unpin only, ACTION CURRENT references
+     * For unpin only, ACTION_PINNED references
      * currently pinned basebackups.
      */
-    ACTION_CURRENT,
+    ACTION_PINNED,
 
     /**
      * For uninitialized PinDescr instances

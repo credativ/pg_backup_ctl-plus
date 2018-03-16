@@ -233,6 +233,28 @@ completion_word stop_completion_streaming_for[] = { { "FOR", COMPL_KEYWORD, stop
 completion_word stop_completion[] = { { "STREAMING" , COMPL_KEYWORD, stop_completion_streaming_for },
                                       { "", COMPL_EOL, NULL } };
 
+completion_word pin_completion_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word pin_completion_archive[] = { { "ARCHIVE", COMPL_KEYWORD, pin_completion_ident },
+                                             { "", COMPL_EOL, NULL } };
+
+completion_word pin_completion_in[] = { { "IN", COMPL_KEYWORD, pin_completion_archive },
+                                        { "", COMPL_EOL, NULL } };
+
+completion_word unpin_completion[] = { { "+", COMPL_KEYWORD, pin_completion_in },
+                                       { "NEWEST", COMPL_KEYWORD, pin_completion_in },
+                                       { "OLDEST", COMPL_KEYWORD, pin_completion_in },
+                                       { "<BASEBACKUP ID>", COMPL_IDENTIFIER, pin_completion_in },
+                                       { "PINNED", COMPL_KEYWORD, pin_completion_in },
+                                       { "", COMPL_EOL, NULL } };
+
+completion_word pin_completion[] = { { "+", COMPL_KEYWORD, pin_completion_in },
+                                     { "NEWEST", COMPL_KEYWORD, pin_completion_in },
+                                     { "OLDEST", COMPL_KEYWORD, pin_completion_in },
+                                     { "<BASEBACKUP ID>", COMPL_KEYWORD, pin_completion_in },
+                                     { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
@@ -241,6 +263,8 @@ completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion
                                     { "ALTER", COMPL_KEYWORD, alter_completion },
                                     { "SHOW", COMPL_KEYWORD, show_completion },
                                     { "STOP", COMPL_KEYWORD, stop_completion },
+                                    { "PIN", COMPL_KEYWORD, pin_completion },
+                                    { "UNPIN", COMPL_KEYWORD, unpin_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
