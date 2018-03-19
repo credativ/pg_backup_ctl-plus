@@ -10,7 +10,7 @@ namespace credativ {
    * Retention is the base class for retention
    * rules.
    */
-  class Retention : public CPGBackupCtlBase {
+  class Retention {
   protected:
 
     /**
@@ -53,6 +53,11 @@ namespace credativ {
 
   /**
    * A generic retention rule.
+   *
+   * A Retention rule loads a storable retention
+   * rule from the specified catalog database and returns
+   * a retention instance, implementing the retention
+   * policy encoded by the retention rule.
    */
   class GenericRetentionRule : public CPGBackupCtlBase {
   public:
@@ -60,6 +65,21 @@ namespace credativ {
     GenericRetentionRule();
     GenericRetentionRule(std::shared_ptr<CatalogDescr> descr);
     virtual ~GenericRetentionRule();
+
+  };
+
+
+  /**
+   * Label retention policy.
+   *
+   * Implements a label retention policy, based on regular
+   * expression applied to the specified list of basebackups
+   *
+   * If the regular expression matches, then the basebackup will
+   * be scheduled for removal.
+   *
+   */
+  class LabelRetention : Retention {
 
   };
 
