@@ -619,7 +619,7 @@ namespace credativ {
     /*
      * Static const specifiers for status flags.
      */
-    static constexpr const char *BASEBACKUP_STATUS_IN_PROGRESS = "in postgress";
+    static constexpr const char *BASEBACKUP_STATUS_IN_PROGRESS = "in progress";
     static constexpr const char *BASEBACKUP_STATUS_ABORTED = "aborted";
     static constexpr const char *BASEBACKUP_STATUS_READY   = "ready";
 
