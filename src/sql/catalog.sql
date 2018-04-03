@@ -67,7 +67,7 @@ CREATE TABLE version(
        create_date text not null);
 
 /* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
-INSERT INTO version VALUES(105, datetime('now'));
+INSERT INTO version VALUES(106, datetime('now'));
 
 CREATE TABLE backup_profiles(
        id integer not null,
@@ -78,6 +78,7 @@ CREATE TABLE backup_profiles(
        fast_checkpoint integer not null default false,
        include_wal integer not null default false,
        wait_for_wal integer not null default true,
+       noverify_checksums integer not null default false
        PRIMARY KEY(id)
 );
 
@@ -111,7 +112,8 @@ VALUES
          'PG_BACKUP_CTL BASEBACKUP',
          0,
          0,
-         1);
+         1,
+         0);
 
 CREATE TABLE retention(
        id integer not null primary key,

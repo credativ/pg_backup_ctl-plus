@@ -371,7 +371,8 @@ namespace credativ {
           > -(profile_backup_label_option)
           > -(profile_wal_option)
           > -(profile_checkpoint_option)
-          > -(profile_wait_for_wal_option);
+          > -(profile_wait_for_wal_option)
+          > -(profile_noverify_checksums_option);
 
         /*
          * CREATE STREAMING CONNECTION FOR ARCHIVE <name> command
@@ -542,6 +543,17 @@ namespace credativ {
              );
 
         /*
+         * CREATE BACKUP PROFILE ... NOVERIFY
+         */
+        profile_noverify_checksums_option = no_case[lexeme[ lit("NOVERIFY") ]]
+          > -lit("=")
+          > (no_case[lexeme[ lit("TRUE") ]]
+             [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, true) ]
+             | no_case[lexeme[ lit("FALSE") ]]
+             [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, false) ]
+             );
+
+        /*
          * We try to support both, quoted and unquoted identifiers. With quoted
          * identifiers, we disallow any embedded double quotes, too.
          */
@@ -615,6 +627,7 @@ namespace credativ {
         backup_profile_opts.name("backup profile parameters");
         with_profile.name("backup profile name");
         verify_check_connection.name("CONNECTION");
+        profile_noverify_checksums_option.name("NOVERIFY");
       }
 
       /*
@@ -647,6 +660,7 @@ namespace credativ {
                           cmd_show,
                           verify_check_connection,
                           show_command_type,
+                          profile_noverify_checksums_option,
                           backup_profile_opts;
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,

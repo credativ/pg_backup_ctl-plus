@@ -991,6 +991,14 @@ void BaseBackupProcess::start() {
     query << " MAX_RATE " << this->profile->max_rate;
 
   /*
+   * Starting with PostgreSQL 11, we have the NOVERFIY_CHECKSUMS
+   * available.
+   */
+  if ( (this->profile->noverify_checksums)
+       && (PQserverVersion(this->pgconn) >= 110000) )
+    query << " NOVERIFY_CHECKSUMS ";
+
+  /*
    * We always request the tablespace map from the stream.
    */
   query << " TABLESPACE_MAP;";

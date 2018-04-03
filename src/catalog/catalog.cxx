@@ -75,7 +75,8 @@ std::vector<std::string>BackupCatalog::backupProfilesCatalogCols =
     "label",
     "fast_checkpoint",
     "include_wal",
-    "wait_for_wal"
+    "wait_for_wal",
+    "noverify_checksums"
   };
 
 std::vector<std::string>BackupCatalog::backupTablespacesCatalogCols =
@@ -416,6 +417,11 @@ void CatalogDescr::setJobDetachMode(bool const& detach) {
 
 void CatalogDescr::setProfileAffectedAttribute(int const& colId) {
   this->backup_profile->pushAffectedAttribute(colId);
+}
+
+void CatalogDescr::setProfileNoVerify(bool const &noverify) {
+  this->backup_profile->noverify_checksums = noverify;
+  this->backup_profile->pushAffectedAttribute(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
 }
 
 void CatalogDescr::setProfileWaitForWAL(bool const& wait) {
@@ -1052,6 +1058,10 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::fetchBackupProfileIntoDescr(s
     case SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO:
 
       descr->wait_for_wal = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO:
+      descr->noverify_checksums = sqlite3_column_int(stmt, current_stmt_col);
       break;
 
     default:
@@ -2007,9 +2017,10 @@ BackupCatalog::getBackupProfiles() {
    * Build the query.
    */
   ostringstream query;
-  Range range(0, 7);
+  Range range(0, 8);
 
-  query << "SELECT id, name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal "
+  query << "SELECT id, name, compress_type, max_rate, label, "
+        << "fast_checkpoint, include_wal, wait_for_wal, noverify_checksums "
         << "FROM backup_profiles ORDER BY name;";
 
 #ifdef __DEBUG__
@@ -2025,6 +2036,7 @@ BackupCatalog::getBackupProfiles() {
   attr.push_back(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
   attr.push_back(SQL_BCK_PROF_INCL_WAL_ATTNO);
   attr.push_back(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+  attr.push_back(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
 
   int rc = sqlite3_prepare_v2(this->db_handle,
                               query.str().c_str(),
@@ -2078,7 +2090,7 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string 
   sqlite3_stmt *stmt;
   int rc;
   std::ostringstream query;
-  Range range(0, 7);
+  Range range(0, 8);
 
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
@@ -2087,7 +2099,8 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string 
   /*
    * Build the query
    */
-  query << "SELECT id, name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal "
+  query << "SELECT id, name, compress_type, max_rate, label, "
+        << "fast_checkpoint, include_wal, wait_for_wal, noverify_checksums "
         << "FROM backup_profiles WHERE name = ?1;";
 
 #ifdef __DEBUG__
@@ -2112,6 +2125,7 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string 
   descr->pushAffectedAttribute(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
   descr->pushAffectedAttribute(SQL_BCK_PROF_INCL_WAL_ATTNO);
   descr->pushAffectedAttribute(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
 
   if (rc != SQLITE_OK) {
     ostringstream oss;
@@ -2162,8 +2176,9 @@ void BackupCatalog::createBackupProfile(std::shared_ptr<BackupProfileDescr> prof
     throw CCatalogIssue("catalog database not opened");
 
   insert << "INSERT INTO backup_profiles("
-         << "name, compress_type, max_rate, label, fast_checkpoint, include_wal, wait_for_wal) "
-         << "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7);";
+         << "name, compress_type, max_rate, label, "
+         << "fast_checkpoint, include_wal, wait_for_wal, noverify_checksums) "
+         << "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);";
 
 #ifdef __DEBUG__
   cerr << "createBackupProfile query: " << insert.str() << endl;
@@ -2178,7 +2193,7 @@ void BackupCatalog::createBackupProfile(std::shared_ptr<BackupProfileDescr> prof
   /*
    * Bind new backup profile data.
    */
-  Range range(1, 7);
+  Range range(1, 8);
   this->SQLbindBackupProfileAttributes(profileDescr,
                                        profileDescr->getAffectedAttributes(),
                                        stmt,
@@ -2583,6 +2598,10 @@ int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileD
 
     case SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO:
       sqlite3_bind_int(stmt, result, profileDescr->wait_for_wal);
+      break;
+
+    case SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO:
+      sqlite3_bind_int(stmt, result, profileDescr->noverify_checksums);
       break;
 
     default:

@@ -532,6 +532,8 @@ namespace credativ {
 
     void setDirectory(std::string const& directory);
 
+    void setProfileNoVerify(bool const& noverify);
+
     void setProfileName(std::string const& profile_name);
 
     void setProfileCompressType(BackupProfileCompressType const& type);
@@ -579,6 +581,7 @@ namespace credativ {
     bool fast_checkpoint = false;
     bool include_wal     = false;
     bool wait_for_wal    = true;
+    bool noverify_checksums = false;
   };
 
   /*

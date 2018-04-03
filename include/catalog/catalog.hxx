@@ -1,7 +1,7 @@
 #ifndef __CATALOG__
 #define __CATALOG__
 
-#define CATALOG_MAGIC 105
+#define CATALOG_MAGIC 106
 
 /*
  * Archive catalog entity
@@ -93,11 +93,12 @@
 #define SQL_BCK_PROF_FAST_CHKPT_ATTNO 5
 #define SQL_BCK_PROF_INCL_WAL_ATTNO 6
 #define SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO 7
+#define SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO 8
 
 /*
  * Keep number of columns in sync with above definitions
  */
-#define SQL_BACKUP_PROFILES_NCOLS 8
+#define SQL_BACKUP_PROFILES_NCOLS 9
 
 /*
  * Attributes belonging to backup_tablespaces catalog table.

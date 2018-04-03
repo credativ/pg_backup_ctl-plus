@@ -461,7 +461,7 @@ uint32 PGStream::walSegmentSizeInternal() {
     throw StreamingFailure("stream is not connected");
   }
 
-  if (this->getServerVersion() < 10000000) {
+  if (this->getServerVersion() < 100000) {
 
     /*
      * Check out if we build against an older version of

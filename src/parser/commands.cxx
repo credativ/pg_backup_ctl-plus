@@ -2203,6 +2203,9 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
       /* Profile WAIT FOR WAL */
       cout << boost::format("%-25s\t%-30s") % "WAIT FOR WAL" % profile->wait_for_wal << endl;
+
+      /* Profile NOVERIFY */
+      cout << boost::format("%-25s\t%-30s") % "NOVERIFY CHECKSUMS" % profile->noverify_checksums << endl;
     }
 
     catalog->commitTransaction();
@@ -2360,6 +2363,7 @@ void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
       attr.push_back(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
       attr.push_back(SQL_BCK_PROF_INCL_WAL_ATTNO);
       attr.push_back(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+      attr.push_back(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
 
       this->profileDescr->setAffectedAttributes(attr);
       this->catalog->createBackupProfile(this->profileDescr);

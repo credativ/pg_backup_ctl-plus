@@ -91,10 +91,14 @@ completion_word create_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD
  * Please note that the initialization of those completion tokens
  * are done during runtime in init_readline() !
  */
-completion_word create_bck_prof_param_full[7] ;
+completion_word create_bck_prof_param_full[8] ;
 
-completion_word create_bck_prof_wfw_setting[] = { { "TRUE", COMPL_KEYWORD, NULL },
-                                                  { "FALSE", COMPL_KEYWORD, NULL },
+completion_word create_bck_prof_noverify_setting[] = { { "TRUE", COMPL_KEYWORD, create_bck_prof_param_full + 7 },
+                                                       { "FALSE", COMPL_KEYWORD, create_bck_prof_param_full + 7 },
+                                                       { "", COMPL_EOL, NULL } };
+
+completion_word create_bck_prof_wfw_setting[] = { { "TRUE", COMPL_KEYWORD, create_bck_prof_param_full + 6 },
+                                                  { "FALSE", COMPL_KEYWORD, create_bck_prof_param_full + 6 },
                                                   { "", COMPL_EOL, NULL } };
 
 completion_word create_bck_prof_chkpt_setting[] = { { "FAST", COMPL_KEYWORD, create_bck_prof_param_full + 5 },
@@ -418,7 +422,8 @@ void init_readline() {
   completion_word create_bck_prof_w3 = { "WAL", COMPL_KEYWORD, create_bck_prof_wal_setting };
   completion_word create_bck_prof_w4 = { "CHECKPOINT", COMPL_KEYWORD, create_bck_prof_chkpt_setting};
   completion_word create_bck_prof_w5 = { "WAIT_FOR_WAL", COMPL_KEYWORD, create_bck_prof_wfw_setting };
-  completion_word create_bck_prof_w6 = { "", COMPL_EOL, NULL } ;
+  completion_word create_bck_prof_w6 = { "NOVERIFY", COMPL_KEYWORD, create_bck_prof_noverify_setting };
+  completion_word create_bck_prof_w7 = { "", COMPL_EOL, NULL } ;
 
   create_bck_prof_param_full[0] = create_bck_prof_w0;
   create_bck_prof_param_full[1] = create_bck_prof_w1;
@@ -427,6 +432,7 @@ void init_readline() {
   create_bck_prof_param_full[4] = create_bck_prof_w4;
   create_bck_prof_param_full[5] = create_bck_prof_w5;
   create_bck_prof_param_full[6] = create_bck_prof_w6;
+  create_bck_prof_param_full[7] = create_bck_prof_w7;
 
   /* XXX: what about specific append settings?
    *
