@@ -2,6 +2,12 @@ cmake_minimum_required (VERSION 2.6)
 project (pg_backup_ctl++)
 
 ##
+## New IN_LIST() operator requires this.
+##
+cmake_policy(SET CMP0054 NEW)
+cmake_policy(SET CMP0057 NEW)
+
+##
 ## Currently we want debug enabled builds
 ##
 set(CMAKE_BUILD_TYPE Debug)
