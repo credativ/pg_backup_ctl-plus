@@ -21,6 +21,13 @@ Retention::Retention(std::shared_ptr<CatalogDescr> archiveDescr,
 
 Retention::~Retention() {}
 
+Retention::Retention() {
+
+  this->archiveDescr = nullptr;
+  this->catalog = nullptr;
+
+}
+
 void Retention::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
 
   this->catalog = catalog;
@@ -36,11 +43,40 @@ std::shared_ptr<Retention> get(string retention_name,
 
 GenericRetentionRule::GenericRetentionRule() {}
 
-GenericRetentionRule::GenericRetentionRule(shared_ptr<CatalogDescr> descr) {
+GenericRetentionRule::GenericRetentionRule(shared_ptr<BackupCatalog> catalog) {
+
+  this->catalog = catalog;
+
+}
+
+GenericRetentionRule::GenericRetentionRule(shared_ptr<BackupCatalog> catalog,
+                                           int rule_id) {
+
+  this->catalog = catalog;
+  this->rule_id = rule_id;
 
 }
 
 GenericRetentionRule::~GenericRetentionRule() {}
+
+void GenericRetentionRule::load() {
+
+  /*
+   * A catalog nullptr is treated as an error
+   */
+  if (this->catalog == nullptr) {
+    throw CCatalogIssue("cannot instantiate rule with an undefined catalog handle");
+  }
+
+}
+
+/* *****************************************************************************
+ * LabelRetention implementation
+ * ****************************************************************************/
+
+LabelRetention::LabelRetention(std::string regex_str) {}
+
+LabelRetention::~LabelRetention() {}
 
 /* *****************************************************************************
  * PinRetention implementation

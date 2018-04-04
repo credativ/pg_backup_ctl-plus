@@ -55,15 +55,41 @@ namespace credativ {
    * A generic retention rule.
    *
    * A Retention rule loads a storable retention
-   * rule from the specified catalog database and returns
-   * a retention instance, implementing the retention
-   * policy encoded by the retention rule.
+   * rule from the specified catalog database.
+   *
+   * RetentionRules have a specific implementation, so it's
+   * identity is encoded within an object instance to correctly
+   * cast them.
    */
-  class GenericRetentionRule : public CPGBackupCtlBase {
+  class GenericRetentionRule {
+  protected:
+
+    /**
+     * The backup catalog rule ID, -1 if not yet
+     * initialized.
+     */
+    int rule_id = -1;
+
+    /**
+     * Internal reference to backup catalog.
+     */
+    std::shared_ptr<BackupCatalog> catalog = nullptr;
+
+    /**
+     * The virtual method load() implements the database
+     * specific part of loading all properties from the database.
+     *
+     * RetentionRule ancestors should call this method to get
+     * all settings read from the database.
+     */
+    virtual void load();
+
   public:
 
     GenericRetentionRule();
-    GenericRetentionRule(std::shared_ptr<CatalogDescr> descr);
+    GenericRetentionRule(std::shared_ptr<BackupCatalog> catalog);
+    GenericRetentionRule(std::shared_ptr<BackupCatalog> catalog,
+                         int rule_id);
     virtual ~GenericRetentionRule();
 
   };
@@ -80,6 +106,17 @@ namespace credativ {
    *
    */
   class LabelRetention : Retention {
+  protected:
+
+    /*
+     * Regex expression.
+     */
+    boost::regex label_filter;
+
+  public:
+
+    LabelRetention(std::string regex_str);
+    virtual ~LabelRetention();
 
   };
 

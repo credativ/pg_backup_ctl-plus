@@ -125,9 +125,10 @@ CREATE TABLE retention(
 CREATE UNIQUE INDEX retention_name_uniq_idx ON retention(name);
 
 CREATE TABLE retention_rules(
-       id integer not null primary key,
+       id integer not null,
        type integer not null,
-       value text not null
+       value text not null,
+       FOREIGN KEY(id) REFERENCES retention(id) ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX retention_rules_id_type_uniq_idx ON retention_rules(id, type);

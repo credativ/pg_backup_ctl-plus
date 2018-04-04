@@ -1450,6 +1450,70 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
   return result;
 }
 
+void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retentionPolicy) {
+
+  ostringstream insert;
+  sqlite3_stmt *stmt;
+  int rc;
+
+  vector<int> attrsRetention;
+  vector<int> attrsRules;
+
+  /*
+   * Database available ?
+   */
+  if (! this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Prepare the insert. A retention policy is only valid to create,
+   * if there's a rule attached to it. The creation of a retention
+   * policy thus involves at least two INSERT operations, one
+   * to create the retention policy in the retention table, and another
+   * one to create the attached rule(s) in the retention_rules table.
+   *
+   * NOTE: The caller should ideally use a transaction, but we
+   *       don't force it here.
+   */
+  if (retentionPolicy->rules.size() < 1) {
+    throw CCatalogIssue("cannot create retention policy with no rules");
+  }
+
+  attrsRetention.push_back(SQL_RETENTION_NAME_ATTNO);
+  attrsRetention.push_back(SQL_RETENTION_CREATED_ATTNO);
+
+  attrsRules.push_back(SQL_RETENTION_RULES_ID_ATTNO);
+  attrsRules.push_back(SQL_RETENTION_RULES_TYPE_ATTNO);
+  attrsRules.push_back(SQL_RETENTION_RULES_VALUE_ATTNO);
+
+  insert << "INSERT INTO retention("
+         << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attrsRetention)
+         << "name, created) VALUES(?1, ?2)";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          insert.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "cannot prepare query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind attributes from retention policy descriptor.
+   */
+  retentionPolicy->setAffectedAttributes(attrsRetention);
+  this->SQLbindRetentionPolicyAttributes(retentionPolicy,
+                                         retentionPolicy->getAffectedAttributes(),
+                                         stmt,
+                                         Range(1, 2));
+}
+
 void BackupCatalog::performPinAction(BasicPinDescr *descr,
                                      std::vector<int> basebackupIds) {
 
@@ -1800,7 +1864,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
     /*
      * Since we fetch tablespace and basebackup information in one
      * query, we only push basebackup information if the last
-     * encountered backup_id differs into the our result list.
+     * encountered backup_id differs.
      */
     if (current_backup_id != bbdescr->id) {
 
@@ -1971,6 +2035,12 @@ std::string BackupCatalog::mapAttributeId(int catalogEntity,
     break;
   case SQL_CON_ENTITY:
     result = BackupCatalog::connectionsCatalogCols[colId];
+    break;
+  case SQL_RETENTION_ENTITY:
+    result = BackupCatalog::retentionCatalogCols[colId];
+    break;
+  case SQL_RETENTION_RULES_ENTITY:
+    result = BackupCatalog::retentionRulesCatalogCols[colId];
     break;
   default:
     {
@@ -2545,6 +2615,95 @@ int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbde
 
 }
 
+int BackupCatalog::SQLbindRetentionRuleAttributes(shared_ptr<RetentionRuleDescr> rule,
+                                                  vector<int> &affectedAttributes,
+                                                  sqlite3_stmt *stmt,
+                                                  Range range) {
+
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind retention rule attributes: invalid statement handle");
+
+  for (auto &colId : affectedAttributes) {
+
+    if (result < range.end())
+      break;
+
+    switch(colId) {
+
+    case SQL_RETENTION_RULES_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, rule->id);
+      break;
+    case SQL_RETENTION_RULES_TYPE_ATTNO:
+      sqlite3_bind_int(stmt, result, (int) rule->type);
+      break;
+    case SQL_RETENTION_RULES_VALUE_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        rule->value.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+  }
+
+  return result;
+}
+
+int BackupCatalog::SQLbindRetentionPolicyAttributes(shared_ptr<RetentionDescr> retention,
+                                                    vector<int> &affectedAttributes,
+                                                    sqlite3_stmt *stmt,
+                                                    Range range) {
+
+  int result = range.start();
+
+  if (stmt == NULL)
+    throw CCatalogIssue("cannot bind retention attributes: invalid statement handle");
+
+  for (auto &colId : affectedAttributes) {
+
+    /*
+     * Stop, if result has reached end of range.
+     */
+    if (result > range.end())
+      break;
+
+    switch (colId) {
+
+    case SQL_RETENTION_ID_ATTNO:
+      sqlite3_bind_int(stmt, result, retention->id);
+      break;
+    case SQL_RETENTION_NAME_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        retention->name.c_str(), -1, SQLITE_STATIC);
+      break;
+    case SQL_RETENTION_CREATED_ATTNO:
+      sqlite3_bind_text(stmt, result,
+                        retention->created.c_str(), -1, SQLITE_STATIC);
+      break;
+
+    default:
+      {
+        ostringstream oss;
+        oss << "invalid column index: \"" << colId << "\"";
+        throw CCatalogIssue(oss.str());
+      }
+    }
+
+    result++;
+
+  }
+
+  return result;
+}
+
 int BackupCatalog::SQLbindBackupProfileAttributes(std::shared_ptr<BackupProfileDescr> profileDescr,
                                                   std::vector<int> affectedAttributes,
                                                   sqlite3_stmt *stmt,
@@ -2831,6 +2990,29 @@ std::string BackupCatalog::SQLmakePlaceholderList(std::vector<int> affectedAttri
 }
 
 std::string BackupCatalog::affectedColumnsToString(int entity,
+                                                   std::vector<int> affectedAttributes,
+                                                   std::string prefix) {
+
+  ostringstream result;
+
+  /*
+   * prefix can't be zero length
+   */
+  if (prefix.length() < 1) {
+    throw CCatalogIssue("affectedColumnsToString() can't be used with zero-length prefix");
+  }
+
+  for (unsigned int colId = 0; colId < affectedAttributes.size(); colId++) {
+    result << prefix << "." << this->mapAttributeId(entity, affectedAttributes[colId]);
+
+    if (colId < (affectedAttributes.size() -1))
+      result << ", ";
+  }
+
+  return result.str();
+}
+
+std::string BackupCatalog::affectedColumnsToString(int entity,
                                                    std::vector<int> affectedAttributes) {
 
   ostringstream result;
@@ -2841,6 +3023,7 @@ std::string BackupCatalog::affectedColumnsToString(int entity,
     if (colId < (affectedAttributes.size() -1))
       result << ", ";
   }
+
   return result.str();
 
 }
@@ -3747,6 +3930,239 @@ void BackupCatalog::registerStream(int archive_id,
   streamident.id = sqlite3_last_insert_rowid(this->db_handle);
 
   sqlite3_finalize(stmt);
+}
+
+shared_ptr<RetentionDescr> BackupCatalog::fetchRetentionPolicy(sqlite3_stmt *stmt,
+                                                               shared_ptr<RetentionDescr> retention,
+                                                               Range colIdRange) {
+
+  vector<int> attrs = retention->getAffectedAttributes();
+  int current_stmt_col = colIdRange.start();
+
+  /*
+   * Some sanity checks.
+   */
+  if (stmt == NULL) {
+    throw CCatalogIssue("cannot fetch retention policy: uninitialized statement handle");
+  }
+
+  if (retention == nullptr) {
+    throw CCatalogIssue("cannot fetch retention policy: uninitialized descriptor handle");
+  }
+
+  /* loop through the attributes list, fetch the corresponding column value */
+
+  for (auto &current_col : attrs) {
+
+    /*
+     * Sanity check, stop if range end is reached.
+     */
+    if (current_stmt_col > colIdRange.end())
+      break;
+
+    switch(current_col) {
+
+    case SQL_RETENTION_ID_ATTNO:
+      {
+        retention->id = sqlite3_column_int(stmt, current_stmt_col);
+        break;
+      }
+    case SQL_RETENTION_NAME_ATTNO:
+      {
+        /* retention.name is a varchar, but can't be NULL */
+        retention->name = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        break;
+      }
+    case SQL_RETENTION_CREATED_ATTNO:
+      {
+        /* the same with created, this timestamp is not allowed to be NULL */
+        retention->created = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        break;
+      }
+
+    default:
+      {
+        throw CCatalogIssue("unknown column identifier in fetchRetentionPolicy()");
+        break;
+      }
+    }
+
+    current_stmt_col++;
+
+  }
+
+  return retention;
+
+}
+
+shared_ptr<RetentionRuleDescr> BackupCatalog::fetchRetentionRule(sqlite3_stmt *stmt,
+                                                                 std::shared_ptr<RetentionRuleDescr> retentionRule,
+                                                                 Range colIdRange) {
+  vector<int> attrs = retentionRule->getAffectedAttributes();
+  int current_stmt_col = colIdRange.start();
+
+  /*
+   * Sanity checks.
+   */
+  if (stmt == NULL) {
+    throw CCatalogIssue("cannot fetch retention rule: uninitialized statement handle");
+  }
+
+  if (retentionRule == nullptr) {
+    throw CCatalogIssue("cannot fetch retention rule: uninitialized descriptor handle");
+  }
+
+  for (auto &current_col : attrs) {
+
+    switch(current_col) {
+
+    case SQL_RETENTION_RULES_ID_ATTNO:
+      {
+        retentionRule->id = sqlite3_column_int(stmt, current_stmt_col);
+        break;
+      }
+
+    case SQL_RETENTION_RULES_TYPE_ATTNO:
+      {
+        retentionRule->type = (RetentionRuleId) sqlite3_column_int(stmt, current_stmt_col);
+        break;
+      }
+
+    case SQL_RETENTION_RULES_VALUE_ATTNO:
+      {
+        /* value can't be NULL */
+        retentionRule->value = (char *) sqlite3_column_text(stmt, current_stmt_col);
+        break;
+      }
+
+    default:
+      {
+        throw CCatalogIssue("unknown column identifier fetchRetentionRule()");
+        break;
+      }
+    }
+
+    current_stmt_col++;
+
+  }
+
+  return retentionRule;
+
+}
+
+shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
+
+  shared_ptr<RetentionDescr> retentionPolicy = nullptr;
+  sqlite3_stmt *stmt;
+  ostringstream query;
+  vector<int> attrsRetention;
+  vector<int> attrsRules;
+  int rc;
+
+  /*
+   * Some sanity checks.
+   */
+  if (name.length() < 1) {
+    throw CCatalogIssue("cannot get retention policy with empty name");
+  }
+
+  attrsRetention.push_back(SQL_RETENTION_ID_ATTNO);
+  attrsRetention.push_back(SQL_RETENTION_NAME_ATTNO);
+  attrsRetention.push_back(SQL_RETENTION_CREATED_ATTNO);
+
+  attrsRules.push_back(SQL_RETENTION_RULES_ID_ATTNO);
+  attrsRules.push_back(SQL_RETENTION_RULES_TYPE_ATTNO);
+  attrsRules.push_back(SQL_RETENTION_RULES_VALUE_ATTNO);
+
+  query << "SELECT "
+        << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attrsRetention, "a")
+        << ", "
+        << this->affectedColumnsToString(SQL_RETENTION_RULES_ENTITY, attrsRules, "b")
+        << " FROM retention a JOIN retention_rules b ON a.id = b.id WHERE a.name = ?1;";
+
+#ifdef __DEBUG__
+  cout << "generated SQL " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if ( rc != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "could not prepare query to get connection:"
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * bind retention policy identifier and execute the query.
+   */
+  sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+  rc = sqlite3_step(stmt);
+
+  /* Only one or now row expected here */
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+
+    oss << "unexpected result in catalog query: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Initialize the retention policy descriptor.
+   */
+  retentionPolicy = make_shared<RetentionDescr> ();
+
+  /*
+   * Fetch policy properties into the new descriptor.
+   */
+  retentionPolicy->setAffectedAttributes(attrsRetention);
+  retentionPolicy = this->fetchRetentionPolicy(stmt,
+                                               retentionPolicy,
+                                               Range(0, attrsRetention.size() - 1));
+
+  /*
+   * Now loop over all current rows, retrieving information
+   * about associated retention rules. They are attached to
+   * the retention descriptor directly.
+   */
+  while ((rc == SQLITE_ROW) && (retentionPolicy->id >= 0)) {
+
+    shared_ptr<RetentionRuleDescr> retention_rule = make_shared<RetentionRuleDescr> ();
+
+    retention_rule->setAffectedAttributes(attrsRules);
+    retention_rule = this->fetchRetentionRule(stmt,
+                                              retention_rule,
+
+                                              /*
+                                               * NOTE: column index offsets starts after
+                                               *       the retention attributes list!
+                                               */
+                                              Range(attrsRetention.size(),
+                                                    (attrsRetention.size() + attrsRules.size() - 1)));
+
+    /* Save retention rule to its policy descriptor */
+    retentionPolicy->rules.push_back(retention_rule);
+
+    /* next one */
+    rc = sqlite3_step(stmt);
+  }
+
+  /*
+   * Free all SQLite resources and we're done.
+   */
+  sqlite3_finalize(stmt);
+  return retentionPolicy;
+
 }
 
 shared_ptr<BackupTablespaceDescr>

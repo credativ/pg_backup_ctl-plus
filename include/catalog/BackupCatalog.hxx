@@ -30,19 +30,28 @@ namespace credativ {
     virtual std::shared_ptr<CatalogDescr> fetchArchiveDataIntoDescr(sqlite3_stmt *stmt,
                                                                     std::shared_ptr<CatalogDescr> descr);
 
-    /*
+    /**
      * Maps column attribute numbers of the archive catalog to its names and returns
      * a comma separated string.
      */
     virtual std::string affectedColumnsToString(std::vector<int> affectedAttributes);
 
-    /*
+    /**
      * Maps attribute numbers of the given catalog entity to their names and returns
      * a comma-separated string.
      */
     virtual std::string affectedColumnsToString(int entity, std::vector<int> affectedAttributes);
 
-    /*
+    /**
+     * Makes attribute nmubers of the given catalog entitity to their names
+     * and returns a comma-separated string with each column identifier and
+     * the specified prefix attached.
+     */
+    virtual std::string affectedColumnsToString(int entity,
+                                                std::vector<int> affectedAttributes,
+                                                std::string prefix);
+
+    /**
      * Makes a comma-separated placeholder list from the given attribute numbers
      * given in affectedAttributes. Returns them as string.
      */
@@ -119,6 +128,24 @@ namespace credativ {
     static std::string magicNumber() {
       return CPGBackupCtlBase::intToStr(CATALOG_MAGIC);
     }
+
+    /**
+     * Bind affected retention attributes values
+     * to the given SQLite3 statement.
+     */
+    int SQLbindRetentionPolicyAttributes(std::shared_ptr<RetentionDescr> retention,
+                                         std::vector<int> &affectedAttributes,
+                                         sqlite3_stmt *stmt,
+                                         Range range);
+
+    /**
+     * Bind affected retention rules attribute values
+     * to the given SQLite3 statement.
+     */
+    int SQLbindRetentionRuleAttributes(std::shared_ptr<RetentionRuleDescr> rule,
+                                       std::vector<int> &affectedAttributes,
+                                       sqlite3_stmt *stmt,
+                                       Range range);
 
     /**
      * Bind affected backup attribute values
@@ -389,7 +416,7 @@ namespace credativ {
      */
     virtual void dropStream(int streamid);
 
-    /*
+    /**
      * Returns a StreamIdentification shared pointer
      * from a result set based on the stream catalog table.
      */
@@ -398,7 +425,48 @@ namespace credativ {
                     std::vector<int> affectedRows);
 
     /**
-     * Creates a or removes a pin on the specified basebackup ID(s).
+     * Reads the current row from the result set
+     * identified by stmt. The returned RetnetionDescr
+     * describes the stored retention policy afterwards.
+     *
+     * fetchRentionPolicy() doesn't fetch the policy rule(s)
+     * attached by the current retention policy row.
+     * Instead, it gets employed by getRetentionPolicy() which does
+     * all the legwork to fetch a complete retention policy rule set.
+     */
+    std::shared_ptr<RetentionDescr> fetchRetentionPolicy(sqlite3_stmt *stmt,
+                                                         std::shared_ptr<RetentionDescr> retention,
+                                                         Range colIdRange);
+
+    /**
+     * Reads a retention rule definition from the current
+     * row identified by stmt.
+     */
+    std::shared_ptr<RetentionRuleDescr> fetchRetentionRule(sqlite3_stmt *stmt,
+                                                           std::shared_ptr<RetentionRuleDescr> retentionRule,
+                                                           Range colIdRange);
+
+    /**
+     * Returns a retention policy descriptor with
+     * all rule(s) attached.
+     *
+     * name is the identifier of the policy to be retrieved.
+     * If the specified name cannot be found in the catalog,
+     * a RetentionDescr pointer will be returned with a rule_id set to -1.
+     *
+     * A catalog database access error always throws a CCatalogIssue
+     * exception.
+     */
+    virtual std::shared_ptr<RetentionDescr> getRetentionPolicy(std::string name);
+
+    /**
+     * Creates a new retention policy described
+     * by the specified RetentionDescr.
+     */
+    virtual void createRetentionPolicy(std::shared_ptr<RetentionDescr> retentionPolicy);
+
+    /**
+     * Creates or removes a pin on the specified basebackup ID(s).
      *
      * A pin is a lock placed on the basebackup catalog entry,
      * so that any retention policy applied will not delete
