@@ -4,8 +4,13 @@ project (pg_backup_ctl++)
 ##
 ## New IN_LIST() operator requires this.
 ##
+if(CMAKE_VERSION VERSION_GREATER "3.0")
 cmake_policy(SET CMP0054 NEW)
+endif()
+
+if (CMAKE_VERSION VERSION_GREATER "3.2")
 cmake_policy(SET CMP0057 NEW)
+endif()
 
 ##
 ## Currently we want debug enabled builds
