@@ -78,7 +78,7 @@ CREATE TABLE backup_profiles(
        fast_checkpoint integer not null default false,
        include_wal integer not null default false,
        wait_for_wal integer not null default true,
-       noverify_checksums integer not null default false
+       noverify_checksums integer not null default false,
        PRIMARY KEY(id)
 );
 
@@ -104,7 +104,8 @@ INSERT INTO backup_profiles
         label,
         fast_checkpoint,
         include_wal,
-        wait_for_wal)
+        wait_for_wal,
+        noverify_checksums)
 VALUES
         ('default',
          0,
