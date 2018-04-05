@@ -1481,7 +1481,6 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
   }
 
   attrsRetention.push_back(SQL_RETENTION_NAME_ATTNO);
-  attrsRetention.push_back(SQL_RETENTION_CREATED_ATTNO);
 
   attrsRules.push_back(SQL_RETENTION_RULES_ID_ATTNO);
   attrsRules.push_back(SQL_RETENTION_RULES_TYPE_ATTNO);
@@ -1489,7 +1488,7 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
 
   insert << "INSERT INTO retention("
          << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attrsRetention)
-         << "name, created) VALUES(?1, ?2)";
+         << "name, created) VALUES(?1, datetime('now'))";
 
   rc = sqlite3_prepare_v2(this->db_handle,
                           insert.str().c_str(),
@@ -1507,11 +1506,93 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
   /*
    * Bind attributes from retention policy descriptor.
    */
-  retentionPolicy->setAffectedAttributes(attrsRetention);
   this->SQLbindRetentionPolicyAttributes(retentionPolicy,
-                                         retentionPolicy->getAffectedAttributes(),
+                                         attrsRetention,
                                          stmt,
-                                         Range(1, 2));
+                                         Range(1, 1));
+
+  /*
+   * Execute the insert. After having successfully
+   * inserted the retention descriptor, we need it's
+   * primary key for its rule dataset.
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+
+    oss << "error creating retention policy in catalog database:"
+        << sqlite3_errmsg(this->db_handle);
+
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  retentionPolicy->id = sqlite3_last_insert_rowid(this->db_handle);
+
+  /*
+   * Release statement, we need it for the INSERT operation
+   * for the retention rule dataset.
+   */
+  sqlite3_finalize(stmt);
+
+  /*
+   * Prepare the INSERT operation for retention rules.
+   */
+  insert << "INSERT INTO retention_rules("
+    << this->affectedColumnsToString(SQL_RETENTION_RULES_ENTITY,
+                                     attrsRules)
+    << ") VALUES(";
+
+  for (unsigned int i = 0; i < attrsRules.size(); i++) {
+    insert << "?" << (i + 1);
+    if (i < (attrsRules.size() - 1))
+      insert << ", ";
+  }
+
+  insert << ");";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          insert.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "cannot prepare query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Loop through the rule list, inserting
+   * each one into the catalog database.
+   */
+  for (auto &rule : retentionPolicy->rules) {
+
+    this->SQLbindRetentionRuleAttributes(rule,
+                                         attrsRules,
+                                         stmt,
+                                         Range(1, attrsRules.size()));
+
+    rc = sqlite3_step(stmt);
+
+    if (rc != SQLITE_DONE) {
+
+      ostringstream oss;
+
+      oss << "error while inserting rule description into catalog: "
+          << sqlite3_errmsg(this->db_handle);
+      sqlite3_finalize(stmt);
+      throw CCatalogIssue(oss.str());
+    }
+
+  }
+
+  sqlite3_finalize(stmt);
+
+  /* and we're done */
 }
 
 void BackupCatalog::performPinAction(BasicPinDescr *descr,
@@ -1570,6 +1651,8 @@ void BackupCatalog::performPinAction(BasicPinDescr *descr,
   if (rc != SQLITE_OK) {
     ostringstream oss;
     oss << "cannot prepare query:" << sqlite3_errmsg(db_handle);
+
+    throw CCatalogIssue(oss.str());
   }
 
   /*
