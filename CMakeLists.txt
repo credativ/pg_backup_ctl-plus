@@ -64,7 +64,7 @@ add_library (pgbckctl-common SHARED src/main/common.cxx src/jobs/signalhandler.c
   src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
   src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
   src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx)
-target_link_libraries (pg_backup_ctl++ pgbckctl-common)
+target_link_libraries (pg_backup_ctl++ rt pgbckctl-common)
 
 # Detect if the "port" command is valid on this system; if so, return full path
 EXECUTE_PROCESS(COMMAND which port RESULT_VARIABLE DETECT_MACPORTS OUTPUT_VARIABLE MACPORTS_PREFIX ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
