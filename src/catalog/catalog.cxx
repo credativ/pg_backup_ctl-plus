@@ -401,6 +401,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "PIN";
   case UNPIN_BASEBACKUP:
     return "UNPIN";
+  case CREATE_RETENTION_POLICY:
+    return "CREATE RETENTION POLICY";
 
   default:
     return "UNKNOWN";

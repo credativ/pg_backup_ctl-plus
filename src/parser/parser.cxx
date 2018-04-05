@@ -100,6 +100,7 @@ namespace credativ {
                                        cmd_create_archive
                                        | cmd_create_backup_profile
                                        | cmd_create_connection
+                                       | cmd_create_retention
                                        )
                          )
 
@@ -375,6 +376,33 @@ namespace credativ {
           > -(profile_noverify_checksums_option);
 
         /*
+         * CREATE RETENTION POLICY <identifier>
+         */
+        cmd_create_retention =
+          no_case[ lexeme[ lit("RETENTION") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_RETENTION_POLICY) ]
+          >> no_case[ lexeme[ lit("POLICY") ] ]
+          >> identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          >> ( retention_keep_action
+               | retention_drop_action );
+
+        retention_keep_action =
+          no_case[ lexeme[ lit("KEEP") ] ]
+          >> ( retention_rule_with_label );
+
+        retention_drop_action =
+          no_case[ lexeme[ lit("DROP") ] ]
+          >> ( retention_rule_with_label );
+
+        retention_rule_with_label =
+          no_case[ lexeme[ lit("WITH") ] ] >> no_case[ lexeme[ lit("LABEL") ] ]
+                                           >> regexp_expression;
+
+        regexp_expression =
+          +char_("+-_A-Za-z0-9.[{}()\\*+?|^$");
+
+        /*
          * CREATE STREAMING CONNECTION FOR ARCHIVE <name> command
          */
         cmd_create_connection =
@@ -597,6 +625,7 @@ namespace credativ {
         cmd_create_archive.name("CREATE ARCHIVE");
         cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
         cmd_create_connection.name("CREATE STREAMING CONNECTION");
+        cmd_create_retention.name("CREATE RETENTION POLICY");
         cmd_verify_archive.name("VERIFY ARCHIVE");
         cmd_drop_archive.name("DROP ARCHIVE");
         cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
@@ -608,6 +637,8 @@ namespace credativ {
         cmd_list_backup.name("LIST BASEBACKUPS");
         cmd_list_backup_list.name("LIST BACKUPS");
         cmd_list_connection.name("LIST CONNECTION");
+        retention_keep_action.name("KEEP");
+        retention_drop_action.name("DROP");
         identifier.name("object identifier");
         executable.name("executable name");
         hostname.name("ip or hostname");
@@ -628,6 +659,8 @@ namespace credativ {
         with_profile.name("backup profile name");
         verify_check_connection.name("CONNECTION");
         profile_noverify_checksums_option.name("NOVERIFY");
+        retention_rule_with_label.name("WITH LABEL");
+        regexp_expression.name("<regular expression>");
       }
 
       /*
@@ -657,11 +690,15 @@ namespace credativ {
                           cmd_drop_backup_profile,
                           cmd_alter_backup_profile,
                           cmd_create_connection,
+                          cmd_create_retention,
                           cmd_show,
                           verify_check_connection,
                           show_command_type,
                           profile_noverify_checksums_option,
-                          backup_profile_opts;
+                          backup_profile_opts,
+                          retention_keep_action,
+                          retention_drop_action;
+
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
                           database,
@@ -676,7 +713,9 @@ namespace credativ {
                           profile_compression_option,
                           profile_backup_label_option,
                           with_profile,
-                          executable;
+                          executable,
+                          retention_rule_with_label,
+                          regexp_expression;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
                           number_ID;

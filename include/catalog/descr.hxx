@@ -50,7 +50,8 @@ namespace credativ {
     START_STREAMING_FOR_ARCHIVE,
     STOP_STREAMING_FOR_ARCHIVE,
     SHOW_WORKERS,
-    BACKGROUND_WORKER_COMMAND
+    BACKGROUND_WORKER_COMMAND,
+    CREATE_RETENTION_POLICY,
   } CatalogTag;
 
   /*
@@ -669,12 +670,16 @@ namespace credativ {
 
   typedef enum {
 
-    RETENTION_NO_RULE, /* unknown/undefined rule type */
-    RETENTION_KEEP,
-    RETENTION_LABEL,
-    RETENTION_DROP_BY_YEAR,
-    RETENTION_DROP_BY_MONTH,
-    RETENTION_DROP_BY_DAY
+    RETENTION_NO_RULE = 100, /* unknown/undefined rule type */
+
+    RETENTION_KEEP_WITH_LABEL = 200,
+    RETENTION_DROP_WITH_LABEL = 201,
+
+    RETENTION_KEEP_NUM = 300,
+    RETENTION_DROP_NUM = 301,
+
+    RETENTION_KEEP_BY_DATETIME = 400,
+    RETENTION_DROP_BY_DATETIME = 401
 
   } RetentionRuleId;
 
