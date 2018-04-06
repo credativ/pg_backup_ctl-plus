@@ -2217,6 +2217,29 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
 }
 
+CreateRetentionPolicyCommand::CreateRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+CreateRetentionPolicyCommand::CreateRetentionPolicyCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->tag     = CREATE_RETENTION_POLICY;
+  this->catalog = catalog;
+
+}
+
+CreateRetentionPolicyCommand::CreateRetentionPolicyCommand() {
+
+  this->tag = CREATE_RETENTION_POLICY;
+
+}
+
+void CreateRetentionPolicyCommand::execute(bool flag) {
+
+}
+
 CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
