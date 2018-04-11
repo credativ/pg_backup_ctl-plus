@@ -2238,6 +2238,26 @@ CreateRetentionPolicyCommand::CreateRetentionPolicyCommand() {
 
 void CreateRetentionPolicyCommand::execute(bool flag) {
 
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute command: no catalog");
+  }
+
+  try {
+
+    /*
+     * Catalog changes involves multiple entities, so use
+     * a transaction here.
+     */
+    this->catalog->startTransaction();
+
+  } catch(CPGBackupCtlFailure &e) {
+
+    this->catalog->rollbackTransaction();
+
+    /* don't hide this exception */
+    throw e;
+
+  }
 }
 
 CreateBackupProfileCatalogCommand::CreateBackupProfileCatalogCommand(std::shared_ptr<CatalogDescr> descr) {

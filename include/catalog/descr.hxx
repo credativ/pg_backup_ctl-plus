@@ -15,6 +15,7 @@ namespace credativ {
   class BasicPinDescr;
   class PinDesc;
   class UnpinDescr;
+  class RetentionDescr;
   class RetentionRuleDescr;
 
   /*
@@ -74,6 +75,26 @@ namespace credativ {
     REPLICATION_SLOT_ERROR
 
   } ReplicationSlotStatus;
+
+  /*
+   * A retention rule id classifies the
+   * various supported retention rules and their
+   * actions.
+   */
+  typedef enum {
+
+    RETENTION_NO_RULE = 100, /* unknown/undefined rule type */
+
+    RETENTION_KEEP_WITH_LABEL = 200,
+    RETENTION_DROP_WITH_LABEL = 201,
+
+    RETENTION_KEEP_NUM = 300,
+    RETENTION_DROP_NUM = 301,
+
+    RETENTION_KEEP_BY_DATETIME = 400,
+    RETENTION_DROP_BY_DATETIME = 401
+
+  } RetentionRuleId;
 
   /*
    * Represents a physical replication slot.
@@ -428,6 +449,16 @@ namespace credativ {
 
     std::shared_ptr<BackupProfileDescr> backup_profile = std::make_shared<BackupProfileDescr>();
 
+    /**
+     * A retention rule descriptor for retention policies created during
+     * parsing a CREATE RETENTION POLICY command.
+     *
+     * For correct handling, you have to call
+     * makeRetentionDescr() before! Otherwise this instance
+     * is always a nullptr.
+     */
+    std::shared_ptr<RetentionDescr> retention = nullptr;
+
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
     ~CatalogDescr();
@@ -501,6 +532,17 @@ namespace credativ {
      * pin operation actions.
      */
     void makePinDescr(PinOperationType const& operation);
+
+    /**
+     * Creates a retention descriptor attached
+     * to a catalog descriptor instance. The retention rule
+     * is created along with the retention descriptor and added to
+     * its rule list. If a retention descriptor already exists for
+     * a catalog descriptor, just the new retention rule will be added
+     * to this existing instance.
+     */
+    void makeRetentionDescr(RetentionRuleId const &ruleid,
+                            std::string const& value);
 
     /**
      * Returns the PIN/UNPIN operation type assigned
@@ -667,21 +709,6 @@ namespace credativ {
 
     virtual std::string gimmeFormattedString();
   };
-
-  typedef enum {
-
-    RETENTION_NO_RULE = 100, /* unknown/undefined rule type */
-
-    RETENTION_KEEP_WITH_LABEL = 200,
-    RETENTION_DROP_WITH_LABEL = 201,
-
-    RETENTION_KEEP_NUM = 300,
-    RETENTION_DROP_NUM = 301,
-
-    RETENTION_KEEP_BY_DATETIME = 400,
-    RETENTION_DROP_BY_DATETIME = 401
-
-  } RetentionRuleId;
 
   /**
    * A descriptor describing the catalog

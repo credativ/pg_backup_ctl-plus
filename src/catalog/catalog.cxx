@@ -312,6 +312,11 @@ PinOperationType CatalogDescr::pinOperation() {
 
 }
 
+void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
+                                      string const &value) {
+
+}
+
 void CatalogDescr::makePinDescr(PinOperationType const& operation) {
 
   switch(this->tag) {

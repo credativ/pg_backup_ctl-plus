@@ -389,15 +389,17 @@ namespace credativ {
 
         retention_keep_action =
           no_case[ lexeme[ lit("KEEP") ] ]
-          >> ( retention_rule_with_label );
+          >> ( retention_rule_with_label
+               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_KEEP_WITH_LABEL, ::_1) ] );
 
         retention_drop_action =
           no_case[ lexeme[ lit("DROP") ] ]
           >> ( retention_rule_with_label );
 
         retention_rule_with_label =
-          no_case[ lexeme[ lit("WITH") ] ] >> no_case[ lexeme[ lit("LABEL") ] ]
-                                           >> regexp_expression;
+          no_case[ lexeme[ lit("WITH") ] ]
+          >> no_case[ lexeme[ lit("LABEL") ] ]
+          >> regexp_expression;
 
         regexp_expression =
           +char_("+-_A-Za-z0-9.[{}()\\*+?|^$");
