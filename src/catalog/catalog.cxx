@@ -315,6 +315,14 @@ PinOperationType CatalogDescr::pinOperation() {
 void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
                                       string const &value) {
 
+  /*
+   * If not yet initialized, create a new retention
+   * policy descriptor.
+   */
+  if (this->retention == nullptr) {
+    this->retention = make_shared<RetentionDescr> ();
+  }
+
 }
 
 void CatalogDescr::makePinDescr(PinOperationType const& operation) {
@@ -4142,12 +4150,18 @@ shared_ptr<RetentionRuleDescr> BackupCatalog::fetchRetentionRule(sqlite3_stmt *s
 
 shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
 
-  shared_ptr<RetentionDescr> retentionPolicy = nullptr;
+  shared_ptr<RetentionDescr> retentionPolicy = make_shared<RetentionDescr> ();
   sqlite3_stmt *stmt;
   ostringstream query;
   vector<int> attrsRetention;
   vector<int> attrsRules;
   int rc;
+
+  /*
+   * Returned retention policy descriptor is empty, indicated
+   * by -1.
+   */
+  retentionPolicy->id = -1;
 
   /*
    * Some sanity checks.
@@ -4206,11 +4220,6 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
 
     throw CCatalogIssue(oss.str());
   }
-
-  /*
-   * Initialize the retention policy descriptor.
-   */
-  retentionPolicy = make_shared<RetentionDescr> ();
 
   /*
    * Fetch policy properties into the new descriptor.

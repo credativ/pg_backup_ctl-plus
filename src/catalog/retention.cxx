@@ -1,4 +1,5 @@
 #include <retention.hxx>
+#include <boost/pointer_cast.hpp>
 
 using namespace credativ;
 
@@ -34,49 +35,161 @@ void Retention::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
 
 }
 
-std::shared_ptr<Retention> get(string retention_name,
-                               std::shared_ptr<BackupCatalog> catalog) {
+string Retention::operator=(Retention &src) {
 
-  return nullptr;
-
-}
-
-GenericRetentionRule::GenericRetentionRule() {}
-
-GenericRetentionRule::GenericRetentionRule(shared_ptr<BackupCatalog> catalog) {
-
-  this->catalog = catalog;
+  return src.asString();
 
 }
 
-GenericRetentionRule::GenericRetentionRule(shared_ptr<BackupCatalog> catalog,
-                                           int rule_id) {
-
-  this->catalog = catalog;
-  this->rule_id = rule_id;
-
+RetentionRuleId Retention::getRetentionRuleType() {
+  return this->ruleType;
 }
 
-GenericRetentionRule::~GenericRetentionRule() {}
+std::vector<std::shared_ptr<Retention>> get(string retention_name,
+                                            std::shared_ptr<BackupCatalog> catalog) {
 
-void GenericRetentionRule::load() {
+  shared_ptr<RetentionDescr> retentionDescr = nullptr;
+  vector<shared_ptr<Retention>> result;
 
   /*
-   * A catalog nullptr is treated as an error
+   * Preliminary checks, there's nothing to do if either
+   * no catalog or an empty retention policy identifier was specified.
    */
-  if (this->catalog == nullptr) {
-    throw CCatalogIssue("cannot instantiate rule with an undefined catalog handle");
+  if (retention_name.length() == 0)
+    return result;
+
+  if (catalog == nullptr) {
+    throw CCatalogIssue("could not retrieve retention rules. catalog database not initialized");
   }
 
+  if (! catalog->available()) {
+    throw CCatalogIssue("could not retrieve retention rules: catalog database not opened");
+  }
+
+  /*
+   * Fetch the rule policy via the specified retention_name.
+   */
+  retentionDescr = catalog->getRetentionPolicy(retention_name);
+
+  /*
+   * Check out if this descriptor is valid.
+   */
+  if ((retentionDescr != nullptr) && (retentionDescr->id >= 0)) {
+
+    /*
+     * Yes, looks so. Instantiate corresponding rule instance
+     * and push into our result vector.
+     */
+    for (auto ruleDescr : retentionDescr->rules) {
+
+      /* make sure, ruleDescr is valid */
+      if ((ruleDescr != nullptr) && (ruleDescr->id >= 0)
+          && (ruleDescr->type != RETENTION_NO_RULE)) {
+
+        switch(ruleDescr->type) {
+
+        case RETENTION_KEEP_WITH_LABEL:
+          {
+            shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value);
+            result.push_back(retentionPtr);
+            break;
+          }
+        case RETENTION_DROP_WITH_LABEL:
+        case RETENTION_KEEP_NUM:
+        case RETENTION_DROP_NUM:
+        case RETENTION_KEEP_BY_DATETIME:
+        case RETENTION_DROP_BY_DATETIME:
+        default:
+          throw CCatalogIssue("unsupported retention rule type: " + ruleDescr->type);
+
+          break; /* not reached */
+
+        } /* switch..case */
+      }
+    }
+  }
+
+  return result;
 }
 
 /* *****************************************************************************
  * LabelRetention implementation
  * ****************************************************************************/
 
-LabelRetention::LabelRetention(std::string regex_str) {}
+LabelRetention::LabelRetention() {}
+
+LabelRetention::LabelRetention(const LabelRetention &src) {}
+
+LabelRetention::LabelRetention(std::string regex_str) {
+
+  if (regex_str.length() > 0) {
+    this->label_filter = boost::regex(regex_str);
+  } else {
+    throw CCatalogIssue("zero-length regular expression for label retention detected");
+  }
+
+}
 
 LabelRetention::~LabelRetention() {}
+
+string LabelRetention::asString() {
+
+  ostringstream oss;
+
+  if (this->ruleType == RETENTION_KEEP_WITH_LABEL) {
+
+    oss << "KEEP WITH LABEL ";
+
+  } else {
+
+    /* since label retention only understoods RETENTION_KEEP_WITH_LABEL
+     * or RETENTION_DROP_WITH_LABEL, there's no other choice here. */
+
+    oss << "DROP WITH LABEL ";
+
+  }
+
+  oss << this->label_filter.str();
+  return oss.str();
+
+}
+
+unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> basebackupList) {
+
+  /*
+   * Loop through the list of basebackups, filtering out every basebackup
+   * that matches the backup label identified by the basebackup descriptor.
+   * Stick the descriptor used to identify the basebackup to delete into
+   * the result list.
+   */
+
+}
+
+void LabelRetention::setRegularExpr(string regex_str) {
+
+  if (regex_str.length() > 0) {
+    this->label_filter = boost::regex(regex_str);
+  } else {
+    throw CCatalogIssue("zero-length regular expression for label retention detected");
+  }
+
+}
+
+boost::regex LabelRetention::getRegularExpr() {
+  return this->label_filter;
+}
+
+void LabelRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
+
+  switch(ruleType) {
+  case RETENTION_KEEP_WITH_LABEL:
+  case RETENTION_DROP_WITH_LABEL:
+    this->ruleType = ruleType;
+    break;
+  default:
+    throw CCatalogIssue("label retention policy is incompatible with rule type id " + ruleType);
+  }
+}
 
 /* *****************************************************************************
  * PinRetention implementation
@@ -512,4 +625,45 @@ unsigned int PinRetention::apply(vector<shared_ptr<BaseBackupDescr>> list) {
   result = this->dispatchPinAction(list);
 
   return result;
+}
+
+void PinRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
+
+  switch(ruleType) {
+  case RETENTION_PIN:
+  case RETENTION_UNPIN:
+    this->ruleType = ruleType;
+    break;
+  default:
+    throw CCatalogIssue("pin/unpin retention policy can't support rule type " + ruleType);
+  }
+
+}
+
+string PinRetention::asString() {
+
+  PinOperationType policy = this->pinDescr->getOperationType();
+  ostringstream oss;
+
+  switch(policy) {
+  case ACTION_ID:
+    oss << this->pinDescr->getBackupID();
+    break;
+  case ACTION_COUNT:
+    oss << "+" << this->pinDescr->getCount();
+    break;
+  case ACTION_NEWEST:
+    oss << "NEWEST";
+    break;
+  case ACTION_OLDEST:
+    oss << "OLDEST";
+    break;
+  case ACTION_PINNED:
+    oss << "PINNED";
+    break;
+  default:
+    throw CCatalogIssue("could not parse pin/unpin action into string");
+  }
+
+  return oss.str();
 }

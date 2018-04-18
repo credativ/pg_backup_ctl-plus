@@ -2245,10 +2245,46 @@ void CreateRetentionPolicyCommand::execute(bool flag) {
   try {
 
     /*
+     * Checkout if a retention policy with this name exists.
+     *
+     * Returns a completely initialized RetentionDescr instance,
+     * which is thrown away in case there is a conflict. We might
+     * want a cheaper operation than getRetentionPolicy(), though
+     * it's not available yet.
+     */
+    shared_ptr<RetentionDescr> retentionPolicy = nullptr;
+
+    /*
      * Catalog changes involves multiple entities, so use
      * a transaction here.
      */
     this->catalog->startTransaction();
+
+    /*
+     * Yes, it's ugly, but currently the parser bound the
+     * retention policy identifier as an archive_name to the
+     * CatalogDescr.
+     *
+     * XXX: Replace the identifier <-> parser schema with something
+     *      more sophisticated.
+     */
+    retentionPolicy = this->catalog->getRetentionPolicy(this->archive_name);
+
+    if (retentionPolicy->id >= 0) {
+
+      /*
+       * whoops, this identifier already exists. This exception
+       * is catched by the try..catch block below, but will be re-thrown.
+       */
+      throw CCatalogIssue("retention policy with name\""
+                          + retentionPolicy->name
+                          + "\" already exists");
+    }
+
+    /*
+     * Okay, policy seems to be new, go forward and try
+     * to create it.
+     */
 
   } catch(CPGBackupCtlFailure &e) {
 

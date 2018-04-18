@@ -14,6 +14,13 @@ namespace credativ {
   protected:
 
     /**
+     * Internal rule action specifier. Determines wether
+     * we are instructed to keep or drop the basebackups meeting
+     * the label regular expression.
+     */
+    RetentionRuleId ruleType;
+
+    /**
      * Internal catalog database handler.
      */
     std::shared_ptr<BackupCatalog> catalog = nullptr;
@@ -23,6 +30,12 @@ namespace credativ {
      * the archive we are operating on.
      */
     std::shared_ptr<CatalogDescr> archiveDescr = nullptr;
+
+    /**
+     * asString() implements the string represention
+     * of a Retention instance.
+     */
+    virtual std::string asString() = 0;
 
   public:
 
@@ -37,10 +50,11 @@ namespace credativ {
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
 
     /**
-     * Factory method, returns a Retention object instance.
+     * Factory method, returns a Retention object instances, implementing
+     * the specific retention method to apply.
      */
-    static std::shared_ptr<Retention> get(string retention_name,
-                                          std::shared_ptr<BackupCatalog> catalog);
+    static std::vector<std::shared_ptr<Retention>> get(string retention_name,
+                                                       std::shared_ptr<BackupCatalog> catalog);
 
     /**
      * Applies a retention policy on the given list of
@@ -49,51 +63,26 @@ namespace credativ {
      */
     virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) = 0;
 
-  };
-
-  /**
-   * A generic retention rule.
-   *
-   * A Retention rule loads a storable retention
-   * rule from the specified catalog database.
-   *
-   * RetentionRules have a specific implementation, so it's
-   * identity is encoded within an object instance to correctly
-   * cast them.
-   */
-  class GenericRetentionRule {
-  protected:
+    /**
+     * Returns the string representation of a retention rule. Must be implemented
+     * for each specific retention policy instance.
+     */
+    virtual std::string operator=(Retention &src);
 
     /**
-     * The backup catalog rule ID, -1 if not yet
-     * initialized.
+     * Set the retention rule type id supported by a Retention
+     * instance and its ancestors.
      */
-    int rule_id = -1;
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType) = 0;
 
     /**
-     * Internal reference to backup catalog.
+     * Returns the rule type id encoded by a specific Retention instance
+     * and its ancestors. This can also be used to identify the actions
+     * encoded to such an object instance.
      */
-    std::shared_ptr<BackupCatalog> catalog = nullptr;
-
-    /**
-     * The virtual method load() implements the database
-     * specific part of loading all properties from the database.
-     *
-     * RetentionRule ancestors should call this method to get
-     * all settings read from the database.
-     */
-    virtual void load();
-
-  public:
-
-    GenericRetentionRule();
-    GenericRetentionRule(std::shared_ptr<BackupCatalog> catalog);
-    GenericRetentionRule(std::shared_ptr<BackupCatalog> catalog,
-                         int rule_id);
-    virtual ~GenericRetentionRule();
+    virtual RetentionRuleId getRetentionRuleType();
 
   };
-
 
   /**
    * Label retention policy.
@@ -105,19 +94,51 @@ namespace credativ {
    * be scheduled for removal.
    *
    */
-  class LabelRetention : Retention {
+  class LabelRetention : public Retention {
   protected:
 
-    /*
+    /**
      * Regex expression.
      */
     boost::regex label_filter;
 
+    /**
+     * Implementation of the string representation routine
+     * of a LabelRetention instance. Returns the label retention
+     * rule hold by a LabelRetention instance as string.
+     */
+    virtual std::string asString();
+
   public:
 
+    LabelRetention();
+    LabelRetention(const LabelRetention &src);
     LabelRetention(std::string regex_str);
     virtual ~LabelRetention();
 
+    /**
+     * Applies a retention policy on the given list of
+     * basebackups. Returns the number of basebackups
+     * which got the retention policy applied.
+     */
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+
+    /**
+     * Set regular expression to evaluate by a LabelRetention instance.
+     */
+    virtual void setRegularExpr(string regex_str);
+
+    /**
+     * Returns the compiled regular expression handler.
+     */
+    virtual boost::regex getRegularExpr();
+
+    /**
+     * Sets the rule action identifier. The only allowed values
+     * are RETENTION_KEEP_WITH_LABEL and RETENTION_DROP_WITH_LABEL. Other
+     * value will throw a CCatalogIssue exception.
+     */
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType);
   };
 
   /**
@@ -226,6 +247,13 @@ namespace credativ {
      */
     unsigned int action_NewestOrOldest(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
 
+  protected:
+
+    /**
+     * Returns the string representation of a PIN/UNPIN action.
+     */
+    virtual string asString();
+
   public:
 
     /*
@@ -275,6 +303,12 @@ namespace credativ {
      * new backup ID set.
      */
     virtual void reset();
+
+    /**
+     * Implementation of pin/unpin retention rule identifier.
+     */
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType);
+
   };
 
 }

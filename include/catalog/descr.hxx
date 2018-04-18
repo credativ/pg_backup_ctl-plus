@@ -92,7 +92,11 @@ namespace credativ {
     RETENTION_DROP_NUM = 301,
 
     RETENTION_KEEP_BY_DATETIME = 400,
-    RETENTION_DROP_BY_DATETIME = 401
+    RETENTION_DROP_BY_DATETIME = 401,
+
+    /* PIN/UNPIN retention action */
+    RETENTION_PIN = 500,
+    RETENTION_UNPIN = 600
 
   } RetentionRuleId;
 
@@ -736,6 +740,29 @@ namespace credativ {
     int id = -1;
     RetentionRuleId type = RETENTION_NO_RULE;
     std::string value = "";
+
+  };
+
+  /**
+   * A BackupCleanupDescr descriptor instance describes
+   * which basebackups and WAL segment ranges can be evicted
+   * from the archive. It carries a list of basebackup descriptors
+   * which is identifying the basebackups to delete.
+   *
+   * The newest basebackup is the first in the vector, the older one
+   * is the last. The cleanup descriptor also maintains a XLogRecPtr, which
+   * identifies the starting location of WAL segments which are
+   * safe to delete from the archive. Please note that this XLogRecPtr doesn't
+   * necessarily belong to the list of basebackups currently elected
+   * for eviction from the archive, but might have been influenced
+   * by a basebackup to keep or which was pinned before.
+   *
+   */
+  class BackupCleanupDescr {
+  public:
+
+    std::vector<std::shared_ptr<BaseBackupDescr>> basebackups;
+    XLogRecPtr wal_cleanup_position;
 
   };
 }
