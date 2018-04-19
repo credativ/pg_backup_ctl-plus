@@ -37,6 +37,7 @@
  * FreeBSD doesn't have shmatt_t defined (used
  * within shmstat structure for IPC_STAT in shmctl()).
  */
+@HAVE_SHMATT_T_TYPE@
 #ifndef HAVE_SHMATT_T_TYPE
 #define shmatt_t int
 #endif
