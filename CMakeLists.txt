@@ -105,6 +105,15 @@ ELSE()
 ENDIF()
 
 ##
+## Check shmctl() and shmatt_t datatype if available
+##
+## NOTE: FreeBSD doesn't have this defined, so make
+##       a specific workaround in pg_backup_ctl.hxx in this case.
+##
+INCLUDE(CheckSymbolExists)
+check_symbol_exists(shmatt_t "sys/type.h;sys/ipc.h;sys/shm.h" HAVE_SHMATT_T_TYPE)
+
+##
 ## Check endianess of target system
 ##
 include(TestBigEndian)
