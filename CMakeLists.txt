@@ -112,7 +112,7 @@ ENDIF()
 ##
 INCLUDE(CheckTypeSize)
 CHECK_TYPE_SIZE(shmatt_t SHMATT_T_SZ LANGUAGE CXX)
-if (SHMATT_T_SZ EQUAL "")
+if ((SHMATT_T_SZ EQUAL "") OR (NOT SHMATT_T_SZ EQUAL 0))
   message("define shmatt_t to int")
   set(HAVE_SHMATT_T_TYPE "#undef HAVE_SHMATT_T_TYPE")
 else()
