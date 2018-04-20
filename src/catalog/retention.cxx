@@ -1,5 +1,6 @@
 #include <retention.hxx>
 #include <boost/pointer_cast.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 
 using namespace credativ;
 
@@ -100,7 +101,12 @@ std::vector<std::shared_ptr<Retention>> get(string retention_name,
         case RETENTION_KEEP_BY_DATETIME:
         case RETENTION_DROP_BY_DATETIME:
         default:
-          throw CCatalogIssue("unsupported retention rule type: " + ruleDescr->type);
+	  {
+	    ostringstream oss;
+
+	    oss << "unsupported retention rule type: " << ruleDescr->type;
+	    throw CCatalogIssue(oss.str());
+	  }
 
           break; /* not reached */
 
@@ -163,6 +169,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> basebacku
    * the result list.
    */
 
+  return 0;
 }
 
 void LabelRetention::setRegularExpr(string regex_str) {
@@ -187,7 +194,13 @@ void LabelRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
     this->ruleType = ruleType;
     break;
   default:
-    throw CCatalogIssue("label retention policy is incompatible with rule type id " + ruleType);
+    {
+      ostringstream oss;
+
+      oss << "label retention policy is incompatible with rule type id " << ruleType;
+      throw CCatalogIssue(oss.str());
+    }
+
   }
 }
 
@@ -305,8 +318,8 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
 
   /* Here we have just one backup ID to operate on, but the
    * API always expects a batch list*/
+  unsigned int currindex = 0;
   vector<int> basebackupIds;
-  unsigned int currindex;
   PinOperationType pinOper = this->pinDescr->getOperationType();
 
   /*
@@ -336,7 +349,7 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
       }
 
       /* Verify on-disk representation */
-      if (dir.verify(bbdescr) != BASEBACKUP_OK) {
+      if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
         continue;
       }
 
@@ -352,10 +365,7 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
 
   } else if (pinOper == ACTION_OLDEST) {
 
-    for (currindex = (list.size() - 1); currindex >= 0; currindex--) {
-
-      /* fetch descriptor */
-      shared_ptr<BaseBackupDescr> bbdescr = list[currindex];
+    for (auto bbdescr : boost::adaptors::reverse(list)) {
 
       /* basebackup directory handle for verification */
       StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
@@ -372,7 +382,7 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
       }
 
       /* Verify on-disk representation */
-      if (dir.verify(bbdescr) != BASEBACKUP_OK) {
+      if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
         continue;
       }
 
@@ -429,7 +439,7 @@ unsigned int PinRetention::action_ID(vector<shared_ptr<BaseBackupDescr>> &list) 
     /*
      * If the basebackup does not exist on disk, don't pin it.
      */
-    if (dir.verify(bbdescr) != BASEBACKUP_OK) {
+    if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
       continue;
     }
 
@@ -490,7 +500,7 @@ unsigned int PinRetention::action_Count(vector<shared_ptr<BaseBackupDescr>> &lis
     /*
      * Basebackup available on disk? If not, don't pin it.
      */
-    if (dir.verify(bbitem) != BASEBACKUP_OK)
+    if (dir.verify_basebackup(bbitem) != BASEBACKUP_OK)
       continue;
 
     basebackupIds.push_back(bbitem->id);
@@ -635,7 +645,13 @@ void PinRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
     this->ruleType = ruleType;
     break;
   default:
-    throw CCatalogIssue("pin/unpin retention policy can't support rule type " + ruleType);
+    {
+      ostringstream oss;
+
+      oss << "pin/unpin retention policy can't support rule type " << ruleType;
+      throw CCatalogIssue(oss.str());
+    }
+
   }
 
 }

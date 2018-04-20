@@ -261,7 +261,7 @@ namespace credativ {
     /*
      * Gzip compression level, default 9
      */
-    int compressionLevel = 9;
+    //    int compressionLevel = 9;
     bool opened = false;
   public:
 
@@ -586,7 +586,7 @@ namespace credativ {
      * the fully initialized basebackup descriptor and verifies
      * that it matches the on-disk representation.
      */
-    virtual BaseBackupVerificationCode verify(std::shared_ptr<BaseBackupDescr> bbdescr);
+    virtual BaseBackupVerificationCode verify_basebackup(std::shared_ptr<BaseBackupDescr> bbdescr);
 
     /**
      * Factory method. Returns a new instance

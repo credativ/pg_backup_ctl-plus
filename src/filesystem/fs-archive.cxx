@@ -95,7 +95,7 @@ StreamingBaseBackupDirectory *StreamingBaseBackupDirectory::getInstance(string d
 
 }
 
-BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<BaseBackupDescr> bbdescr) {
+BaseBackupVerificationCode StreamingBaseBackupDirectory::verify_basebackup(std::shared_ptr<BaseBackupDescr> bbdescr) {
 
   /*
    * Sanity check for specified basebackup descriptor.

@@ -402,8 +402,10 @@ void WALStreamerProcess::setReceiverStatusTimeout(long value) {
    * fixed internal select() timeout.
    */
   if (value < this->timeout) {
-    throw StreamingFailure("receiver status timeout cannot be lower than "
-                           + this->timeout);
+    std::ostringstream oss;
+
+    oss << "receiver status timeout cannot be lower than " << this->timeout;
+    throw StreamingFailure(oss.str());
   }
 
   this->receiver_status_timeout = value;

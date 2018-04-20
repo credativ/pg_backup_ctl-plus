@@ -45,8 +45,10 @@ void XLOGStreamMessage::setWALSegmentSize(unsigned long long wal_segment_size) {
 
   if (wal_segment_size <= 0
       && (wal_segment_size % 2) != 0) {
-    throw XLOGMessageFailure("invalid WAL segment size in message: "
-                             + wal_segment_size);
+    std::ostringstream oss;
+
+    oss << "invalid WAL segment size in message: " << wal_segment_size;
+    throw XLOGMessageFailure(oss.str());
   }
 
   this->wal_segment_size = wal_segment_size;
@@ -104,7 +106,12 @@ XLOGStreamMessage* XLOGStreamMessage::message(PGconn *pg_connection,
     }
   default:
     /* unknown message type, bail out hard. */
-    throw XLOGMessageFailure("unknown message type: " + srcbuffer[0]);
+    {
+      std::ostringstream oss;
+
+      oss << "unknown message type: " << srcbuffer[0];
+      throw XLOGMessageFailure(oss.str());
+    }
   }
 
   /* normally not reached */
