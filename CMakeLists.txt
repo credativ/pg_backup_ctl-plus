@@ -110,8 +110,16 @@ ENDIF()
 ## NOTE: FreeBSD doesn't have this defined, so make
 ##       a specific workaround in pg_backup_ctl.hxx in this case.
 ##
-INCLUDE(CheckSymbolExists)
-check_symbol_exists(shmatt_t "sys/type.h;sys/ipc.h;sys/shm.h" HAVE_SHMATT_T_TYPE)
+INCLUDE(CheckTypeSize)
+set(CMAKE_EXTRA_INCLUDE_FILES "sys/shm.h")
+CHECK_TYPE_SIZE(shmatt_t SHMATT_T_SZ LANGUAGE C)
+if (SHMATT_T_SZ STREQUAL "")
+  message("define shmatt_t to int")
+  set(HAVE_SHMATT_T_TYPE "#undef HAVE_SHMATT_T_TYPE")
+else()
+  message("using shmatt_t")
+  set(HAVE_SHMATT_T_TYPE "#define HAVE_SHMATT_T_TYPE")
+endif()
 
 ##
 ## Check endianess of target system
