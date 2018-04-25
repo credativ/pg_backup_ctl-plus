@@ -16,7 +16,7 @@ before_script:
               gettext
               gettext-libs
               libzstd
-              libzstd-devel
+              libzstd-devel.x86_64
 
 pg_backup_ctl-plus:
         script:
