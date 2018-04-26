@@ -238,6 +238,38 @@ if(DOXYGEN_FOUND)
 
 endif()
 
+## This is for CPack, which
+## helps to create tarball distribution files.
+set(CPACK_PACKAGE_VERSION_MAJOR 0)
+set(CPACK_PACKAGE_VERSION_MINOR 1)
+
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An advanced PostgreSQL streaming backup tool")
+set(CPACK_PACKAGE_VENDOR "credativ GmbH")
+set(CPACKE_PACKAGE_DESCRIPTION_FILE ${CMAKE_CURRENT_SOURCE_DIR}/README)
+set(CPACK_GENERATOR_TGZ)
+set(
+  CPACK_SOURCE_PACKAGE_FILE_NAME
+  "pg_backup_ctl-plus-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}"
+  CACHE INTERNAL "tarball basename"
+  )
+set(CPACK_SOURCE_IGNORE_FILES
+  "~$"
+  "${PROJECT_SOURCE_DIR}/\\\\.git"
+  "\\\\.gitignore"
+  "\\\\.gitlab-ci.yml"
+  "Makefile"
+  "build/\\\\.*"
+  )
+include (CPack)
+
+##
+## Installation targets
+##
+include(GNUInstallDirs)
+install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${BINDIR})
+install(FILES build/libpgbckctl-common.so DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES src/sql/catalog.sql DESTINATION ${DATAROOTDIR}/pg_backup_ctl-plus)
+
 ##
 ## Get current git revision.
 ##
