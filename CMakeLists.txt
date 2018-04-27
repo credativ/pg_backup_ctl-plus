@@ -266,7 +266,7 @@ include (CPack)
 ## Installation targets
 ##
 include(GNUInstallDirs)
-install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${BINDIR})
+install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES build/libpgbckctl-common.so DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES src/sql/catalog.sql DESTINATION ${DATAROOTDIR}/pg_backup_ctl-plus)
 
