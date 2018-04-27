@@ -100,6 +100,7 @@ std::vector<std::shared_ptr<Retention>> get(string retention_name,
         case RETENTION_DROP_NUM:
         case RETENTION_KEEP_BY_DATETIME:
         case RETENTION_DROP_BY_DATETIME:
+          throw CCatalogIssue("retention policy not implemented yet");
         default:
 	  {
 	    ostringstream oss;
@@ -128,11 +129,7 @@ LabelRetention::LabelRetention(const LabelRetention &src) {}
 
 LabelRetention::LabelRetention(std::string regex_str) {
 
-  if (regex_str.length() > 0) {
-    this->label_filter = boost::regex(regex_str);
-  } else {
-    throw CCatalogIssue("zero-length regular expression for label retention detected");
-  }
+  this->setRegularExpr(regex_str);
 
 }
 
