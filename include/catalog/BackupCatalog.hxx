@@ -460,6 +460,21 @@ namespace credativ {
     virtual std::shared_ptr<RetentionDescr> getRetentionPolicy(std::string name);
 
     /**
+     * Returns a list of all retention policies defined in the
+     * backup catalog.
+     *
+     * attributesRetention must be a list of attribute identifiers
+     * which should be retrieved for each policy from the catalog, the
+     * same for attributesRules. If no rules information belonging to
+     * a retention policy should be fetched, an empty vector in attributesRules
+     * can be specified. attributesRetention must contain at least one
+     * attribute.
+     */
+    virtual void getRetentionPolicies(std::vector<std::shared_ptr<RetentionDescr>> &list,
+                                      std::vector<int> attributesRetention,
+                                      std::vector<int> attributesRules);
+
+    /**
      * Creates a new retention policy described
      * by the specified RetentionDescr.
      */

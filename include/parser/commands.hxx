@@ -101,11 +101,23 @@ namespace credativ {
     virtual void execute(bool flag);
   };
 
+  class ListRetentionPoliciesCommand : public BaseCatalogCommand {
+  public:
+    ListRetentionPoliciesCommand(std::shared_ptr<CatalogDescr> descr);
+    ListRetentionPoliciesCommand(std::shared_ptr<BackupCatalog> catalog);
+    ListRetentionPoliciesCommand();
+    virtual ~ListRetentionPoliciesCommand();
+
+    virtual void execute(bool flag);
+  };
+
   class CreateConnectionCatalogCommand : public BaseCatalogCommand {
   public:
     CreateConnectionCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     CreateConnectionCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
     CreateConnectionCatalogCommand();
+
+    virtual ~CreateConnectionCatalogCommand();
 
     virtual void execute(bool flag);
   };

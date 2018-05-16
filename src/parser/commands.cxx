@@ -553,6 +553,8 @@ CreateConnectionCatalogCommand::CreateConnectionCatalogCommand(std::shared_ptr<C
 
 }
 
+CreateConnectionCatalogCommand::~CreateConnectionCatalogCommand() {}
+
 void CreateConnectionCatalogCommand::execute(bool flag) {
 
   if (this->catalog == nullptr) {
@@ -2217,6 +2219,102 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
     throw e;
   }
 
+}
+
+ListRetentionPoliciesCommand::ListRetentionPoliciesCommand() {
+
+  this->tag = LIST_RETENTION_POLICIES;
+
+}
+
+ListRetentionPoliciesCommand::ListRetentionPoliciesCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ListRetentionPoliciesCommand::~ListRetentionPoliciesCommand() {}
+
+ListRetentionPoliciesCommand::ListRetentionPoliciesCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->tag = LIST_RETENTION_POLICIES;
+  this->catalog = catalog;
+
+}
+
+void ListRetentionPoliciesCommand::execute(bool flag) {
+
+  bool have_tx = false;
+
+  /*
+   * Check catalog.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute command: no catalog");
+  }
+
+  try {
+
+    vector<shared_ptr<RetentionDescr>> retentionList;
+    vector<int> attrsRetention;
+    vector<int> attrsRules;
+
+    if (this->archive_name.length() < 1) {
+      throw CArchiveIssue("got empty identifier for retention policy");
+    }
+
+    /*
+     * Start a database transaction. Though we're just reading,
+     * we want to have a TX for synchronization purposes.
+     */
+    this->catalog->startTransaction();
+    have_tx = true;
+
+    /*
+     * Specify which attributes we want from the catalog.
+     */
+    attrsRetention.push_back(SQL_RETENTION_ID_ATTNO);
+    attrsRetention.push_back(SQL_RETENTION_NAME_ATTNO);
+    attrsRetention.push_back(SQL_RETENTION_CREATED_ATTNO);
+
+    attrsRules.push_back(SQL_RETENTION_RULES_ID_ATTNO);
+    attrsRules.push_back(SQL_RETENTION_RULES_TYPE_ATTNO);
+    attrsRules.push_back(SQL_RETENTION_RULES_VALUE_ATTNO);
+
+    /*
+     * Get policies...
+     */
+    this->catalog->getRetentionPolicies(retentionList,
+                                        attrsRetention,
+                                        attrsRules);
+
+    if (retentionList.size() < 1) {
+
+      /*
+       * NOTE: Transaction rollback happens in the outer
+       *       exception handler, since we re-throw there.
+       */
+      throw CArchiveIssue("no retention policies found");
+
+    }
+
+    this->catalog->commitTransaction();
+
+    /*
+     * Print out details.
+     */
+
+  } catch (CPGBackupCtlFailure &e) {
+    if (have_tx) {
+
+      have_tx = false;
+      this->catalog->rollbackTransaction();
+
+    }
+
+    /* don't hide original exception from caller */
+    throw e;
+  }
 }
 
 CreateRetentionPolicyCommand::CreateRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {

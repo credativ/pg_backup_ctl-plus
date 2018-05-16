@@ -4187,6 +4187,193 @@ shared_ptr<RetentionRuleDescr> BackupCatalog::fetchRetentionRule(sqlite3_stmt *s
 
 }
 
+void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &list,
+                                         vector<int> attributesRetention,
+                                         vector<int> attributesRules) {
+
+  bool with_rules = false;
+  bool has_rid    = false;
+  sqlite3_stmt *stmt = NULL;
+  int curr_retention_id = -1;
+  int rc;
+
+  ostringstream get_retention_sql;
+
+  if (!this->available()) {
+    throw CCatalogIssue("database not available");
+  }
+
+  if (attributesRetention.size() < 1) {
+    throw CCatalogIssue("getRetentionPolicies() needs at least one attribute to fetch");
+  }
+
+  /*
+   * We must include the retention id in the result set. Otherwise
+   * we can't reliably retrieve any rules associated to the policy
+   * below.
+   */
+  for (auto &colId : attributesRetention) {
+    if (colId == SQL_RETENTION_ID_ATTNO)
+      has_rid = true;
+  }
+
+  /*
+   * Add the retention id attribute implicitely in case its
+   * missing. This could be considered bad style, since
+   * we change the specified vector under the hood, but since
+   * it's a local copy we're safe.
+   */
+  if (!has_rid) {
+    attributesRetention.push_back(SQL_RETENTION_ID_ATTNO);
+  }
+
+  if ( (with_rules = (attributesRules.size() >= 1)) ) {
+
+    /* fetch with rules */
+
+    get_retention_sql
+      << "SELECT "
+      << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRetention, "r")
+      << ", "
+      << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRules, "rr")
+      << "FROM retention r JOIN retention_rules rr ON r.id = rr.id "
+      << "ORDER BY r.name ASC;";
+
+  } else {
+
+    get_retention_sql
+      << "SELECT "
+      << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRetention, "r")
+      << "FROM retention r ORDER BY r.name ASC";
+
+  }
+
+  /*
+   * Prepare the query.
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          get_retention_sql.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "could not prepare query to get retention policies: "
+        << sqlite3_errmsg(this->db_handle);
+
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Execute the statement ...
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc == SQLITE_ERROR) {
+    ostringstream oss;
+    oss << "error retrieving retention policies from catalog: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  while (rc == SQLITE_ROW) {
+
+    shared_ptr<RetentionDescr> retention = make_shared<RetentionDescr>();
+
+    /* make sure descriptor is marked empty */
+    retention->id = -1;
+
+    /*
+     * Retention policies might be selected in association
+     * with their retention rules. Thus the result set looks
+     * like this (if all attributes are specified for retrieval):
+     *
+     * retention id | name | created | retention id | rule type | rule value
+     * retention id | name | created | retention id | rule type | rule value
+     * retention id | name | created | retention id | rule type | rule value
+     * ...
+     *
+     * Where the retention properties are the same for each retention. Thus,
+     * we must check during each iteration wether the retention id has changed,
+     * which indicates a new retention policy to be fetched. We start with a retention
+     * id set to -1, which indicates an empty retention policy set.
+     *
+     */
+
+    /*
+     * Fetch the retention policy. We need to fetch them
+     * even if it didn't changed, since we need to compare
+     * the retention id
+     */
+    retention->setAffectedAttributes(attributesRetention);
+    this->fetchRetentionPolicy(stmt, retention,
+                               Range(0, attributesRetention.size() - 1));
+
+    /* Check wether this is a new retention policy item in the result set */
+    if ( (curr_retention_id != retention->id)
+         && (retention->id >= 0) ) {
+
+      list.push_back(retention);
+      curr_retention_id = retention->id;
+
+    }
+
+    /*
+     * We stick rules, if requested, always into the
+     * last retention policy we added to our list.
+     */
+    if (with_rules) {
+      shared_ptr<RetentionRuleDescr> rule = make_shared<RetentionRuleDescr>();
+
+      /* make sure rule is marked empty */
+      rule->id = -1;
+
+      /* don't forget attributes list */
+      rule->setAffectedAttributes(attributesRules);
+
+      /* ... and fetch it */
+      this->fetchRetentionRule(stmt,
+                               rule,
+
+                               /*
+                                * NOTE: column index offsets starts
+                                *       *after* the retention attributes
+                                *       list !!
+                                */
+                               Range(attributesRules.size(),
+                                     (attributesRules.size() + attributesRules.size() - 1)));
+
+      /*
+       * We always add rules to last retention item
+       * in the result list.
+       */
+      if (list.size() < 1) {
+        throw CCatalogIssue("unexpected size(0) of retention policies result list");
+      }
+
+      (list.back())->rules.push_back(rule);
+    }
+
+    /* next one */
+    sqlite3_step(stmt);
+
+    if (rc == SQLITE_ERROR) {
+      ostringstream oss;
+      oss << "error retrieving retention policies from catalog: "
+          << sqlite3_errmsg(this->db_handle);
+      sqlite3_finalize(stmt);
+      throw CCatalogIssue(oss.str());
+    }
+
+  }
+
+  sqlite3_finalize(stmt);
+
+}
+
 shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
 
   shared_ptr<RetentionDescr> retentionPolicy = make_shared<RetentionDescr> ();
@@ -4195,6 +4382,10 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
   vector<int> attrsRetention;
   vector<int> attrsRules;
   int rc;
+
+  if (!this->available()) {
+    throw CCatalogIssue("database not available");
+  }
 
   /*
    * Returned retention policy descriptor is empty, indicated
