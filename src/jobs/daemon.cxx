@@ -1183,6 +1183,7 @@ static pid_t daemonize(job_info &info) {
    * Now launch the background job.
    */
   pid = fork();
+  forkerrno = errno;
 
   if (pid < 0) {
     std::ostringstream oss;

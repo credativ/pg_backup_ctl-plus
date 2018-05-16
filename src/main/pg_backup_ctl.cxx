@@ -365,9 +365,9 @@ static void executeCommand(PGBackupCtlArgs *args) {
 
 int main(int argc, const char **argv) {
 
+  char *cmd_str = NULL;
   shared_ptr<CPGBackupCtlBase> backup = make_shared<CPGBackupCtlBase>();
   PGBackupCtlArgs args;
-  char            *cmd_str;
 
   /*
    * Certain actions fork off child processes. To prevent
