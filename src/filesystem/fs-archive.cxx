@@ -560,6 +560,47 @@ unsigned long long ArchiveLogDirectory::getXlogSegmentSize(path segmentFile,
   return fileSize;
 }
 
+void ArchiveLogDirectory::identifyDeletionPoints(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {
+
+  if (cleanupDescr == nullptr)
+    throw CArchiveIssue("cannot identify wal deletion points without basebackup data");
+
+  /*
+   * We expect cleanup descriptors here being initialized
+   * with BASEBACKUP_KEEP.
+   */
+  if (cleanupDescr->basebackupMode != BASEBACKUP_KEEP)
+    throw CArchiveIssue("expected basebackup mode set to KEEP for WAL segment cleanup");
+
+  /*
+   * WAL cleanup mode WAL_CLEANUP_RANGE currently not implemented.
+   */
+  if (cleanupDescr->mode == WAL_CLEANUP_RANGE)
+    throw CArchiveIssue("WAL cleanup with RANGE mode currently not implemented");
+
+  /*
+   * The specified cleanupDescr holds a list of basebackups to keep,
+   * assumed to be sorted in descending order, from newest to oldest.
+   * We go through this list and check their starting and ending XLOG locations.
+   *
+   * In detail, the algorithm works as follows:
+   *
+   * - Retrieve the start and end location of the *last* item in cleanupDescr basebackup
+   *   list. This is the one we are interested in, since all newer basebackups surely
+   *   want to keep their WALs as well.
+   *
+   * - Depending on the WAL cleanup mode, set the offset or range
+   *   of XLogRecPtr pointers being deleted. Since the list holds basebackups
+   *   to keep, we must set the XLogRecPtr offset (or range) to the *previous*
+   *   WAL segment we identified for the deletion starting point.
+   */
+
+  for (auto &bbdescr : cleanupDescr->basebackups) {
+
+  }
+
+}
+
 /******************************************************************************
  * BackupDirectory Implementation
  ******************************************************************************/

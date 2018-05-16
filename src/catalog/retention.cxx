@@ -30,6 +30,15 @@ Retention::Retention() {
 
 }
 
+void Retention::setArchiveCatalogDescr(std::shared_ptr<CatalogDescr> archiveDescr) {
+
+  if (archiveDescr->id < 0)
+    throw CCatalogIssue("could not assign invalid archive ID to retention policy");
+
+  this->archiveDescr = archiveDescr;
+
+}
+
 void Retention::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
 
   this->catalog = catalog;
@@ -42,12 +51,36 @@ string Retention::operator=(Retention &src) {
 
 }
 
+std::shared_ptr<CatalogDescr> Retention::getArchiveCatalogDescr() {
+
+  return this->archiveDescr;
+
+}
+
+std::shared_ptr<BackupCatalog> Retention::getBackupCatalog() {
+
+  return this->catalog;
+
+}
+
 RetentionRuleId Retention::getRetentionRuleType() {
   return this->ruleType;
 }
 
-std::vector<std::shared_ptr<Retention>> get(string retention_name,
-                                            std::shared_ptr<BackupCatalog> catalog) {
+void Retention::reset() {
+
+  if (this->cleanupDescr != nullptr) {
+
+    this->cleanupDescr->basebackups.clear();
+    this->cleanupDescr == nullptr;
+
+  }
+
+}
+
+std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
+                                                       std::shared_ptr<CatalogDescr> archiveDescr,
+                                                       std::shared_ptr<BackupCatalog> catalog) {
 
   shared_ptr<RetentionDescr> retentionDescr = nullptr;
   vector<shared_ptr<Retention>> result;
@@ -91,7 +124,9 @@ std::vector<std::shared_ptr<Retention>> get(string retention_name,
 
         case RETENTION_KEEP_WITH_LABEL:
           {
-            shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value);
+            shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value,
+                                                                             archiveDescr,
+                                                                             catalog);
             result.push_back(retentionPtr);
             break;
           }
@@ -119,15 +154,47 @@ std::vector<std::shared_ptr<Retention>> get(string retention_name,
   return result;
 }
 
+void Retention::keep(vector<shared_ptr<BaseBackupDescr>> &keepList,
+                     vector<shared_ptr<BaseBackupDescr>> &dropList,
+                     shared_ptr<BaseBackupDescr> bbdescr,
+                     unsigned int index) {
+
+  /*
+   * Varous sanity checks follow.
+   */
+
+  /* Nothing to do if dropList ist empty. */
+  if (dropList.size() == 0)
+    return;
+
+  /*
+   * Index must be within bounds of dropList.
+   */
+  if (index >= dropList.size())
+    throw CArchiveIssue("cannot move basebackup to KEEP list: index out of bounds (exceeds size)");
+
+  keepList.push_back(bbdescr);
+  dropList.erase(dropList.begin() + index);
+
+}
+
 /* *****************************************************************************
  * LabelRetention implementation
  * ****************************************************************************/
 
 LabelRetention::LabelRetention() {}
 
-LabelRetention::LabelRetention(const LabelRetention &src) {}
+LabelRetention::LabelRetention(LabelRetention &src) {
 
-LabelRetention::LabelRetention(std::string regex_str) {
+  catalog = src.getBackupCatalog();
+  archiveDescr = src.getArchiveCatalogDescr();
+  label_filter = src.getRegularExpr();
+
+}
+
+LabelRetention::LabelRetention(std::string regex_str,
+                               std::shared_ptr<CatalogDescr> archiveDescr,
+                               std::shared_ptr<BackupCatalog> catalog) : Retention(archiveDescr, catalog) {
 
   this->setRegularExpr(regex_str);
 
@@ -157,16 +224,209 @@ string LabelRetention::asString() {
 
 }
 
-unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> basebackupList) {
+unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteList) {
+
+  unsigned int currindex = 0;
+  unsigned int result = 0;
+  vector<shared_ptr<BaseBackupDescr>> keep;
+
+  /*
+   * We don't expect an initialized cleanupDescr here, this usually
+   * means we were called previously already. Throw here, since
+   * we can't guarantuee reasonable results out from here.
+   */
+  if (this->cleanupDescr != nullptr)
+    throw CArchiveIssue("cannot apply retention module repeatedly, call Retention::reset() before");
+
+  /*
+   * Nothing to do if list of basebackups is empty.
+   */
+  if (deleteList.size() == 0)
+    return 0;
+
+  /*
+   * Initialize the cleanup descriptor. Currently we just support
+   * deleting by a starting XLogRecPtr and removing all subsequent (older)
+   * WAL files from the archive.
+   */
+  this->cleanupDescr                  = make_shared<BackupCleanupDescr>();
+  this->cleanupDescr->mode            = WAL_CLEANUP_OFFSET;
+  this->cleanupDescr->basebackupMode = BASEBACKUP_KEEP;
 
   /*
    * Loop through the list of basebackups, filtering out every basebackup
    * that matches the backup label identified by the basebackup descriptor.
-   * Stick the descriptor used to identify the basebackup to delete into
-   * the result list.
+   * Stick the descriptor used to identify the basebackup to keep into the
+   * cleanup descriptor.
+   *
+   * The basebackups we want to keep are attached to the "keep list", which
+   * will be used to identify the deletion XLOG Redo pointer, identifying the
+   * first XLOG segment file to be deleted.
    */
+  for(auto &bbdescr : deleteList) {
 
-  return 0;
+    /*StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
+      this->archiveDescr->directory); */
+    boost::smatch what;
+
+    /* Increase current position counter */
+    currindex++;
+
+    /*
+     * Apply regex to label.
+     *
+     * The outcoming action here depends on the RetentionRuleId
+     * flag set within ruleType. This tells us wether we want to keep
+     * (RETENTION_KEEP_WITH_LABEL) or drop (RETENTION_DROP_WITH_LABEL)
+     * the scanned basebackups.
+     */
+    if (regex_match(bbdescr->label, what, this->label_filter)) {
+
+      /*
+       * This is a match.
+       *
+       * The basebackup needs either being dropped or kept, depending
+       * on the current retention action.
+       */
+      switch(this->ruleType) {
+
+      case RETENTION_KEEP_WITH_LABEL:
+        {
+          /*
+           * KEEP basebackup.
+           *
+           * The current regex label match should be kept.
+           *
+           * This means we need to move the current basebackups from
+           * the deleteList into the list of basebackups to keep.
+           *
+           * There's no need to check PINs and such here, since we are forced
+           * to keep this basebackup anyways.
+           */
+          this->keep(this->cleanupDescr->basebackups,
+                     deleteList,
+                     bbdescr,
+                     currindex);
+
+          break;
+        }
+
+      case RETENTION_DROP_WITH_LABEL:
+        {
+          /*
+           * DROP basebackup.
+           *
+           * The current regex matches should be dropped.
+           *
+           * We need to check for any PINs before leaving the
+           * basebackup descriptor in the delete list. If we detect a PIN,
+           * we keep this backup.
+           */
+          if (bbdescr->pinned) {
+
+            cout << "INFO: keeping pinned basebackup \""
+                 << bbdescr->fsentry
+                 << "\""
+                 << endl;
+
+            this->keep(this->cleanupDescr->basebackups,
+                       deleteList,
+                       bbdescr,
+                       currindex);
+          } else {
+
+            cout << "INFO: selected basebackup \""
+                 << bbdescr->fsentry
+                 << "\" for deletion"
+                 << endl;
+
+            result++;
+
+          }
+
+          break;
+        }
+
+      default:
+
+        /* ouch, this RETENTION action is not supported here */
+        throw CArchiveIssue("label retention rule cannot be applied to specified retention action");
+
+      } /* switch...case */
+
+    } else {
+
+      /*
+       * No match. Depending on the RETENTION action specified within
+       * ruleType, we need to keep or drop the current basebackup. The
+       * actions here are:
+       *
+       * - RETENTION_DROP_WITH_LABEL: No match here, so keep it, which means
+       *                              to move the basebackup descriptor into the keep list.
+       *
+       * - RETENTION_KEEP_WITH_LABEL: No match here, but since we only should
+       *                              keep matches, leave the basebackup descriptor in
+       *                              the delete list.
+       */
+      switch(this->ruleType) {
+
+      case RETENTION_DROP_WITH_LABEL:
+        {
+
+          /*
+           * No need to check for PINs, since no match and we are forced
+           * to keep this basebackup though.
+           */
+          this->keep(this->cleanupDescr->basebackups,
+                     deleteList,
+                     bbdescr,
+                     currindex);
+        }
+
+      case RETENTION_KEEP_WITH_LABEL:
+        {
+
+          /*
+           * No match, but we are told to keep matches. So leave this
+           * basebackup within the deleteList, but only if it's *not*
+           * pinned.
+           */
+          if (bbdescr->pinned) {
+
+            cout << "INFO: keeping pinned basebackup \""
+                 << bbdescr->fsentry
+                 << "\""
+                 << endl;
+
+            this->keep(this->cleanupDescr->basebackups,
+                       deleteList,
+                       bbdescr,
+                       currindex);
+          } else {
+
+            cout << "INFO: selected basebackup \""
+                 << bbdescr->fsentry
+                 << "\" for deletion"
+                 << endl;
+
+            result++;
+
+          }
+
+        }
+
+
+      default:
+        throw CArchiveIssue("label retention rule cannot be applied to specified retention action");
+      } /* switch...case */
+
+    } /* if regex_match() */
+
+  } /* for ... loop */
+
+
+  return result;
+
 }
 
 void LabelRetention::setRegularExpr(string regex_str) {

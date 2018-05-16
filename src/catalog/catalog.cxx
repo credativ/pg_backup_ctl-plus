@@ -299,6 +299,11 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
     break;
   }
 
+  /*
+   * Copy over the retention policy descriptor, if allocated.
+   */
+  this->retention = source.getRetentionPolicyP();
+
   return *this;
 }
 
@@ -312,8 +317,16 @@ PinOperationType CatalogDescr::pinOperation() {
 
 }
 
+shared_ptr<RetentionDescr> CatalogDescr::getRetentionPolicyP() {
+
+  return this->retention;
+
+}
+
 void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
                                       string const &value) {
+
+  shared_ptr<RetentionRuleDescr> rule = nullptr;
 
   /*
    * If not yet initialized, create a new retention
@@ -321,7 +334,21 @@ void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
    */
   if (this->retention == nullptr) {
     this->retention = make_shared<RetentionDescr> ();
+
+    /* copy over the catalog descriptor identifier */
+    this->retention->name = this->archive_name;
   }
+
+  /*
+   * Build a rule around "value". It's up to the retention
+   * policy and the specified retention rule action to interpret the
+   * correct meaning of the parsed string.
+   */
+  rule = make_shared<RetentionRuleDescr>();
+  rule->type = ruleid;
+  rule->value = value;
+
+  retention->rules.push_back(rule);
 
 }
 
@@ -1496,6 +1523,7 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
   }
 
   attrsRetention.push_back(SQL_RETENTION_NAME_ATTNO);
+  attrsRetention.push_back(SQL_RETENTION_CREATED_ATTNO);
 
   attrsRules.push_back(SQL_RETENTION_RULES_ID_ATTNO);
   attrsRules.push_back(SQL_RETENTION_RULES_TYPE_ATTNO);
@@ -1503,7 +1531,11 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
 
   insert << "INSERT INTO retention("
          << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attrsRetention)
-         << "name, created) VALUES(?1, datetime('now'))";
+         << ") VALUES(?1, datetime('now'))";
+
+#ifdef __DEBUG__
+  cerr << "executing SQL: " << insert.str() << endl;
+#endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
                           insert.str().c_str(),
@@ -1550,6 +1582,8 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
    * for the retention rule dataset.
    */
   sqlite3_finalize(stmt);
+  insert.str("");
+  insert.clear(); /* resets error flags, but normally we don't need to care here ... */
 
   /*
    * Prepare the INSERT operation for retention rules.
@@ -1566,6 +1600,10 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
   }
 
   insert << ");";
+
+#ifdef __DEBUG__
+  cerr << "executing SQL: " << insert.str() << endl;
+#endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
                           insert.str().c_str(),
@@ -1586,6 +1624,7 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
    */
   for (auto &rule : retentionPolicy->rules) {
 
+    rule->id = retentionPolicy->id;
     this->SQLbindRetentionRuleAttributes(rule,
                                          attrsRules,
                                          stmt,
@@ -2449,7 +2488,7 @@ int BackupCatalog::SQLbindBackupTablespaceAttributes(std::shared_ptr<BackupTable
     /*
      * Stop, if result has reached end of range.
      */
-    if (result < range.end())
+    if (result > range.end())
       break;
 
     switch(colId) {
@@ -2725,7 +2764,7 @@ int BackupCatalog::SQLbindRetentionRuleAttributes(shared_ptr<RetentionRuleDescr>
 
   for (auto &colId : affectedAttributes) {
 
-    if (result < range.end())
+    if (result > range.end())
       break;
 
     switch(colId) {
@@ -4209,7 +4248,7 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
   sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
   rc = sqlite3_step(stmt);
 
-  /* Only one or now row expected here */
+  /* Only one or no rows expected here */
 
   if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
     ostringstream oss;
@@ -4222,12 +4261,14 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
   }
 
   /*
-   * Fetch policy properties into the new descriptor.
+   * Fetch policy properties into the new descriptor, if any.
    */
-  retentionPolicy->setAffectedAttributes(attrsRetention);
-  retentionPolicy = this->fetchRetentionPolicy(stmt,
-                                               retentionPolicy,
-                                               Range(0, attrsRetention.size() - 1));
+  if (rc == SQLITE_ROW) {
+    retentionPolicy->setAffectedAttributes(attrsRetention);
+    retentionPolicy = this->fetchRetentionPolicy(stmt,
+                                                 retentionPolicy,
+                                                 Range(0, attrsRetention.size() - 1));
+  }
 
   /*
    * Now loop over all current rows, retrieving information

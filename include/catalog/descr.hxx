@@ -549,6 +549,13 @@ namespace credativ {
                             std::string const& value);
 
     /**
+     * Returns an shared_ptr to the internal retention policy
+     * structure, if allocated. Will return a nullptr if
+     * makeRetentionDescr() wasn't called before.
+     */
+    std::shared_ptr<RetentionDescr> getRetentionPolicyP();
+
+    /**
      * Returns the PIN/UNPIN operation type assigned
      * to this catalog descriptor. If not initialized,
      * ACTION_UNDEFINED is returned.
@@ -722,6 +729,14 @@ namespace credativ {
   public:
     int id = -1;
     std::string name = "";
+
+    /*
+     * Creation date of this retention policy. Please note
+     * that this property isn't always initialized, especially
+     * if you want to reuse it after having called BackupCatalog::createRetentionPolicy(),
+     * which returns the handle after storing the descriptor properties
+     * in the backup catalog. Though id is fully initialized afterwards!
+     */
     std::string created;
 
     /**
@@ -744,14 +759,40 @@ namespace credativ {
   };
 
   /**
+   * Define WAL cleanup modes.
+   */
+  typedef enum {
+
+    WAL_CLEANUP_RANGE,
+    WAL_CLEANUP_OFFSET,
+    NO_WAL_TO_DELETE
+
+  } WALCleanupMode;
+
+  /**
+   * Cleanup basebackup list mode.
+   *
+   * Can be either BACKUP_KEEP or BACKUP_DELETE
+   */
+  typedef enum {
+
+    BASEBACKUP_KEEP,
+    BASEBACKUP_DELETE
+
+  } BasebackupCleanupMode;
+
+  /**
    * A BackupCleanupDescr descriptor instance describes
    * which basebackups and WAL segment ranges can be evicted
    * from the archive. It carries a list of basebackup descriptors
-   * which is identifying the basebackups to delete.
+   * which is identifying the basebackups to delete or to keep.
    *
    * The newest basebackup is the first in the vector, the older one
-   * is the last. The cleanup descriptor also maintains a XLogRecPtr, which
-   * identifies the starting location of WAL segments which are
+   * is the last. The cleanup descriptor also maintains a XLogRecPtr
+   * offset or range, depending on the deletion mode specified in
+   * the property mode.
+   *
+   * This identifies the starting (or ending) location of WAL segments which are
    * safe to delete from the archive. Please note that this XLogRecPtr doesn't
    * necessarily belong to the list of basebackups currently elected
    * for eviction from the archive, but might have been influenced
@@ -762,7 +803,12 @@ namespace credativ {
   public:
 
     std::vector<std::shared_ptr<BaseBackupDescr>> basebackups;
-    XLogRecPtr wal_cleanup_position;
+    BasebackupCleanupMode basebackupMode = BASEBACKUP_KEEP;
+
+    XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
+    XLogRecPtr wal_cleanup_end_pos = InvalidXLogRecPtr;
+
+    WALCleanupMode mode = NO_WAL_TO_DELETE;
 
   };
 }

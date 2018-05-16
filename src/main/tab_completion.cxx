@@ -128,9 +128,30 @@ completion_word create_bck_prof_ident_completion[] = { { "<identifier>", COMPL_I
 completion_word create_backup_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, create_bck_prof_ident_completion },
                                                        { "", COMPL_EOL, NULL } };
 
+completion_word retention_regex_compl[] = { { "<regular expression>", COMPL_IDENTIFIER, NULL },
+                                            { "", COMPL_EOL, NULL } };
+
+completion_word retention_with_compl[] = { { "LABEL", COMPL_KEYWORD, retention_regex_compl },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word retention_rule_compl[] = { { "WITH", COMPL_KEYWORD, retention_with_compl },
+                                           { "+<number of basebackups>", COMPL_IDENTIFIER, NULL },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word create_retention_rule_compl[] = { { "KEEP", COMPL_KEYWORD, retention_rule_compl },
+                                                  { "DROP", COMPL_KEYWORD, retention_rule_compl },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word create_retention_ident[] = { { "<identifier>", COMPL_IDENTIFIER, create_retention_rule_compl },
+                                             { "", COMPL_EOL, NULL } };
+
+completion_word create_retention_completion[] = { { "POLICY", COMPL_KEYWORD, create_retention_ident },
+                                                  { "", COMPL_EOL, NULL } };
+
 completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
                                         { "STREAMING", COMPL_KEYWORD, create_connection_completion },
                                         { "BACKUP", COMPL_KEYWORD, create_backup_profile_completion },
+                                        { "RETENTION", COMPL_KEYWORD, create_retention_completion },
                                         { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_archive_ident_completion },

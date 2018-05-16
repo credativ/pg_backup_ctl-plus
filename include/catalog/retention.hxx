@@ -14,6 +14,12 @@ namespace credativ {
   protected:
 
     /**
+     * Internal cleanup descriptor. Initialized by calling
+     * apply(), can be resetted by calling reset().
+     */
+    std::shared_ptr<BackupCleanupDescr> cleanupDescr = nullptr;
+
+    /**
      * Internal rule action specifier. Determines wether
      * we are instructed to keep or drop the basebackups meeting
      * the label regular expression.
@@ -37,6 +43,18 @@ namespace credativ {
      */
     virtual std::string asString() = 0;
 
+    /**
+     * Specified basebackup descriptor is marked
+     * for being kept.
+     *
+     * This moves the specified shared pointer at position index
+     * from the dropList into the keepList.
+     */
+    virtual void keep(std::vector<std::shared_ptr<BaseBackupDescr>> &keepList,
+                      std::vector<std::shared_ptr<BaseBackupDescr>> &dropList,
+                      std::shared_ptr<BaseBackupDescr> bbdescr,
+                      unsigned int index);
+
   public:
 
     Retention();
@@ -45,15 +63,37 @@ namespace credativ {
     virtual ~Retention();
 
     /**
+     * Resets internal retention state information. Is a no-op,
+     * if apply() wasn't called before.
+     */
+    virtual void reset();
+
+    /**
      * Assign catalog handle.
      */
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
+
+    /**
+     * Assign archive catalog descriptor.
+     */
+    virtual void setArchiveCatalogDescr(std::shared_ptr<CatalogDescr> archiveDescr);
+
+    /**
+     * Returns the currently associated catalog archive handle.
+     */
+    std::shared_ptr<CatalogDescr> getArchiveCatalogDescr();
+
+    /**
+     * Returns the currently associated backup catalog database handle.
+     */
+    std::shared_ptr<BackupCatalog> getBackupCatalog();
 
     /**
      * Factory method, returns a Retention object instances, implementing
      * the specific retention method to apply.
      */
     static std::vector<std::shared_ptr<Retention>> get(string retention_name,
+                                                       std::shared_ptr<CatalogDescr> archiveDescr,
                                                        std::shared_ptr<BackupCatalog> catalog);
 
     /**
@@ -112,8 +152,10 @@ namespace credativ {
   public:
 
     LabelRetention();
-    LabelRetention(const LabelRetention &src);
-    LabelRetention(std::string regex_str);
+    LabelRetention(LabelRetention &src);
+    LabelRetention(std::string regex_str,
+                   std::shared_ptr<CatalogDescr> archiveDescr,
+                   std::shared_ptr<BackupCatalog> catalog);
     virtual ~LabelRetention();
 
     /**

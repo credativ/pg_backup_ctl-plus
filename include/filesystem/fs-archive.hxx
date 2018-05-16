@@ -513,6 +513,26 @@ namespace credativ {
                                                   unsigned long long xlogsegsize,
                                                   WALSegmentFileStatus status);
 
+    /**
+     * Examine the archive log directory according to the cleanupDescr and
+     * the basebackups found within. Returns a XLogRecPtr describing the
+     * starting position of XLOG segments that can be deleted.
+     *
+     * The specified cleanupDescr should be initialized by a descendant of
+     * the Retention class, holding a list of basebackups which should be kept.
+     * identifyDeletionPoints() examines this list for XLogRecPtr which can
+     * be used for offset or range of WAL segment files which can be deleted.
+     * The identified XLogRecPtr offset or range is stored within the cleanupDescr.
+     *
+     * If no XLogRecPtr offset or range can be identified, the cleanupDescr mode will
+     * be set to NO_WAL_TO_DELETE.
+     *
+     * If cleanupDescr wasn't initialized with BASEBACKUP_KEEP, an CArchiveIssue
+     * will be thrown.
+     *
+     * For further information, see also the comments in src/catalog/retention.cxx.
+     */
+    virtual void identifyDeletionPoints(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
   };
 
   /*

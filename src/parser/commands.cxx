@@ -72,6 +72,8 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->setAffectedAttributes(source.getAffectedAttributes());
   this->coninfo->setAffectedAttributes(source.coninfo->getAffectedAttributes());
 
+  /* Copy retention policy */
+  this->retention = source.getRetentionPolicyP();
 }
 
 void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
@@ -2285,6 +2287,14 @@ void CreateRetentionPolicyCommand::execute(bool flag) {
      * Okay, policy seems to be new, go forward and try
      * to create it.
      */
+#ifdef __DEBUG__
+    cerr << "creating retention rule with identifier " << this->retention->name << endl;
+#endif
+
+    this->catalog->createRetentionPolicy(this->retention);
+
+    /* and we're done ... */
+    this->catalog->commitTransaction();
 
   } catch(CPGBackupCtlFailure &e) {
 

@@ -394,7 +394,8 @@ namespace credativ {
 
         retention_drop_action =
           no_case[ lexeme[ lit("DROP") ] ]
-          >> ( retention_rule_with_label );
+          >> ( retention_rule_with_label
+               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_DROP_WITH_LABEL, ::_1) ]);
 
         retention_rule_with_label =
           no_case[ lexeme[ lit("WITH") ] ]
@@ -961,6 +962,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
   case PIN_BASEBACKUP:
   case UNPIN_BASEBACKUP:
     result = make_shared<PinCatalogCommand>(this->catalogDescr);
+    break;
+
+  case CREATE_RETENTION_POLICY:
+    result = make_shared<CreateRetentionPolicyCommand>(this->catalogDescr);
     break;
 
   default:
