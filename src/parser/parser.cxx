@@ -111,6 +111,7 @@ namespace credativ {
                                        | cmd_list_backup
                                        | cmd_list_connection
                                        | cmd_list_backup_list
+                                       | cmd_list_retention
                                        )
                            )
 
@@ -312,6 +313,18 @@ namespace credativ {
         cmd_stop_command = no_case[lexeme[ lit("STOP") ]];
 
         verify_check_connection = no_case[lexeme[ lit("CONNECTION") ]];
+
+        /*
+         * LIST RETENTION { POLICIES | POLICY <identifier> }
+         */
+        cmd_list_retention = no_case[ lexeme[ lit("RETENTION") ]]
+          > ( ( no_case[ lexeme[ lit("POLICIES") ] ]
+                [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICIES) ] )
+              |
+              ( no_case[ lexeme[ lit("POLICY") ] ]
+                [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICY) ]
+                > identifier
+                [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] ) );
 
         /*
          * LIST CONNECTION FOR ARCHIVE <archive name > command
@@ -640,6 +653,7 @@ namespace credativ {
         cmd_list_backup.name("LIST BASEBACKUPS");
         cmd_list_backup_list.name("LIST BACKUPS");
         cmd_list_connection.name("LIST CONNECTION");
+        cmd_list_retention.name("LIST RETENTION");
         retention_keep_action.name("KEEP");
         retention_drop_action.name("DROP");
         identifier.name("object identifier");
@@ -687,6 +701,7 @@ namespace credativ {
                           cmd_list_connection,
                           cmd_create_backup_profile,
                           cmd_list_backup,
+                          cmd_list_retention,
                           cmd_pin_basebackup,
                           cmd_unpin_basebackup,
                           cmd_list_backup_list,
