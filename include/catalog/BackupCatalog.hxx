@@ -475,6 +475,12 @@ namespace credativ {
                                       std::vector<int> attributesRules);
 
     /**
+     * Drops the specified retention policy and associated rules
+     * from the backup catalog.
+     */
+    virtual void dropRetentionPolicy(std::string retention_name);
+
+    /**
      * Creates a new retention policy described
      * by the specified RetentionDescr.
      */

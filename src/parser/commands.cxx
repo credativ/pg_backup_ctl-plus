@@ -2221,6 +2221,79 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
 }
 
+DropRetentionPolicyCommand::DropRetentionPolicyCommand() {}
+
+DropRetentionPolicyCommand::DropRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+DropRetentionPolicyCommand::DropRetentionPolicyCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->tag = DROP_RETENTION_POLICY;
+  this->catalog = catalog;
+
+}
+
+DropRetentionPolicyCommand::~DropRetentionPolicyCommand() {}
+
+void DropRetentionPolicyCommand::execute(bool flag) {
+
+  bool have_tx = false;
+
+  /*
+   * Check catalog.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute command: no catalog");
+  }
+
+  try {
+
+    shared_ptr<RetentionDescr> retention = nullptr;
+
+    this->catalog->startTransaction();
+    have_tx = true;
+
+    retention = this->catalog->getRetentionPolicy(this->archive_name);
+
+    if (retention != nullptr && retention->id >= 0) {
+
+      /* delete the retention policy */
+      this->catalog->dropRetentionPolicy(retention->name);
+    } else {
+
+      ostringstream oss;
+
+      oss << "retention policy \""
+          << this->archive_name
+          << "\" does not exist";
+
+      /*
+       * Throw a CArchiveIssue, telling that the retention
+       * policy wasn't found in the catalog. We don't
+       * handle the transaction here, since we catch this
+       * in the outer exception handler and re-throw there.
+       */
+      throw CArchiveIssue(oss.str());
+
+    }
+
+    this->catalog->commitTransaction();
+    have_tx = false;
+
+  } catch (CPGBackupCtlFailure &e) {
+
+    if (have_tx) {
+      this->catalog->rollbackTransaction();
+      have_tx = false;
+    }
+
+    throw e;
+  }
+}
+
 ListRetentionPoliciesCommand::ListRetentionPoliciesCommand() {
 
   this->tag = LIST_RETENTION_POLICIES;
@@ -2258,10 +2331,6 @@ void ListRetentionPoliciesCommand::execute(bool flag) {
     vector<shared_ptr<RetentionDescr>> retentionList;
     vector<int> attrsRetention;
     vector<int> attrsRules;
-
-    if (this->archive_name.length() < 1) {
-      throw CArchiveIssue("got empty identifier for retention policy");
-    }
 
     /*
      * Start a database transaction. Though we're just reading,
@@ -2303,6 +2372,30 @@ void ListRetentionPoliciesCommand::execute(bool flag) {
     /*
      * Print out details.
      */
+    cout << CPGBackupCtlBase::makeHeader("List of retention policies",
+                                         boost::format("%-10s\t%-30s\t%-25s") % "ID" % "NAME" % "CREATED",
+                                         80);
+
+    for (auto retention : retentionList) {
+
+      cout << boost::format("%-10s\t%-30s\t%-25s")
+        % retention->id % retention->name % retention->created << endl;
+
+      if (retention->rules.size() > 0) {
+        cout << boost::format("%-80s") % "RULE(s):"
+             << endl;
+      }
+
+      for (auto rule : retention->rules) {
+
+        shared_ptr<Retention> instance = Retention::get(rule);
+
+        cout << CPGBackupCtlBase::makeLine(boost::format("%-10s\t%-70s")
+                                           % " - " % instance->asString());
+        cout << CPGBackupCtlBase::makeLine(80) << endl;
+
+      }
+    }
 
   } catch (CPGBackupCtlFailure &e) {
     if (have_tx) {

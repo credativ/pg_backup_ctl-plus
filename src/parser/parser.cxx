@@ -142,7 +142,10 @@ namespace credativ {
                                        /*
                                         * DROP STREAMING CONNECTION
                                         */
-                                       | cmd_drop_connection)
+                                       | cmd_drop_connection
+
+                                       /* DROP RETENTION POLICY */
+                                       | cmd_drop_retention )
                            )
 
                         /*
@@ -476,6 +479,15 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
 
         /*
+         * DROP RETENTION POLICY <identifier>
+         */
+        cmd_drop_retention = no_case[ lexeme[ lit("RETENTION") ] ]
+          > no_case[ lexeme[ lit("POLICY") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_RETENTION_POLICY) ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+
+        /*
          * DROP STREAMING CONNECTION FROM ARCHIVE <archive name>
          */
         cmd_drop_connection = no_case[ lexeme[ lit("STREAMING") ]]
@@ -646,6 +658,7 @@ namespace credativ {
         cmd_drop_archive.name("DROP ARCHIVE");
         cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
         cmd_drop_connection.name("DROP STREAMING CONNECTION");
+        cmd_drop_retention.name("DROP RETENTION POLICY");
         cmd_alter_archive.name("ALTER ARCHIVE");
         cmd_alter_archive_opt.name("ALTER ARCHIVE options");
         cmd_start_basebackup.name("START BASEBACKUP");
@@ -706,6 +719,7 @@ namespace credativ {
                           cmd_unpin_basebackup,
                           cmd_list_backup_list,
                           cmd_drop_backup_profile,
+                          cmd_drop_retention,
                           cmd_alter_backup_profile,
                           cmd_create_connection,
                           cmd_create_retention,
@@ -981,6 +995,14 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case CREATE_RETENTION_POLICY:
     result = make_shared<CreateRetentionPolicyCommand>(this->catalogDescr);
+    break;
+
+  case LIST_RETENTION_POLICIES:
+    result = make_shared<ListRetentionPoliciesCommand>(this->catalogDescr);
+    break;
+
+  case DROP_RETENTION_POLICY:
+    result = make_shared<DropRetentionPolicyCommand>(this->catalogDescr);
     break;
 
   default:

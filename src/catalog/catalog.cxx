@@ -443,6 +443,12 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "UNPIN";
   case CREATE_RETENTION_POLICY:
     return "CREATE RETENTION POLICY";
+  case LIST_RETENTION_POLICIES:
+    return "LIST RETENTION POLICIES";
+  case LIST_RETENTION_POLICY:
+    return "LIST RETENTION POLICY";
+  case DROP_RETENTION_POLICY:
+    return "DROP RETENTION POLICY";
 
   default:
     return "UNKNOWN";
@@ -1490,6 +1496,67 @@ std::shared_ptr<StatCatalogArchive> BackupCatalog::statCatalog(std::string archi
   sqlite3_finalize(stmt);
 
   return result;
+}
+
+void BackupCatalog::dropRetentionPolicy(string retention_name) {
+
+  sqlite3_stmt *stmt = NULL;
+  ostringstream delete_sql;
+  int rc;
+
+  /*
+   * Database available ?
+   */
+  if (!this->available()) {
+    throw CArchiveIssue("catalog database not opened");
+  }
+
+  if (retention_name.length() < 1) {
+    throw CArchiveIssue("cannot drop retention policy with empty identifier");
+  }
+
+  /*
+   * Compose SQL string for deletion...
+   */
+  delete_sql << "DELETE FROM retention WHERE name = ?1;";
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          delete_sql.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "cannot prepare query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind retention name
+   */
+  sqlite3_bind_text(stmt, 1, retention_name.c_str(), -1, SQLITE_STATIC);
+
+  /*
+   * Execute the DELETE ...
+   */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+
+    ostringstream oss;
+
+    oss << "error dropping retention policy \""
+        << retention_name
+        << "\": "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  sqlite3_finalize(stmt);
 }
 
 void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retentionPolicy) {
@@ -4235,8 +4302,8 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
       << "SELECT "
       << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRetention, "r")
       << ", "
-      << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRules, "rr")
-      << "FROM retention r JOIN retention_rules rr ON r.id = rr.id "
+      << this->affectedColumnsToString(SQL_RETENTION_RULES_ENTITY, attributesRules, "rr")
+      << " FROM retention r JOIN retention_rules rr ON r.id = rr.id "
       << "ORDER BY r.name ASC;";
 
   } else {
@@ -4244,9 +4311,13 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
     get_retention_sql
       << "SELECT "
       << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attributesRetention, "r")
-      << "FROM retention r ORDER BY r.name ASC";
+      << " FROM retention r ORDER BY r.name ASC";
 
   }
+
+#ifdef __DEBUG__
+  cout << "executing SQL: " << get_retention_sql.str() << endl;
+#endif
 
   /*
    * Prepare the query.
@@ -4358,7 +4429,7 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
     }
 
     /* next one */
-    sqlite3_step(stmt);
+    rc = sqlite3_step(stmt);
 
     if (rc == SQLITE_ERROR) {
       ostringstream oss;

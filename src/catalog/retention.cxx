@@ -30,6 +30,12 @@ Retention::Retention() {
 
 }
 
+Retention::Retention(shared_ptr<RetentionRuleDescr> rule) {
+
+  this->ruleType = rule->type;
+
+}
+
 void Retention::setArchiveCatalogDescr(std::shared_ptr<CatalogDescr> archiveDescr) {
 
   if (archiveDescr->id < 0)
@@ -78,6 +84,54 @@ void Retention::reset() {
 
 }
 
+shared_ptr<Retention> Retention::get(shared_ptr<RetentionRuleDescr> ruleDescr) {
+
+  shared_ptr<Retention> result = nullptr;
+
+  /*
+   * Some sanity checks ...
+   */
+  if (ruleDescr == nullptr) {
+    throw CCatalogIssue("invalid retention rule descriptor in factory method");
+  }
+
+  if (ruleDescr->id < 0) {
+    throw CCatalogIssue("retention rule must be fully initialized");
+  }
+
+  switch (ruleDescr->type) {
+
+  case RETENTION_KEEP_WITH_LABEL:
+  case RETENTION_DROP_WITH_LABEL:
+    {
+      result = make_shared<LabelRetention>(ruleDescr);
+      break;
+    }
+
+
+    /* fall through, since the following are not implemented yet */
+  case RETENTION_KEEP_NUM:
+  case RETENTION_DROP_NUM:
+
+  case RETENTION_KEEP_BY_DATETIME:
+  case RETENTION_DROP_BY_DATETIME:
+    throw CCatalogIssue("retention policy not implemented yet");
+
+  default:
+    {
+      ostringstream oss;
+
+      oss << "unsupported retention rule type: " << ruleDescr->type;
+      throw CCatalogIssue(oss.str());
+    }
+
+    break; /* not reached */
+
+  }
+
+  return result;
+}
+
 std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
                                                        std::shared_ptr<CatalogDescr> archiveDescr,
                                                        std::shared_ptr<BackupCatalog> catalog) {
@@ -123,6 +177,7 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
         switch(ruleDescr->type) {
 
         case RETENTION_KEEP_WITH_LABEL:
+        case RETENTION_DROP_WITH_LABEL:
           {
             shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value,
                                                                              archiveDescr,
@@ -130,7 +185,7 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
             result.push_back(retentionPtr);
             break;
           }
-        case RETENTION_DROP_WITH_LABEL:
+
         case RETENTION_KEEP_NUM:
         case RETENTION_DROP_NUM:
         case RETENTION_KEEP_BY_DATETIME:
@@ -189,6 +244,17 @@ LabelRetention::LabelRetention(LabelRetention &src) {
   catalog = src.getBackupCatalog();
   archiveDescr = src.getArchiveCatalogDescr();
   label_filter = src.getRegularExpr();
+
+}
+
+LabelRetention::LabelRetention(std::shared_ptr<RetentionRuleDescr> descr)
+  : Retention(descr) {
+
+  if ( (descr->type != RETENTION_KEEP_WITH_LABEL)
+       && (descr->type != RETENTION_DROP_WITH_LABEL) )
+    throw ("label retention rule can only be created with KEEP or DROP WITH LABEL");
+
+  this->setRegularExpr(descr->value);
 
 }
 

@@ -38,12 +38,6 @@ namespace credativ {
     std::shared_ptr<CatalogDescr> archiveDescr = nullptr;
 
     /**
-     * asString() implements the string represention
-     * of a Retention instance.
-     */
-    virtual std::string asString() = 0;
-
-    /**
      * Specified basebackup descriptor is marked
      * for being kept.
      *
@@ -60,6 +54,7 @@ namespace credativ {
     Retention();
     Retention(std::shared_ptr<CatalogDescr> archiveDescr,
               std::shared_ptr<BackupCatalog> catalog);
+    Retention(std::shared_ptr<RetentionRuleDescr> rule);
     virtual ~Retention();
 
     /**
@@ -89,12 +84,23 @@ namespace credativ {
     std::shared_ptr<BackupCatalog> getBackupCatalog();
 
     /**
-     * Factory method, returns a Retention object instances, implementing
+     * Factory method, returns a Retention object instances identified
+     * by retention_name from the catalog, implementing
      * the specific retention method to apply.
      */
     static std::vector<std::shared_ptr<Retention>> get(string retention_name,
                                                        std::shared_ptr<CatalogDescr> archiveDescr,
                                                        std::shared_ptr<BackupCatalog> catalog);
+
+    /**
+     * Factory method, returns a specific retention object instance
+     * constructed according the RetentionRuleDescr specified.
+     *
+     * This factory method is primarily useful for temporary, non-executable
+     * instance of retention policies which aren't intended to be applied
+     * yet.
+     */
+    static std::shared_ptr<Retention> get(std::shared_ptr<RetentionRuleDescr> ruleDescr);
 
     /**
      * Applies a retention policy on the given list of
@@ -108,6 +114,12 @@ namespace credativ {
      * for each specific retention policy instance.
      */
     virtual std::string operator=(Retention &src);
+
+    /**
+     * asString() implements the string represention
+     * of a Retention instance.
+     */
+    virtual std::string asString() = 0;
 
     /**
      * Set the retention rule type id supported by a Retention
@@ -142,21 +154,22 @@ namespace credativ {
      */
     boost::regex label_filter;
 
+  public:
+
+    LabelRetention();
+    LabelRetention(LabelRetention &src);
+    LabelRetention(std::shared_ptr<RetentionRuleDescr> descr);
+    LabelRetention(std::string regex_str,
+                   std::shared_ptr<CatalogDescr> archiveDescr,
+                   std::shared_ptr<BackupCatalog> catalog);
+    virtual ~LabelRetention();
+
     /**
      * Implementation of the string representation routine
      * of a LabelRetention instance. Returns the label retention
      * rule hold by a LabelRetention instance as string.
      */
     virtual std::string asString();
-
-  public:
-
-    LabelRetention();
-    LabelRetention(LabelRetention &src);
-    LabelRetention(std::string regex_str,
-                   std::shared_ptr<CatalogDescr> archiveDescr,
-                   std::shared_ptr<BackupCatalog> catalog);
-    virtual ~LabelRetention();
 
     /**
      * Applies a retention policy on the given list of
@@ -289,13 +302,6 @@ namespace credativ {
      */
     unsigned int action_NewestOrOldest(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
 
-  protected:
-
-    /**
-     * Returns the string representation of a PIN/UNPIN action.
-     */
-    virtual string asString();
-
   public:
 
     /*
@@ -310,6 +316,11 @@ namespace credativ {
                  std::shared_ptr<CatalogDescr> archiveDescr,
                  std::shared_ptr<BackupCatalog> catalog);
     virtual ~PinRetention();
+
+    /**
+     * Returns the string representation of a PIN/UNPIN action.
+     */
+    virtual string asString();
 
     /**
      * Apply the pin/unpin retention to the list

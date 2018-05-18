@@ -164,10 +164,14 @@ completion_word list_backup_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD,
 completion_word list_backup_list_completion[] = { { "IN", COMPL_KEYWORD, list_backup_archive_completion },
                                                   { "", COMPL_EOL, NULL } };
 
+completion_word list_retention_completion[] = { { "POLICIES", COMPL_KEYWORD, NULL },
+                                                { "", COMPL_EOL, NULL } };
+
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "BACKUP", COMPL_KEYWORD, list_backup_completion },
                                       { "BASEBACKUPS", COMPL_KEYWORD, list_backup_list_completion },
                                       { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion },
+                                      { "RETENTION", COMPL_KEYWORD, list_retention_completion },
                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
