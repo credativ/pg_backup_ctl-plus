@@ -45,6 +45,11 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Modules" "${CMAKE_MODULE_PATH
 set(CMAKE_MACOSX_RPATH 1)
 
 ##
+## Don't use RPATH set to build path
+##
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
+##
 ## Version string
 ##
 set (PG_BACKUP_CTL_MAJOR 0)
@@ -268,7 +273,7 @@ include (CPack)
 include(GNUInstallDirs)
 install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES build/libpgbckctl-common.so DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES src/sql/catalog.sql DESTINATION ${DATAROOTDIR}/pg_backup_ctl-plus)
+install(FILES src/sql/catalog.sql DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pg_backup_ctl-plus)
 
 ##
 ## Get current git revision.
