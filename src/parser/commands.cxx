@@ -15,6 +15,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->tag = source.tag;
   this->id  = source.id;
   this->archive_name = source.archive_name;
+  this->retention_name = source.retention_name;
   this->label        = source.label;
   this->compression  = source.compression;
   this->directory    = source.directory;
@@ -2408,6 +2409,57 @@ void ListRetentionPoliciesCommand::execute(bool flag) {
     /* don't hide original exception from caller */
     throw e;
   }
+}
+
+ApplyRetentionPolicyCommand::ApplyRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ApplyRetentionPolicyCommand::ApplyRetentionPolicyCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->tag = APPLY_RETENTION_POLICY;
+  this->catalog = catalog;
+
+}
+
+ApplyRetentionPolicyCommand::ApplyRetentionPolicyCommand() {
+
+  this->tag = APPLY_RETENTION_POLICY;
+
+}
+
+ApplyRetentionPolicyCommand::~ApplyRetentionPolicyCommand() {}
+
+void ApplyRetentionPolicyCommand::execute(bool flag) {
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute command: no catalog");
+  }
+
+  /*
+   * Empty retention identifier doesn't make sense here.
+   */
+  if (this->retention_name.length() == 0) {
+    throw CArchiveIssue("empty retention name not allowed here");
+  }
+
+  try {
+
+    this->catalog->startTransaction();
+
+    this->catalog->commitTransaction();
+
+  } catch(CPGBackupCtlFailure &e) {
+
+    this->catalog->rollbackTransaction();
+
+    /* re-throw error */
+    throw e;
+
+  }
+
 }
 
 CreateRetentionPolicyCommand::CreateRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {

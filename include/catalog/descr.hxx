@@ -55,7 +55,8 @@ namespace credativ {
     CREATE_RETENTION_POLICY,
     LIST_RETENTION_POLICIES,
     LIST_RETENTION_POLICY,
-    DROP_RETENTION_POLICY
+    DROP_RETENTION_POLICY,
+    APPLY_RETENTION_POLICY
   } CatalogTag;
 
   /*
@@ -473,6 +474,7 @@ namespace credativ {
     CatalogTag tag;
     int id = -1;
     std::string archive_name = "";
+    std::string retention_name = "";
     std::string label;
     bool compression = false;
     std::string directory;
@@ -581,6 +583,8 @@ namespace credativ {
     void setCommandTag(credativ::CatalogTag const& tag);
 
     void setIdent(std::string const& ident);
+
+    void setRetentionName(std::string const &ident);
 
     void setHostname(std::string const& hostname);
 

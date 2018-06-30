@@ -80,6 +80,11 @@ namespace credativ {
          * Parser rule definitions
          */
         start %= eps > (
+                        /* APPLY syntax */
+                        (
+                         cmd_apply
+                         )
+                        |
                         /* SHOW syntax */
                         (
                          cmd_show
@@ -280,6 +285,25 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ]
           ^ no_case[lexeme[ lit("NODETACH") ]]
           [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ];
+
+        /*
+         * APPLY command
+         */
+        cmd_apply = no_case[lexeme[ lit("APPLY") ] ]
+          > cmd_apply_retention;
+
+        /*
+         * APPLY RETENTION POLICY <identifier> TO ARCHIVE <identifier>
+         */
+        cmd_apply_retention = no_case[ lexeme[ lit("RETENTION") ]]
+          > no_case[ lexeme[ lit("POLICY") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, APPLY_RETENTION_POLICY) ]
+          > identifier
+          [ boost::bind(&CatalogDescr::setRetentionName, &cmd, ::_1) ]
+          > no_case[ lexeme[ lit("TO") ]]
+          > no_case[ lexeme[ lit("ARCHIVE") ]]
+          > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         cmd_show = no_case[lexeme[ lit("SHOW") ]]
           > show_command_type;
@@ -640,6 +664,8 @@ namespace credativ {
                        );
 
         start.name("command");
+        cmd_apply.name("APPLY");
+        cmd_apply_retention.name("RETENTION POLICY");
         cmd_create.name("CREATE");
         cmd_drop.name("DROP");
         cmd_list.name("LIST");
@@ -724,6 +750,8 @@ namespace credativ {
                           cmd_create_connection,
                           cmd_create_retention,
                           cmd_show,
+                          cmd_apply,
+                          cmd_apply_retention,
                           verify_check_connection,
                           show_command_type,
                           profile_noverify_checksums_option,
@@ -1003,6 +1031,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case DROP_RETENTION_POLICY:
     result = make_shared<DropRetentionPolicyCommand>(this->catalogDescr);
+    break;
+
+  case APPLY_RETENTION_POLICY:
+    result = make_shared<ApplyRetentionPolicyCommand>(this->catalogDescr);
     break;
 
   default:

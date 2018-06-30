@@ -285,6 +285,24 @@ completion_word pin_completion[] = { { "+", COMPL_KEYWORD, pin_completion_in },
                                      { "<BASEBACKUP ID>", COMPL_KEYWORD, pin_completion_in },
                                      { "", COMPL_EOL, NULL } };
 
+completion_word apply_retention_archive_name[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                                   { "", COMPL_EOL, NULL } };
+
+completion_word apply_retention_archive[] = { { "ARCHIVE", COMPL_KEYWORD, apply_retention_archive_name } ,
+                                              { "", COMPL_EOL, NULL } };
+
+completion_word apply_retention_to_archive[] = { { "TO", COMPL_KEYWORD, apply_retention_archive },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word apply_retention_name[] = { { "<identifier>", COMPL_IDENTIFIER, apply_retention_to_archive },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word apply_retention_completion[] = { { "POLICY", COMPL_KEYWORD, apply_retention_name },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word apply_completion[] = { { "RETENTION", COMPL_KEYWORD, apply_retention_completion },
+                                       { "", COMPL_EOL, NULL } };
+
 completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
                                     { "START", COMPL_KEYWORD, start_completion },
                                     { "LIST", COMPL_KEYWORD, list_completion },
@@ -295,6 +313,7 @@ completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion
                                     { "STOP", COMPL_KEYWORD, stop_completion },
                                     { "PIN", COMPL_KEYWORD, pin_completion },
                                     { "UNPIN", COMPL_KEYWORD, unpin_completion },
+                                    { "APPLY", COMPL_KEYWORD, apply_completion },
                                     { "", COMPL_EOL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */

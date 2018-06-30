@@ -254,6 +254,7 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->tag = source.tag;
   this->id = source.id;
   this->archive_name = source.archive_name;
+  this->retention_name = source.retention_name;
   this->label = source.label;
   this->compression = source.compression;
   this->directory = source.directory;
@@ -449,6 +450,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "LIST RETENTION POLICY";
   case DROP_RETENTION_POLICY:
     return "DROP RETENTION POLICY";
+  case APPLY_RETENTION_POLICY:
+    return "APPLY RETENTION POLICY";
 
   default:
     return "UNKNOWN";
@@ -560,6 +563,11 @@ void CatalogDescr::setVerifyOption(VerifyOption const& option) {
     /* unhandled option flag here, don't treat it as an error */
     break;
   }
+}
+
+void CatalogDescr::setRetentionName(std::string const& ident) {
+  this->retention_name = ident;
+  this->pushAffectedAttribute(SQL_RETENTION_NAME_ATTNO);
 }
 
 void CatalogDescr::setIdent(std::string const& ident) {

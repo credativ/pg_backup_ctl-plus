@@ -331,8 +331,6 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
    */
   for(auto &bbdescr : deleteList) {
 
-    /*StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
-      this->archiveDescr->directory); */
     boost::smatch what;
 
     /* Increase current position counter */

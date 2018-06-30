@@ -23,6 +23,20 @@ Example::
 
   ALTER ARCHIVE pg10 SET DSN="dbname=foo hostname=localhost user=postgres";
 
+APPLY RETENTION POLICY
+======================
+
+Syntax::
+
+  APPLY RETENTION POLICY <identifier> TO ARCHIVE <identifier>
+
+``APPLY RETENTION POLICY`` applies and executes the specified rules
+contained in the retention policy to the specified archive.
+
+Example::
+
+  APPLY RETENTION POLICY dropwithlabel TO ARCHIVE pg10;
+
 CREATE ARCHIVE
 ==============
 
