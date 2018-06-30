@@ -207,6 +207,7 @@ completion_word start_streaming_for[] = { { "FOR", COMPL_KEYWORD, start_streamin
 
 completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
                                        { "STREAMING", COMPL_KEYWORD, start_streaming_for },
+                                       { "LAUNCHER", COMPL_KEYWORD, NULL },
                                        { "", COMPL_EOL, NULL } };
 
 completion_word verify_archive_options[] = { { "CONNECTION", COMPL_KEYWORD, NULL },
