@@ -270,7 +270,7 @@ PGPing PGStream::testConnection(bool no_throw) {
     conninfo << " " << "dbname=" << this->descr->coninfo->pgdatabase;
     conninfo << " " << "user=" << this->descr->coninfo->pguser;
     conninfo << " " << "port=" << this->descr->coninfo->pgport;
-    conninfo << " " << "replication=database";
+    conninfo << " " << "replication=true";
 
     result = PQping(conninfo.str().c_str());
   }
@@ -319,13 +319,13 @@ void PGStream::connect() {
     cout << "using database DSN for connection" << endl;
     conninfo << this->descr->coninfo->dsn
              << " "
-             << "replication=database";
+             << "replication=true";
   } else {
     conninfo << "host=" << this->descr->coninfo->pghost;
     conninfo << " " << "dbname=" << this->descr->coninfo->pgdatabase;
     conninfo << " " << "user=" << this->descr->coninfo->pguser;
     conninfo << " " << "port=" << this->descr->coninfo->pgport;
-    conninfo << " " << "replication=database";
+    conninfo << " " << "replication=true";
   }
 
   /*
