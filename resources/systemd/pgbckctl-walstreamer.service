@@ -1,0 +1,15 @@
+[Unit]
+Description=WAL Streamer instance for %I
+After=network.target
+After=pgbckctl-launcher
+
+[Service]
+Type=forking
+PIDFile=/var/run/pgbckctl-walstreamer/%i.pid
+ExecStart=/usr/bin/pg_backup_ctl++ --wal-streamer --archive-name=%i
+# User=postgres
+# Group=postgres
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

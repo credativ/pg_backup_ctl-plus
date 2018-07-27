@@ -24,6 +24,7 @@ Group:   Application/Databases
 BuildRequires: popt-devel readline-devel gcc-c++ ccache cmake3 make
 Requires: libpgbckctl-common
 Provides: pg_backup_ctl-plus
+Source1: pgbckctl-launcher.service
 
 %description cli
 
@@ -53,11 +54,14 @@ sqlite3 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqli
 chown postgres.postgres $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
 chmod 0600 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
 
+## install systemd units
+install -m 644 %{Source1} $RPM_BUILD_ROOT/%{_unitdir}/%{Source1}
+
 %files cli
 %defattr(-,root,root,-)
 %attr(755,root,root) %{_bindir}/pg_backup_ctl++
 %attr(644,root,root) %{_datarootdir}/pg_backup_ctl-plus/catalog.sql
-
+%attr(644,root,root) %{_unitdir}/pgbckctl-launcher.service
 
 %prep
 %setup -q

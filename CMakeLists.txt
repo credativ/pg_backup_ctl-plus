@@ -274,6 +274,7 @@ include(GNUInstallDirs)
 install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES build/libpgbckctl-common.so DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES src/sql/catalog.sql DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pg_backup_ctl-plus)
+install(FILES resources/systemd/pgbckctl-launcher.service DESTINATION /lib/systemd/system)
 
 ##
 ## Get current git revision.

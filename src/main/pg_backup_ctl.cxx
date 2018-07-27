@@ -54,12 +54,15 @@ typedef struct PGBackupCtlArgs {
   char *port;
   char *archiveDir; /* mandatory */
   char *archive_name; /* mandatory for importing/creating archives */
+  char *backup_profile; /* optional for start-streaming action */
   char *restoreDir;
   char *relocatedTblspcDir;
   char *action;
   char *actionFile; /* commands read from file */
   char *catalogDir; /* mandatory or compiled in default */
-  bool useCompression;
+  bool  useCompression;
+  int   start_launcher = 0;
+  int   start_wal_streaming = 0;
 } PGBackupCtlArgs;
 
 static void handle_signal_on_input(int sig) {
@@ -95,6 +98,11 @@ static void printActionHelp() {
     "--action supports the following commands: \n"
        << "\n"
        << "   init-old-archive: initializes an existing pg_backup_ctl archive\n"
+       << "\n"
+       << "   launcher: initializes and start a launcher instance for the specified catalog\n"
+       << "\n"
+       << "   start-streaming: start WAL streaming for the specified archive (requires --archive-name)\n"
+       << "\n"
        << "   help            : this screen\n"
        << "\n";
 }
@@ -116,6 +124,7 @@ static void processCmdLineArgs(int argc,
    * Set libpopt options.
    */
   poptOption options[] = {
+
     { "hostname", 'h', POPT_ARG_STRING,
       &handle->hostname, 0, "PostgreSQL instance hostname"},
     { "archive-directory", 'A', POPT_ARG_STRING,
@@ -128,6 +137,12 @@ static void processCmdLineArgs(int argc,
       &handle->catalogDir, 0, PG_BACKUP_CTL_SQLITE},
     { "action-file", 'F', POPT_ARG_STRING,
       &handle->actionFile, 0, "command file"},
+    { "launcher", 'L', POPT_ARG_NONE,
+      &handle->start_launcher, 0, "start background launcher and exit" },
+    { "wal-streamer", 'W', POPT_ARG_NONE,
+      &handle->start_wal_streaming, 0, "start WAL streamer on specified archive and exit (requires --archive-name)" },
+    { "backup-profile", 'P', POPT_ARG_STRING,
+      &handle->backup_profile, 0, "specifies a backup profile used by specified actions" },
 
     POPT_AUTOHELP { NULL, 0, 0, NULL, 0 }
   };
@@ -156,13 +171,54 @@ static void processCmdLineArgs(int argc,
 }
 
 /*
+ * Initialize a command handle with the given command string.
+ * The returned command is suitable to be executed immediately.
+ *
+ * The command string is an ordinary pg_backup_ctl parser command
+ * which is parsed and composed into a PGBackupCtlCommand object.
+ * Throws CPGBackupCtlFailure and derivatives.
+ *
+ */
+std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
+
+  std::shared_ptr<PGBackupCtlCommand> command = nullptr;
+
+  try {
+
+    PGBackupCtlParser parser;
+    JobSignalHandler *stopHandler;
+
+    /*
+     * Parse the command string. This will instantiate
+     * a shared_ptr with a PGBackupCtlCommand object, if valid
+     */
+    parser.parseLine(in);
+    command = parser.getCommand();
+
+    /*
+     * Assign the stop signal handler. This is the same
+     * as in handle_interactive, since we want to be able
+     * to abort long running commands.
+     */
+    stopHandler = dynamic_cast<JobSignalHandler *>(sigStop);
+    command->assignSigStopHandler(stopHandler);
+
+  } catch(std::exception &e) {
+
+    throw e;
+  }
+
+  return command;
+}
+
+
+/*
  * Entry point for interactive commands.
  */
 static void handle_interactive(std::string in,
                                PGBackupCtlArgs *args) {
   PGBackupCtlParser parser;
   shared_ptr<PGBackupCtlCommand> command;
-  JobSignalHandler *stopHandler;
 
   try {
 
@@ -173,20 +229,11 @@ static void handle_interactive(std::string in,
      */
     add_history(in.c_str());
 
-    parser.parseLine(in);
-
     /*
-     * Parser should have created a valid
-     * command handle, suitable to be executed within
-     * the current catalog.
+     * ...and parse and instantiate the command
+     * handle.
      */
-    command = parser.getCommand();
-
-    /*
-     * Initialize stop handler for command.
-     */
-    stopHandler = dynamic_cast<JobSignalHandler *>(sigStop);
-    command->assignSigStopHandler(stopHandler);
+    command = makeCommand(in);
 
     /*
      * ... and execute the command.
@@ -244,6 +291,54 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
 }
 
 static void executeCommand(PGBackupCtlArgs *args) {
+
+  if (strcmp(args->action, "start-streaming") == 0) {
+
+    /*
+     * Start a WAL streamer for the requested backup archive.
+     */
+    ostringstream cmd_str;
+    shared_ptr<PGBackupCtlCommand> command = nullptr;
+
+    /*
+     * --archive-name is mandatory here.
+     */
+    if ( (args->archive_name == NULL) ) {
+      ostringstream oss;
+      oss << "--archive-name required for command \"start-streaming\"";
+      throw CPGBackupCtlFailure(oss.str());
+    }
+
+    /*
+     * Build the START STREAMING command according to
+     * the options passed to pg_backup_ctl++
+     */
+    cmd_str << "START STREAMING FOR ARCHIVE " << args->archive_name;
+
+    /*
+     * ... and execute the command.
+     */
+    command = makeCommand(cmd_str.str());
+    command->execute(string(args->catalogDir));
+
+    exit(0);
+
+  }
+
+  if (strcmp(args->action, "launcher") == 0) {
+
+    /*
+     * Starts the pg_backup_ctl job launcher process.
+     *
+     * We use the START LAUNCHER command string here to instantiate
+     * a corresponding command handler.
+     */
+    shared_ptr<PGBackupCtlCommand> command = makeCommand("START LAUNCHER");
+    command->execute(string(args->catalogDir));
+
+    exit (0);
+
+  }
 
   if (strcmp(args->action, "init-old-archive") == 0) {
 
@@ -407,6 +502,30 @@ int main(int argc, const char **argv) {
     }
 
     /*
+     * Iff --action or --action-file is specified concurrently
+     * with --launcher, exit.
+     */
+    if ( ( (args.action != NULL) || (args.actionFile != NULL) )
+         && (args.start_launcher > 0) ) {
+      throw CArchiveIssue("--action or --action-file cannot be specified with --launcher");
+    }
+
+    /*
+     * The same with --wal-streamer
+     */
+    if ( ( (args.action != NULL) || (args.actionFile != NULL) )
+         && (args.start_wal_streaming > 0) ) {
+      throw CArchiveIssue("--action or --action-file cannot be specified with --wal-streamer");
+    }
+
+    /*
+     * ... and check for mutual exclusive options.
+     */
+    if ( ( args.start_launcher > 0 ) && ( args.start_wal_streaming > 0 ) ) {
+      throw CArchiveIssue("--launcher and --wal-streamer cannot be specified at the same time");
+    }
+
+    /*
      * All required command line arguments read, proceed ...
      * This is also the main entry point into
      * the backup machinery.
@@ -417,7 +536,8 @@ int main(int argc, const char **argv) {
      * so check them separately...
      *
      * NOTE: --action has precedence over all others.
-     *       Then --action-file and interactive command
+     *       Then --action-file and other action command line
+     *       parameters and finally interactive command
      *       line processing via readline.
      */
     if (args.action != NULL) {
@@ -429,6 +549,52 @@ int main(int argc, const char **argv) {
       int rc = handle_inputfile(&args);
       return rc;
     }
+
+    /* ***************************************************
+     * Command line action command line parameters here...
+     * ***************************************************/
+
+    if (args.start_launcher > 0) {
+
+      /*
+       * Starts the pg_backup_ctl job launcher process.
+       *
+       * We use the START LAUNCHER command string here to instantiate
+       * a corresponding command handler.
+       */
+      shared_ptr<PGBackupCtlCommand> command = makeCommand("START LAUNCHER");
+
+      command->execute(string(args.catalogDir));
+      exit (0);
+
+    }
+
+    if (args.start_wal_streaming > 0) {
+
+      shared_ptr<PGBackupCtlCommand> command = nullptr;
+      ostringstream cmd_str;
+
+      /* --archive-name is required */
+      if (args.archive_name == NULL) {
+        throw CArchiveIssue("--archive-name is mandatory with --wal-streamer");
+      }
+
+      cmd_str << "START STREAMING FOR ARCHIVE " << args.archive_name;
+
+      /*
+       * Execute the command and exit. This might throw here, but
+       * the outer exception block will handle any errors here
+       * accordingly.
+       */
+      command = makeCommand(cmd_str.str());
+      command->execute(string(args.catalogDir));
+
+      exit(0);
+    }
+
+    /* ***************************************************
+     * Command line action command line parameters ends!
+     * ***************************************************/
 
     /*
      * Before entering interactive input mode, setup the proper

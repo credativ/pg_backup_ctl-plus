@@ -1,0 +1,14 @@
+[Unit]
+Description=Launcher instance for pg_backup_ctl++ background processes
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/pg_backup_ctl++ --launcher
+User=postgres
+Group=postgres
+PIDFile=/var/run/pgbckctl-launcher/launcher.pid
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target
