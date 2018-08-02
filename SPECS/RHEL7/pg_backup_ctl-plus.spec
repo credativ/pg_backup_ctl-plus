@@ -1,6 +1,6 @@
-%define upstream_pgdg_version 10
+%define upstream_pgdg_version 11
 %define major_version 0.1
-%define patchlevel 1
+%define patchlevel 2
 
 Name: pg_backup_ctl-plus
 Version: %{major_version}
@@ -24,7 +24,6 @@ Group:   Application/Databases
 BuildRequires: popt-devel readline-devel gcc-c++ ccache cmake3 make
 Requires: libpgbckctl-common
 Provides: pg_backup_ctl-plus
-Source1: pgbckctl-launcher.service
 
 %description cli
 
@@ -54,9 +53,6 @@ sqlite3 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqli
 chown postgres.postgres $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
 chmod 0600 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
 
-## install systemd units
-install -m 644 %{Source1} $RPM_BUILD_ROOT/%{_unitdir}/%{Source1}
-
 %files cli
 %defattr(-,root,root,-)
 %attr(755,root,root) %{_bindir}/pg_backup_ctl++
@@ -75,6 +71,7 @@ CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" \
         -DPG_CONFIG=/usr/pgsql-%{upstream_pgdg_version}/bin/pg_config \
         -DCMAKE_INSTALL_PREFIX:PATH=/usr \
         -DCMAKE_SKIP_RPATH=TRUE \
+        -DSYSTEMD_SERVICE_FILE=/usr/lib/systemd/system \
         ..
 make
 

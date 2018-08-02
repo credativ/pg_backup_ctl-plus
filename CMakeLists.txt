@@ -250,7 +250,7 @@ set(CPACK_PACKAGE_VERSION_MINOR 1)
 
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An advanced PostgreSQL streaming backup tool")
 set(CPACK_PACKAGE_VENDOR "credativ GmbH")
-set(CPACKE_PACKAGE_DESCRIPTION_FILE ${CMAKE_CURRENT_SOURCE_DIR}/README)
+set(CPACK_PACKAGE_DESCRIPTION_FILE ${CMAKE_CURRENT_SOURCE_DIR}/README)
 set(CPACK_GENERATOR_TGZ)
 set(
   CPACK_SOURCE_PACKAGE_FILE_NAME
@@ -274,13 +274,27 @@ include(GNUInstallDirs)
 install(PROGRAMS build/pg_backup_ctl++ DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES build/libpgbckctl-common.so DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES src/sql/catalog.sql DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pg_backup_ctl-plus)
-install(FILES resources/systemd/pgbckctl-launcher.service DESTINATION /lib/systemd/system)
+
+##
+## If build system wants to have the systemd service
+## files installed, tell CPack accordingly.
+##
+if(DEFINED SYSTEMD_SERVICE_FILE)
+message("installing system service files in ${SYSTEMD_SERVICE_FILE}")
+install(FILES resources/systemd/pgbckctl-launcher.service DESTINATION ${SYSTEMD_SERVICE_FILE})
+endif()
 
 ##
 ## Get current git revision.
 ##
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
+message("looks like a git source tree, setting git commit hash to includes")
 execute_process(COMMAND git describe --dirty --tags --always
                 OUTPUT_VARIABLE GITREV)
+else()
+message("setting GITREV to package version ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}")
+set(GITREV "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}")
+endif()
 
 configure_file (
    "${PROJECT_SOURCE_DIR}/include/pg_backup_ctl.hxx.in"
