@@ -7,7 +7,6 @@ Type=forking
 ExecStart=/usr/bin/pg_backup_ctl++ --launcher
 User=postgres
 Group=postgres
-PIDFile=/var/run/pgbckctl-launcher/launcher.pid
 KillSignal=SIGTERM
 
 [Install]

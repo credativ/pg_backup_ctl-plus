@@ -1,6 +1,6 @@
 %define upstream_pgdg_version 11
 %define major_version 0.1
-%define patchlevel 2
+%define patchlevel 5
 
 Name: pg_backup_ctl-plus
 Version: %{major_version}
@@ -49,15 +49,26 @@ useradd -M -g postgres -o -r -d /var/lib/pgsql -s /bin/bash \
 ##
 echo "Preparing catalog database"
 install -m 0700 -o postgres -d $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus
-sqlite3 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite < $RPM_BUILD_ROOT/%{_datarootdir}/pg_backup_ctl-plus/catalog.sql
+
+## Install the SQLite database, but check if it's already existing.
+[ -e $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite ] || sqlite3 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite < $RPM_BUILD_ROOT/%{_datarootdir}/pg_backup_ctl-plus/catalog.sql
 chown postgres.postgres $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
 chmod 0600 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.sqlite
+
+%systemd_post pgbckctl-launcher
+%systemd_post pgbckctl-walstreamer@
+
+## create the temp file directories for systemd
+%tmpfiles_create
+%tmpfiles_create
 
 %files cli
 %defattr(-,root,root,-)
 %attr(755,root,root) %{_bindir}/pg_backup_ctl++
 %attr(644,root,root) %{_datarootdir}/pg_backup_ctl-plus/catalog.sql
 %attr(644,root,root) %{_unitdir}/pgbckctl-launcher.service
+%attr(644,root,root) %{_unitdir}/pgbckctl-walstreamer@.service
+%{_tmpfilesdir}/pg_backup_ctl-plus-tempfiles.conf
 
 %prep
 %setup -q

@@ -282,6 +282,8 @@ install(FILES src/sql/catalog.sql DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pg_ba
 if(DEFINED SYSTEMD_SERVICE_FILE)
 message("installing system service files in ${SYSTEMD_SERVICE_FILE}")
 install(FILES resources/systemd/pgbckctl-launcher.service DESTINATION ${SYSTEMD_SERVICE_FILE})
+install(FILES resources/systemd/pgbckctl-walstreamer@.service DESTINATION ${SYSTEMD_SERVICE_FILE})
+install(FILES resources/systemd/pg_backup_ctl-plus-tempfiles.conf DESTINATION /usr/lib/tmpfiles.d/)
 endif()
 
 ##
