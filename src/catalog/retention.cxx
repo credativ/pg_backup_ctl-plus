@@ -51,6 +51,12 @@ void Retention::setCatalog(std::shared_ptr<BackupCatalog> catalog) {
 
 }
 
+std::shared_ptr<BackupCleanupDescr> Retention::getCleanupDescr() {
+
+  return this->cleanupDescr;
+
+}
+
 string Retention::operator=(Retention &src) {
 
   return src.asString();
@@ -182,7 +188,13 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
             shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value,
                                                                              archiveDescr,
                                                                              catalog);
+            retentionPtr->setRetentionRuleType(ruleDescr->type);
+
+            /*
+             * Stick the rule into our result vector.
+             */
             result.push_back(retentionPtr);
+
             break;
           }
 
@@ -209,27 +221,35 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
   return result;
 }
 
-void Retention::keep(vector<shared_ptr<BaseBackupDescr>> &keepList,
-                     vector<shared_ptr<BaseBackupDescr>> &dropList,
+void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
+                     vector<shared_ptr<BaseBackupDescr>> source,
                      shared_ptr<BaseBackupDescr> bbdescr,
                      unsigned int index) {
 
-  /*
-   * Varous sanity checks follow.
-   */
-
-  /* Nothing to do if dropList ist empty. */
-  if (dropList.size() == 0)
+  /* Nothing to do if source list is empty. */
+  if (source.size() == 0)
     return;
 
   /*
-   * Index must be within bounds of dropList.
+   * Index must be within bounds.
    */
-  if (index >= dropList.size())
-    throw CArchiveIssue("cannot move basebackup to KEEP list: index out of bounds (exceeds size)");
+  if (index >= source.size()) {
+    ostringstream oss;
 
-  keepList.push_back(bbdescr);
-  dropList.erase(dropList.begin() + index);
+    oss << "cannot move basebackup to list: index("
+        << index
+        << ") out of bounds (exceeds size "
+        << source.size()
+        << ")";
+
+    throw CArchiveIssue(oss.str());
+  }
+
+#ifdef __DEBUG__
+  cerr << "DEBUG: moving index(" << index << ") to target list" << endl;
+#endif
+
+  target.push_back(bbdescr);
 
 }
 
@@ -299,10 +319,11 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
   /*
    * We don't expect an initialized cleanupDescr here, this usually
    * means we were called previously already. Throw here, since
-   * we can't guarantuee reasonable results out from here.
+   * we can't guarantee reasonable results out from here in this case.
    */
   if (this->cleanupDescr != nullptr)
-    throw CArchiveIssue("cannot apply retention module repeatedly, call Retention::reset() before");
+    throw CArchiveIssue("cannot apply retention module repeatedly, "
+                        "call Retention::reset() before");
 
   /*
    * Nothing to do if list of basebackups is empty.
@@ -317,24 +338,23 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
    */
   this->cleanupDescr                  = make_shared<BackupCleanupDescr>();
   this->cleanupDescr->mode            = WAL_CLEANUP_OFFSET;
-  this->cleanupDescr->basebackupMode = BASEBACKUP_KEEP;
+  this->cleanupDescr->basebackupMode  = BASEBACKUP_DELETE;
 
   /*
    * Loop through the list of basebackups, filtering out every basebackup
    * that matches the backup label identified by the basebackup descriptor.
-   * Stick the descriptor used to identify the basebackup to keep into the
-   * cleanup descriptor.
    *
-   * The basebackups we want to keep are attached to the "keep list", which
-   * will be used to identify the deletion XLOG Redo pointer, identifying the
-   * first XLOG segment file to be deleted.
+   * The cleanup descriptor will get any basebackup descriptors which should
+   * be deleted, thus the cleanup mode *must* be BASEBACKUP_DELETE here. Depending
+   * on the action (RETENTION_KEEP_WITH_LABEL or RETENTION_DROP_WITH_LABEL) we
+   * must keep the matches or not. If a match is instructed for being kept,
+   * we simply don't push it into the cleanup descriptor.
    */
   for(auto &bbdescr : deleteList) {
 
     boost::smatch what;
 
-    /* Increase current position counter */
-    currindex++;
+    XLogRecPtr bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
 
     /*
      * Apply regex to label.
@@ -359,18 +379,19 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
           /*
            * KEEP basebackup.
            *
-           * The current regex label match should be kept.
-           *
-           * This means we need to move the current basebackups from
-           * the deleteList into the list of basebackups to keep.
-           *
-           * There's no need to check PINs and such here, since we are forced
-           * to keep this basebackup anyways.
+           * If the cleanup XLogRecPtr offset was set
+           * to a valid XLOG offset, we must invalidate this
+           * position, but only if it's describing a position
+           * *younger* in the stream (otherwise the kept basebackup
+           * wouldn't be able to replay to a up-to-date position).
            */
-          this->keep(this->cleanupDescr->basebackups,
-                     deleteList,
-                     bbdescr,
-                     currindex);
+          if ( (cleanupDescr->wal_cleanup_start_pos != InvalidXLogRecPtr)
+               && (cleanupDescr->wal_cleanup_start_pos > bbxlogrecptr) ) {
+
+            cleanupDescr->wal_cleanup_start_pos = InvalidXLogRecPtr;
+            cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
+
+          }
 
           break;
         }
@@ -382,21 +403,20 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
            *
            * The current regex matches should be dropped.
            *
-           * We need to check for any PINs before leaving the
-           * basebackup descriptor in the delete list. If we detect a PIN,
-           * we keep this backup.
+           * We need to check for any PINs before moving the
+           * basebackup descriptor in the cleanup descriptor.
+           *
+           * If we detect a PIN, we keep this backup. The same
+           * applies to a basebackup currently "in progress"...
            */
-          if (bbdescr->pinned) {
+          if ( (bbdescr->pinned)
+               || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
 
-            cout << "INFO: keeping pinned basebackup \""
+            cout << "INFO: keeping basebackup \""
                  << bbdescr->fsentry
                  << "\""
                  << endl;
 
-            this->keep(this->cleanupDescr->basebackups,
-                       deleteList,
-                       bbdescr,
-                       currindex);
           } else {
 
             cout << "INFO: selected basebackup \""
@@ -404,6 +424,10 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
                  << "\" for deletion"
                  << endl;
 
+            this->move(this->cleanupDescr->basebackups,
+                       deleteList,
+                       bbdescr,
+                       currindex);
             result++;
 
           }
@@ -425,47 +449,52 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
        * ruleType, we need to keep or drop the current basebackup. The
        * actions here are:
        *
-       * - RETENTION_DROP_WITH_LABEL: No match here, so keep it, which means
-       *                              to move the basebackup descriptor into the keep list.
+       * - RETENTION_DROP_WITH_LABEL: No match here, so keep it, which basically
+       *                               means no special action here.
        *
        * - RETENTION_KEEP_WITH_LABEL: No match here, but since we only should
-       *                              keep matches, leave the basebackup descriptor in
-       *                              the delete list.
+       *                              keep matches, the basebackup should be deleted.
+       *                              We must take care for pinned basebackups, though,
+       *                              which should be kept.
        */
       switch(this->ruleType) {
 
       case RETENTION_DROP_WITH_LABEL:
         {
-
           /*
-           * No need to check for PINs, since no match and we are forced
-           * to keep this basebackup though.
+           * If the cleanup XLogRecPtr offset was set
+           * to a valid XLOG offset, we must invalidate this
+           * position, but only if it's describing a position
+           * *younger* in the stream (otherwise the kept basebackup
+           * wouldn't be able to replay to a up-to-date position).
            */
-          this->keep(this->cleanupDescr->basebackups,
-                     deleteList,
-                     bbdescr,
-                     currindex);
+
+          if ( (cleanupDescr->wal_cleanup_start_pos != InvalidXLogRecPtr)
+               && (cleanupDescr->wal_cleanup_start_pos > bbxlogrecptr) ) {
+
+            cleanupDescr->wal_cleanup_start_pos = InvalidXLogRecPtr;
+            cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
+
+          }
+
+          break;
         }
 
       case RETENTION_KEEP_WITH_LABEL:
         {
 
           /*
-           * No match, but we are told to keep matches. So leave this
-           * basebackup within the deleteList, but only if it's *not*
-           * pinned.
+           * No match, but we are told to keep matches. So push
+           * this basebackup into the cleanupdescr if not pinned.
            */
-          if (bbdescr->pinned) {
+          if ( (bbdescr->pinned)
+               || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
 
             cout << "INFO: keeping pinned basebackup \""
                  << bbdescr->fsentry
                  << "\""
                  << endl;
 
-            this->keep(this->cleanupDescr->basebackups,
-                       deleteList,
-                       bbdescr,
-                       currindex);
           } else {
 
             cout << "INFO: selected basebackup \""
@@ -473,10 +502,28 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
                  << "\" for deletion"
                  << endl;
 
+            this->move(this->cleanupDescr->basebackups,
+                       deleteList,
+                       bbdescr,
+                       currindex);
             result++;
+
+            /*
+             * Initialize cleanup XLogRecPtr to the current one
+             * (if it preceeds the current one, if any).
+             */
+            if (cleanupDescr->wal_cleanup_start_pos == InvalidXLogRecPtr) {
+
+              cleanupDescr->wal_cleanup_start_pos
+                = PGStream::XLOGSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogposend),
+                                                     bbdescr->wal_segment_size);
+              cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
+
+            }
 
           }
 
+          break;
         }
 
 
@@ -485,6 +532,9 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
       } /* switch...case */
 
     } /* if regex_match() */
+
+    /* Increase current position counter */
+    currindex++;
 
   } /* for ... loop */
 

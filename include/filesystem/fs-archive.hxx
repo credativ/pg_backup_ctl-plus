@@ -364,6 +364,12 @@ namespace credativ {
     virtual void fsync();
 
     /**
+     * Removes the specified path from the backup directory
+     * physically.
+     */
+    static void unlink_path(path backup_path);
+
+    /**
      * Recursively fsync the directory contents and
      * the directory itself.
      *
@@ -425,6 +431,8 @@ namespace credativ {
     WAL_SEGMENT_PARTIAL,
     WAL_SEGMENT_COMPLETE_COMPRESSED,
     WAL_SEGMENT_PARTIAL_COMPRESSED, /* NOTE: XLOG segments are gzipped only! */
+    WAL_SEGMENT_TLI_HISTORY_FILE,
+    WAL_SEGMENT_TLI_HISTORY_FILE_COMPRESSED,
     WAL_SEGMENT_INVALID_FILENAME,
     WAL_SEGMENT_UNKNOWN
   } WALSegmentFileStatus;
@@ -505,6 +513,22 @@ namespace credativ {
     virtual WALSegmentFileStatus determineXlogSegmentStatus(path segmentFile);
 
     /**
+     * Gets the previous XLOG segment file for the given
+     * XLogRecPtr.
+     */
+    static std::string XLogPrevFileByRecPtr(XLogRecPtr recptr,
+                                            unsigned int timeline,
+                                            unsigned long long wal_segment_size);
+
+    /**
+     * Gets a XLogRecPtr value, returns the XLOG
+     * segment file it belongs to.
+     */
+    static std::string XLogFileByRecPtr(XLogRecPtr recptr,
+                                        unsigned int timeline,
+                                        unsigned long long wal_segment_size);
+
+    /**
      * Returns the size of the specified ArchiveLogDirectory
      * file entry. The specified path handle must be a valid
      * existing file in the log/ directory.
@@ -514,25 +538,46 @@ namespace credativ {
                                                   WALSegmentFileStatus status);
 
     /**
-     * Examine the archive log directory according to the cleanupDescr and
+     * Scans through the current contents of the log directory
+     * and deletes all files older that the XLogRecPtr offset
+     * specified in the BackupCleanDescr structure. The caller should have
+     * called identifyDeletionPoints() before doing the phyiscal stuff
+     * here to be safe.
+     */
+    void removeXLogs(std::shared_ptr<BackupCleanupDescr> cleanupDescr,
+                     unsigned long long wal_segment_size);
+
+    /**
+     * Examine the cleanup descriptor and
      * the basebackups found within. Returns a XLogRecPtr describing the
-     * starting position of XLOG segments that can be deleted.
+     * starting position of XLOG segments that can be deleted, determined
+     * by the oldest basebackup XLOG end position found in the cleanup
+     * descriptor.
      *
      * The specified cleanupDescr should be initialized by a descendant of
      * the Retention class, holding a list of basebackups which should be kept.
-     * identifyDeletionPoints() examines this list for XLogRecPtr which can
+     * identifyDeletionOffset() examines this list for XLogRecPtr which can
      * be used for offset or range of WAL segment files which can be deleted.
      * The identified XLogRecPtr offset or range is stored within the cleanupDescr.
      *
      * If no XLogRecPtr offset or range can be identified, the cleanupDescr mode will
      * be set to NO_WAL_TO_DELETE.
      *
-     * If cleanupDescr wasn't initialized with BASEBACKUP_KEEP, an CArchiveIssue
+     * If cleanupDescr wasn't initialized with BASEBACKUP_DELETE, an CArchiveIssue
      * will be thrown.
+     *
+     * When called, identifyDeletionOffset() doesn't assume the basebackups list
+     * being in any sorted order, instead it goes through the complete list and checks
+     * the XLogRecPtr values for being beyond the current ones. The oldest
+     * XLogRecPtr is then assigned for being the start offset for removing
+     * log files from the archive. Because of this algorithm the caller
+     * can call the identifyDeletionOffset multiple times with a changed
+     * list of basebackups, as long as the XLogRecPtr positions located in the
+     * descriptor is kept.
      *
      * For further information, see also the comments in src/catalog/retention.cxx.
      */
-    virtual void identifyDeletionPoints(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+    virtual void identifyDeletionOffset(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
   };
 
   /*

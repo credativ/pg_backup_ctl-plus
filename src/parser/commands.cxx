@@ -1556,7 +1556,7 @@ void ListBackupListCommand::execute(bool flag) {
    * Format the output.
    */
   cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + temp_descr->archive_name,
-                                       boost::format("%-15s\t%-60s") % "Property" % "Value",
+                                       boost::format("%-20s\t%-60s") % "Property" % "Value",
                                        80);
 
   for (auto &basebackup : backupList) {
@@ -1569,18 +1569,24 @@ void ListBackupListCommand::execute(bool flag) {
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
                                            temp_descr->directory);
 
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "ID" % basebackup->id);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Pinned" % ( (basebackup->pinned == 0) ? "NO" : "YES" ));
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Backup" % basebackup->fsentry);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Status" % basebackup->status);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Label" % basebackup->label);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-60s")
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "WAL segment size" % basebackup->wal_segment_size);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Started" % basebackup->started);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "WAL start" % basebackup->xlogpos);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "WAL stop" % basebackup->xlogposend);
 
     /*
      * Print tablespace information belonging to the current basebackup
@@ -2295,6 +2301,93 @@ void DropRetentionPolicyCommand::execute(bool flag) {
   }
 }
 
+ListRetentionPolicyCommand::ListRetentionPolicyCommand() {
+
+  this->tag = LIST_RETENTION_POLICY;
+
+}
+
+ListRetentionPolicyCommand::ListRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ListRetentionPolicyCommand::ListRetentionPolicyCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->tag = LIST_RETENTION_POLICY;
+  this->catalog = catalog;
+
+}
+
+ListRetentionPolicyCommand::~ListRetentionPolicyCommand() {}
+
+void ListRetentionPolicyCommand::execute(bool flag) {
+
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute command: no catalog");
+  }
+
+  /* Retention name is mandatory for this command. */
+
+  if (this->retention_name.length() == 0)
+    throw CArchiveIssue("retention name required");
+
+  try {
+
+    shared_ptr<RetentionDescr> retentionDescr = nullptr;
+
+    this->catalog->startTransaction();
+
+    retentionDescr = this->catalog->getRetentionPolicy(this->retention_name);
+
+    if (retentionDescr->id < 0) {
+
+      ostringstream oss;
+
+      oss << "retention policy \"" << this->retention_name << "\" does not exist";
+
+      /* TX exit on error is handled by the exception handler below */
+      throw CArchiveIssue(oss.str());
+
+    }
+
+    this->catalog->commitTransaction();
+
+    /* Print contents of this policy */
+
+    cout << CPGBackupCtlBase::makeHeader("Details of retention policy " + this->retention_name,
+                                         boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
+                                         80) << endl;
+
+    cout << boost::format("%-15s\t%-60s") % "ID" % retentionDescr->id << endl;
+    cout << boost::format("%-15s\t%-60s") % "NAME" % retentionDescr->name << endl;
+    cout << boost::format("%-15s\t%-60s") % "CREATED" % retentionDescr->created << endl;
+
+    cout << endl;
+
+    for (auto rule : retentionDescr->rules) {
+
+      /*
+       * Build a retention object out of this rule to get
+       * its decomposed string representation.
+       */
+      shared_ptr<Retention> instance = Retention::get(rule);
+
+      cout << boost::format("%-15s\t%-60s") % "RULE" % instance->asString() << endl;
+
+    }
+
+    cout << CPGBackupCtlBase::makeLine(80) << endl;
+
+  } catch(CPGBackupCtlFailure &e) {
+
+    this->catalog->rollbackTransaction();
+    throw e; /* don't hide errors */
+
+  }
+}
+
 ListRetentionPoliciesCommand::ListRetentionPoliciesCommand() {
 
   this->tag = LIST_RETENTION_POLICIES;
@@ -2432,7 +2525,116 @@ ApplyRetentionPolicyCommand::ApplyRetentionPolicyCommand() {
 
 ApplyRetentionPolicyCommand::~ApplyRetentionPolicyCommand() {}
 
+shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveBasebackups(shared_ptr<CatalogDescr> archiveDescr) {
+
+  /*
+   * Build the executable retention object instance.
+   */
+  vector<shared_ptr<Retention>> rules = Retention::get(this->retention_name,
+                                                       archiveDescr,
+                                                       this->catalog);
+  shared_ptr<BackupCleanupDescr> cleanupDescr = nullptr;
+
+  unsigned int deleted = 0;
+  map<string, shared_ptr<BaseBackupDescr>> fslookuptable;
+  map<string, shared_ptr<BaseBackupDescr>>::iterator it;
+
+  /*
+   * Result cleanup descriptor for later WAL cleanup.
+   */
+  shared_ptr<BackupCleanupDescr> result = make_shared<BackupCleanupDescr>();
+
+  result->basebackupMode = NO_BASEBACKUPS;
+  result->mode           = WAL_CLEANUP_OFFSET;
+
+  if (rules.size() == 0) {
+
+    ostringstream oss;
+
+    oss << "retention policy \"" << this->retention_name << "\" does not contain a rule";
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  /*
+   * Apply the rule(s) on the given basebackup set.
+   *
+   * XXX: The code here is prepared to deal with multiple
+   *      applicable rules, but for now we expect only
+   *      one rule per APPLY run.
+   */
+  for(auto &retention_rule : rules) {
+
+    deleted += retention_rule->apply(this->bblist);
+
+#ifdef __DEBUG__
+    cerr
+      << "DEBUG: deletion candidates: "
+      << deleted
+      << " basebackups with rule \""
+      << retention_rule->asString()
+      << "\"" << endl;
+#endif
+
+    /*
+     * Retention::apply() will return 0 in case nothing
+     * to do...
+     */
+    if (deleted == 0) {
+      continue;
+    }
+
+    /*
+     * Get the BackupCleanupDescr instance from the
+     * retention rule initialized after having called apply(). This
+     * will guide us through the backup cleanup procedure.
+     */
+    cleanupDescr = retention_rule->getCleanupDescr();
+
+    /* Check if the cleanup descr is valid */
+    if (cleanupDescr == nullptr) {
+      throw CArchiveIssue("unexpected nullptr for cleanup descriptor, cannot clean backups");
+    }
+
+    /*
+     * Emplace basebackup descriptor into the filesystem
+     * lookup table, but only if it's not already there.
+     */
+    for(auto &bbdescr : cleanupDescr->basebackups) {
+
+      it = fslookuptable.find(bbdescr->fsentry);
+
+      if (it == fslookuptable.end() ) {
+
+#ifdef __DEBUG__
+        cerr << "DEBUG: preparing file "
+             << bbdescr->fsentry
+             << " for FS lookup table "
+             << endl;
+#endif
+
+        fslookuptable.emplace(bbdescr->fsentry, bbdescr);
+        result->basebackups.push_back(bbdescr);
+      }
+
+    }
+
+  }
+
+  /*
+   * Everything should be in shape now. Return the final cleanup descriptor.
+   */
+  if (deleted > 0)
+    result->basebackupMode = BASEBACKUP_DELETE;
+
+  return result;
+
+}
+
 void ApplyRetentionPolicyCommand::execute(bool flag) {
+
+  shared_ptr<CatalogDescr> archiveDescr      = nullptr;
+  bool has_tx = false; /* stores state of current TX */
 
   if (this->catalog == nullptr) {
     throw CArchiveIssue("could not execute command: no catalog");
@@ -2445,17 +2647,136 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
     throw CArchiveIssue("empty retention name not allowed here");
   }
 
+  /**
+   * Enter the cleanup procedure. This is done within one transaction
+   * to make sure no other write operations interfere with us.
+   */
   try {
+
+    shared_ptr<BackupCleanupDescr> archiveCleanupDescr = nullptr;
+    shared_ptr<BackupDirectory> backupDir              = nullptr;
+    shared_ptr<ArchiveLogDirectory> archiveLogDir      = nullptr;
+    unsigned long long wal_segment_size = 0;
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: operating on directory " << this->directory << endl;
+#endif
 
     this->catalog->startTransaction();
 
+    /* remember state of this TX */
+    has_tx = true;
+
+    /**
+     * Archive name really exists ?
+     */
+    archiveDescr = this->catalog->existsByName(this->archive_name);
+
+    if (archiveDescr->id < 0) {
+
+      ostringstream oss;
+
+      oss << "archive \"" << this->archive_name << "\" does not exist";
+
+      /* throw, this will be handled by the exception handler below
+       * and re-thrown to the caller */
+      throw CArchiveIssue(oss.str());
+
+    }
+
+    /*
+     * Initialize directory handles needed for physical cleanup.
+     */
+    backupDir = make_shared<BackupDirectory>(path(archiveDescr->directory));
+    archiveLogDir = make_shared<ArchiveLogDirectory>(backupDir);
+
+    /*
+     * Assign the archive id within this command handler
+     * (we might need it later) and assign the LIST_ARCHIVE tag
+     * to it. This will tell catalog lookup methods that we
+     * have a descriptor carrying all information for the archive
+     */
+    this->id = archiveDescr->id;
+    archiveDescr->tag = LIST_ARCHIVE;
+
+    /* get the list of current basebackups */
+
+    this->bblist = this->catalog->getBackupList(this->archive_name);
+
     this->catalog->commitTransaction();
 
-  } catch(CPGBackupCtlFailure &e) {
+    /*
+     * Apply the rule(s) attached to this policy.
+     */
+    archiveCleanupDescr = this->applyRulesAndRemoveBasebackups(archiveDescr);
 
-    this->catalog->rollbackTransaction();
+    /* In case nothing to do, exit */
+    if (archiveCleanupDescr->basebackupMode == NO_BASEBACKUPS) {
+      cout << "no basebackups matches retention policy" << endl;
+      return;
+    }
 
-    /* re-throw error */
+    /* no TX active anymore at this point */
+    has_tx = false;
+
+    /*
+     * Loop through the final cleanup descriptor. During this loop
+     * we delete the basebackup physically and from the catalog.
+     *
+     * Archive cleanup is performed afterwards.
+     */
+    for(auto &basebackup : archiveCleanupDescr->basebackups) {
+
+#ifdef __DEBUG__
+      cerr << "deleting fs path " << basebackup->fsentry << endl;
+#endif
+
+      if (wal_segment_size == 0) {
+        wal_segment_size = basebackup->wal_segment_size;
+      }
+
+      /*
+       * Delete catalog entries first.
+       */
+      this->catalog->startTransaction();
+      has_tx = true;
+
+      this->catalog->deleteBaseBackup(basebackup->id);
+
+      this->catalog->commitTransaction();
+      has_tx = false;
+
+      /*
+       * Catalog transaction successful, remove physical
+       * file(s).
+       */
+      BackupDirectory::unlink_path(path(basebackup->fsentry));
+
+    }
+
+    /*
+     * Perform archive cleanup procedures...
+     */
+#ifdef __DEBUG__
+    cerr << "DEBUG: cleaning archive log directory "
+         << archiveLogDir->getPath()
+         << endl;
+#endif
+
+    archiveLogDir->identifyDeletionOffset(archiveCleanupDescr);
+    archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
+
+    /*
+     * Fsync backup directory contents.
+     */
+    BackupDirectory::fsync_recursive(backupDir->getArchiveDir());
+
+  } catch (CPGBackupCtlFailure &e) {
+
+    if (has_tx)
+      this->catalog->rollbackTransaction();
+
+    /* don't hide any errors to caller */
     throw e;
 
   }

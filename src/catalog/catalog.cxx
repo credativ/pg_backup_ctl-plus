@@ -49,7 +49,8 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "stopped",
     "pinned",
     "status",
-    "systemid"
+    "systemid",
+    "wal_segment_size"
   };
 
 std::vector<std::string> BackupCatalog::streamCatalogCols =
@@ -321,6 +322,18 @@ PinOperationType CatalogDescr::pinOperation() {
 shared_ptr<RetentionDescr> CatalogDescr::getRetentionPolicyP() {
 
   return this->retention;
+
+}
+
+void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> retention) {
+
+  if (retention == nullptr)
+    throw CArchiveIssue("cannot assign uninitialized retention policy to catalog descriptor");
+
+  if (retention->id < 0)
+    throw CArchiveIssue("cannot assign empty retention policy to catalog descriptor");
+
+  this->retention = retention;
 
 }
 
@@ -1032,6 +1045,10 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::fetchBackupIntoDescr(sqlite3_stm
 
     case SQL_BACKUP_SYSTEMID_ATTNO:
       descr->systemid = (char *) sqlite3_column_text(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO:
+      descr->wal_segment_size = sqlite3_column_int(stmt, current_stmt_col);
       break;
 
     default:
@@ -1809,6 +1826,47 @@ void BackupCatalog::performPinAction(BasicPinDescr *descr,
   sqlite3_finalize(stmt);
 }
 
+void BackupCatalog::deleteBaseBackup(int basebackupId) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          "DELETE FROM backup WHERE id = ?1;",
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+
+    std::ostringstream oss;
+
+    oss << "error preparing to delete basebackup: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  sqlite3_bind_int(stmt, 1, basebackupId);
+
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_DONE) {
+    ostringstream oss;
+
+    oss << "could not delete basebackup: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  sqlite3_finalize(stmt);
+
+}
+
 std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
                                                               int archive_id) {
 
@@ -1839,6 +1897,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
   backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -1862,7 +1921,8 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
         << "COALESCE(bt.backup_id, -1) AS backup_id, "
         << "COALESCE(bt.spcoid, -1) AS spcoid, "
         << "COALESCE(spclocation, 'no location') AS spclocation, "
-        << "COALESCE(spcsize, -1) AS spcsize "
+        << "COALESCE(spcsize, -1) AS spcsize, "
+        << "b.wal_segment_size AS wal_segment_size "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
         << "WHERE b.id = ?1 AND b.archive_id = ?2;";
@@ -1994,6 +2054,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
   backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -2020,7 +2081,8 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "COALESCE(bt.backup_id, -1) AS backup_id, "
         << "COALESCE(bt.spcoid, -1) AS spcoid, "
         << "COALESCE(spclocation, 'no location') AS spclocation, "
-        << "COALESCE(spcsize, -1) AS spcsize "
+        << "COALESCE(spcsize, -1) AS spcsize, "
+        << "b.wal_segment_size AS wal_segment_size "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
         << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started DESC;";
@@ -2812,6 +2874,11 @@ int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbde
                         bbdescr->systemid.c_str(), -1, SQLITE_STATIC);
       break;
 
+    case SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO:
+      sqlite3_bind_int(stmt, result,
+                       bbdescr->wal_segment_size);
+      break;
+
     default:
       {
         ostringstream oss;
@@ -3472,7 +3539,7 @@ void BackupCatalog::dropStream(int streamid) {
 
   if (rc != SQLITE_OK) {
     std::ostringstream oss;
-    oss << "error preparing to register stream: " << sqlite3_errmsg(this->db_handle);
+    oss << "error preparing to delete stream: " << sqlite3_errmsg(this->db_handle);
     throw CCatalogIssue(oss.str());
   }
 
@@ -3502,8 +3569,8 @@ void BackupCatalog::registerBasebackup(int archive_id,
   }
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid) "
-                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid, wal_segment_size) "
+                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
                           -1,
                           &stmt,
                           NULL);
@@ -3524,6 +3591,7 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 5, backupDescr->fsentry.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 7, backupDescr->systemid.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 8, backupDescr->wal_segment_size);
 
   /*
    * Execute the statement.
@@ -4491,7 +4559,7 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
         << this->affectedColumnsToString(SQL_RETENTION_ENTITY, attrsRetention, "a")
         << ", "
         << this->affectedColumnsToString(SQL_RETENTION_RULES_ENTITY, attrsRules, "b")
-        << " FROM retention a JOIN retention_rules b ON a.id = b.id WHERE a.name = ?1;";
+        << " FROM retention a JOIN retention_rules b ON a.id = b.id WHERE a.name = ?1 ORDER BY a.name ASC, b.type ASC;";
 
 #ifdef __DEBUG__
   cout << "generated SQL " << query.str() << endl;
@@ -4562,6 +4630,10 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
 
     /* Save retention rule to its policy descriptor */
     retentionPolicy->rules.push_back(retention_rule);
+
+#ifdef __DEBUG__
+    cerr << "DEBUG: retention rule id " << retention_rule->type << endl;
+#endif
 
     /* next one */
     rc = sqlite3_step(stmt);

@@ -67,7 +67,7 @@ namespace credativ {
   /*
    * Transaction log segment backup object representation.
    *
-   * LogSegmentBackup encapsulates access between backup
+   * TransactionLogBackup encapsulates access between backup
    * (WAL streaming) operation and, backup catalog and
    * filesystem access.
    */

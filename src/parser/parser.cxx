@@ -351,7 +351,7 @@ namespace credativ {
               ( no_case[ lexeme[ lit("POLICY") ] ]
                 [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICY) ]
                 > identifier
-                [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] ) );
+                [ boost::bind(&CatalogDescr::setRetentionName, &cmd, ::_1) ] ) );
 
         /*
          * LIST CONNECTION FOR ARCHIVE <archive name > command
@@ -1027,6 +1027,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case LIST_RETENTION_POLICIES:
     result = make_shared<ListRetentionPoliciesCommand>(this->catalogDescr);
+    break;
+
+  case LIST_RETENTION_POLICY:
+    result = make_shared<ListRetentionPolicyCommand>(this->catalogDescr);
     break;
 
   case DROP_RETENTION_POLICY:

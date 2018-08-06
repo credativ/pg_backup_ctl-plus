@@ -322,6 +322,7 @@ namespace credativ {
     int         timeline;
     std::string xlogpos;
     std::string systemid;
+    unsigned long long wal_segment_size = 0;
 
     /*
      * Internal state of tablespace backup steps.
@@ -332,7 +333,8 @@ namespace credativ {
 
     BaseBackupProcess(PGconn *prepared_connection,
                       std::shared_ptr<BackupProfileDescr> profile,
-                      std::string systemid);
+                      std::string systemid,
+                      unsigned long long wal_segment_size);
     ~BaseBackupProcess();
 
     /*

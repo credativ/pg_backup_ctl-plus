@@ -554,6 +554,13 @@ namespace credativ {
                             std::string const& value);
 
     /**
+     * Assigns the specified shared_ptr handle to the
+     * internal retention descriptor. Must be a valid initialized
+     * pointer, otherwise this will throw.
+     */
+    void makeRetentionDescr(std::shared_ptr<RetentionDescr> retention);
+
+    /**
      * Returns an shared_ptr to the internal retention policy
      * structure, if allocated. Will return a nullptr if
      * makeRetentionDescr() wasn't called before.
@@ -680,6 +687,7 @@ namespace credativ {
     int pinned = 0;
     std::string status = "in progress";
     std::string systemid;
+    unsigned long long wal_segment_size = 0;
 
     /*
      * Static const specifiers for status flags.
@@ -687,6 +695,11 @@ namespace credativ {
     static constexpr const char *BASEBACKUP_STATUS_IN_PROGRESS = "in progress";
     static constexpr const char *BASEBACKUP_STATUS_ABORTED = "aborted";
     static constexpr const char *BASEBACKUP_STATUS_READY   = "ready";
+
+    /*
+     * Runtime settings without catalog representation.
+     */
+    bool elected_for_deletion = false;
 
     /* List of tablespaces descriptors in backup */
     std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;
@@ -772,6 +785,7 @@ namespace credativ {
 
     WAL_CLEANUP_RANGE,
     WAL_CLEANUP_OFFSET,
+    WAL_CLEANUP_ALL,
     NO_WAL_TO_DELETE
 
   } WALCleanupMode;
@@ -783,10 +797,25 @@ namespace credativ {
    */
   typedef enum {
 
+    NO_BASEBACKUPS,
     BASEBACKUP_KEEP,
     BASEBACKUP_DELETE
 
   } BasebackupCleanupMode;
+
+  /**
+   * A structure describing the XLogRecPtr
+   * cleanup threshold and the timelines which
+   * it belongs to.
+   */
+  typedef std::map<unsigned int, XLogRecPtr> tli_cleanup_offsets;
+
+  class xlog_cleanup_map {
+  public:
+
+    std::map<std::string, tli_cleanup_offsets> clnp_map;
+
+  };
 
   /**
    * A BackupCleanupDescr descriptor instance describes
@@ -812,6 +841,7 @@ namespace credativ {
     std::vector<std::shared_ptr<BaseBackupDescr>> basebackups;
     BasebackupCleanupMode basebackupMode = BASEBACKUP_KEEP;
 
+    unsigned int cleanup_tli = 0;
     XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
     XLogRecPtr wal_cleanup_end_pos = InvalidXLogRecPtr;
 

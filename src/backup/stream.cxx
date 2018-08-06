@@ -145,7 +145,7 @@ XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos) {
 #if PG_VERSION_NUM < 110000
   return pos - (pos % XLOG_SEG_SIZE);
 #else
-  return pos - XLogSegmentOffset(pos, this->walSegmentSize);
+  return pos - (pos - XLogSegmentOffset(pos, this->walSegmentSize));
 #endif
 
 }
@@ -679,7 +679,8 @@ std::shared_ptr<BaseBackupProcess> PGStream::basebackup() {
 std::shared_ptr<BaseBackupProcess> PGStream::basebackup(std::shared_ptr<BackupProfileDescr> profile) {
   return std::make_shared<BaseBackupProcess>(this->pgconn,
                                              profile,
-                                             this->streamident.systemid);
+                                             this->streamident.systemid,
+                                             this->getWalSegmentSize());
 }
 
 std::string PGStream::generateSlotNameUUID(std::string prefix) {

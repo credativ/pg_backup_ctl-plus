@@ -884,13 +884,15 @@ void WALStreamerProcess::start() {
 
 BaseBackupProcess::BaseBackupProcess(PGconn *prepared_connection,
                                      std::shared_ptr<BackupProfileDescr> profile,
-                                     std::string systemid) {
+                                     std::string systemid,
+                                     unsigned long long wal_segment_size) {
 
   this->current_state = BASEBACKUP_INIT;
 
   this->pgconn = prepared_connection;
   this->profile = profile;
   this->systemid = systemid;
+  this->wal_segment_size = wal_segment_size;
 
   /*
    * prepared_connection needs to be a connected
@@ -1047,9 +1049,10 @@ void BaseBackupProcess::start() {
   this->baseBackupDescr = std::make_shared<BaseBackupDescr>();
   this->baseBackupDescr->xlogpos = PQgetvalue(result, 0, 0);
 
-  /* Save system identifier to descriptor */
+  /* Save system identifier and WAL segment size to descriptor */
 
-  this->baseBackupDescr->systemid = this->systemid;
+  this->baseBackupDescr->systemid         = this->systemid;
+  this->baseBackupDescr->wal_segment_size = this->wal_segment_size;
 
   /*
    * We always expect the timeline from the server here. Older

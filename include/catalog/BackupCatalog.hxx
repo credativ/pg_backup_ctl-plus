@@ -572,6 +572,11 @@ namespace credativ {
     virtual void registerBasebackup(int archive_id,
                                     std::shared_ptr<BaseBackupDescr> backupDescr);
 
+    /**
+     * Delete the specified basebackup from the archive.
+     */
+    virtual void deleteBaseBackup(int basebackupId);
+
     /*
      * Abort a registered basebackup. Marks the specified basebackup as failed.
      */

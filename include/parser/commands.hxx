@@ -102,6 +102,19 @@ namespace credativ {
   };
 
   class ApplyRetentionPolicyCommand : public BaseCatalogCommand {
+  private:
+
+    /*
+     * List of basebackups where the retention policy should
+     * be applied on. Populated by execute().
+     */
+    std::vector<std::shared_ptr<BaseBackupDescr>> bblist;
+
+    /*
+     * Executes the retrieved retention policy.
+     */
+    std::shared_ptr<BackupCleanupDescr> applyRulesAndRemoveBasebackups(std::shared_ptr<CatalogDescr> archiveDescr);
+
   public:
 
     ApplyRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr);
@@ -132,6 +145,17 @@ namespace credativ {
     ListRetentionPoliciesCommand(std::shared_ptr<BackupCatalog> catalog);
     ListRetentionPoliciesCommand();
     virtual ~ListRetentionPoliciesCommand();
+
+    virtual void execute(bool flag);
+  };
+
+  class ListRetentionPolicyCommand : public BaseCatalogCommand {
+  public:
+
+    ListRetentionPolicyCommand(std::shared_ptr<CatalogDescr> descr);
+    ListRetentionPolicyCommand(std::shared_ptr<BackupCatalog> catalog);
+    ListRetentionPolicyCommand();
+    virtual ~ListRetentionPolicyCommand();
 
     virtual void execute(bool flag);
   };

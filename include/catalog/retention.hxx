@@ -24,7 +24,7 @@ namespace credativ {
      * we are instructed to keep or drop the basebackups meeting
      * the label regular expression.
      */
-    RetentionRuleId ruleType;
+    RetentionRuleId ruleType = RETENTION_NO_RULE;
 
     /**
      * Internal catalog database handler.
@@ -38,14 +38,15 @@ namespace credativ {
     std::shared_ptr<CatalogDescr> archiveDescr = nullptr;
 
     /**
-     * Specified basebackup descriptor is marked
-     * for being kept.
+     * Specified basebackup descriptor is moved from source list
+     * into the target list.
      *
-     * This moves the specified shared pointer at position index
-     * from the dropList into the keepList.
+     * This copies the specified shared pointer at position index
+     * from source list into the target list. source list stays
+     * unchanged!
      */
-    virtual void keep(std::vector<std::shared_ptr<BaseBackupDescr>> &keepList,
-                      std::vector<std::shared_ptr<BaseBackupDescr>> &dropList,
+    virtual void move(std::vector<std::shared_ptr<BaseBackupDescr>> &target,
+                      std::vector<std::shared_ptr<BaseBackupDescr>> source,
                       std::shared_ptr<BaseBackupDescr> bbdescr,
                       unsigned int index);
 
@@ -82,6 +83,14 @@ namespace credativ {
      * Returns the currently associated backup catalog database handle.
      */
     std::shared_ptr<BackupCatalog> getBackupCatalog();
+
+    /*
+     * Returns the catalog cleanup descriptor, initialized
+     * after having apply() on an instance of Retention. Will return
+     * a nullptr in case apply() wasn't called before or reset() was issued
+     * before.
+     */
+    virtual std::shared_ptr<BackupCleanupDescr> getCleanupDescr();
 
     /**
      * Factory method, returns a Retention object instances identified

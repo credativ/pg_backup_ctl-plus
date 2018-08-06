@@ -30,6 +30,7 @@ CREATE TABLE backup(
        pinned integer default 0,
        status text default 'in progress',
        systemid text not null,
+       wal_segment_size int not null,
        FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
 );
 

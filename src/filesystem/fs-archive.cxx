@@ -255,6 +255,35 @@ path ArchiveLogDirectory::getPath() {
   return this->log;
 }
 
+std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
+                                                      unsigned int timeline,
+                                                      unsigned long long wal_segment_size) {
+
+  unsigned int logSegNo;
+  char fname[MAXFNAMELEN];
+
+  XLByteToPrevSeg(recptr, logSegNo, wal_segment_size);
+  XLogFileName(fname, timeline, logSegNo, wal_segment_size);
+
+  return string(fname);
+
+}
+
+
+string ArchiveLogDirectory::XLogFileByRecPtr(XLogRecPtr recptr,
+                                             unsigned int timeline,
+                                             unsigned long long wal_segment_size) {
+
+  unsigned int logSegNo;
+  char fname[MAXFNAMELEN];
+
+  XLByteToSeg(recptr, logSegNo, wal_segment_size);
+  XLogFileName(fname, timeline, logSegNo, wal_segment_size);
+
+  return string(fname);
+
+}
+
 /*
  * This code is highly adopted by PostgreSQL's receivewal.c, though
  * we made some special assumptions here for pg_backup_ctl++.
@@ -319,6 +348,12 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
         xlogfilename = direntname;
         break;
       }
+    case WAL_SEGMENT_TLI_HISTORY_FILE:
+    case WAL_SEGMENT_TLI_HISTORY_FILE_COMPRESSED:
+      /*
+       * TLI history files aren't interesting here.
+       */
+      continue;
     case WAL_SEGMENT_UNKNOWN:
     case WAL_SEGMENT_INVALID_FILENAME:
       /*
@@ -438,6 +473,92 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
   return result;
 }
 
+void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDescr,
+                                      unsigned long long wal_segment_size) {
+
+  if (cleanupDescr == nullptr) {
+    throw CArchiveIssue("physical cleanup of WAL files requires a valid cleanup descriptor");
+  }
+
+  /* We can't operate on WAL_CLEANUP_RANGE */
+  if (cleanupDescr->mode == WAL_CLEANUP_RANGE) {
+    throw CArchiveIssue("cannot operate on ranges during XLOG cleanup");
+  }
+
+  /*
+   * If the cleanup descriptor is initialized to NO_WAL_TO_DELETE we
+   * refuse to delete any XLOG segment files. Instead throw an error.
+   */
+  if (cleanupDescr->mode == NO_WAL_TO_DELETE) {
+    throw CArchiveIssue("removing XLOG segment files requires a valid starting XLOG position");
+  }
+
+  /*
+   * Establish directory iterator.
+   */
+  for(auto & entry : boost::make_iterator_range(directory_iterator(this->getPath()),
+                                                {})) {
+
+    std::string direntname     = entry.path().filename().string();
+    WALSegmentFileStatus fstat = WAL_SEGMENT_UNKNOWN;
+
+    /*
+     * Retrieve the XLogRecPtr from this segment file.
+     */
+    fstat = determineXlogSegmentStatus(entry.path());
+
+    /*
+     * unlink() is just called on real WAL segment and TLI history files.
+     * All other files are left untouched.
+     */
+    switch(fstat) {
+    case WAL_SEGMENT_COMPLETE:
+    case WAL_SEGMENT_COMPLETE_COMPRESSED:
+    case WAL_SEGMENT_PARTIAL:
+    case WAL_SEGMENT_PARTIAL_COMPRESSED:
+    case WAL_SEGMENT_TLI_HISTORY_FILE:
+    case WAL_SEGMENT_TLI_HISTORY_FILE_COMPRESSED:
+      {
+        /*
+         * Extract the TLI and segment number of this segment file and
+         * calculate the *starting* XLogRecPtr into it. If this
+         * XLogRecPtr is lower than the requested deletion threshold
+         * we unlink() the segment immediately.
+         */
+        unsigned int xlog_tli = 0;
+        unsigned int xlog_segno = 0;
+        XLogRecPtr recptr = InvalidXLogRecPtr;
+
+#if PG_VERSION_NUM < 110000
+        XLogFromFileName(direntname.c_str(), &xlog_tli, &xlog_segno);
+        recptr -= recptr % wal_segment_size;
+#else
+        XLogFromFileName(direntname.c_str(), &xlog_tli,
+                         &xlog_segno, wal_segment_size);
+        XLogSegNoOffsetToRecPtr(xlog_segno, 0, recptr, wal_segment_size);
+        recptr -= XLogSegmentOffset(recptr, wal_segment_size);
+#endif
+
+        if (recptr < cleanupDescr->wal_cleanup_end_pos) {
+
+#ifdef __DEBUG__
+          cerr << "XLogRecPtr is older than requested position, deleting file "
+               << direntname
+               << endl;
+#endif
+          remove(entry.path());
+
+        }
+
+        break;
+      }
+    default:
+      continue;
+    }
+  }
+
+}
+
 WALSegmentFileStatus ArchiveLogDirectory::determineXlogSegmentStatus(path segmentFile) {
 
   /*
@@ -448,6 +569,8 @@ WALSegmentFileStatus ArchiveLogDirectory::determineXlogSegmentStatus(path segmen
    * b) completed compressed WAL segments (filter_complete_compressed)
    * c) partial uncompressed WAL segments (filter_partial)
    * d) partial compressed WAL segments (filter_partial_compressed)
+   * e) TLI history file (timeline switch)
+   * f) compressed TLI history file (timeline switch)
    */
   WALSegmentFileStatus filestatus = WAL_SEGMENT_UNKNOWN;
 
@@ -455,6 +578,8 @@ WALSegmentFileStatus ArchiveLogDirectory::determineXlogSegmentStatus(path segmen
   const regex filter_complete_compressed("[0-9A-F]*.gz");
   const regex filter_partial("[0-9A-F]*.partial");
   const regex filter_partial_compressed("[0-9A-F]*.partial.gz");
+  const regex filter_tli_history_file("[0-9A-F]*.history");
+  const regex filter_tli_history_file_compressed("[0-9A-F]*.history.gz");
 
   /*
    * For filename filtering...
@@ -478,6 +603,10 @@ WALSegmentFileStatus ArchiveLogDirectory::determineXlogSegmentStatus(path segmen
     filestatus = WAL_SEGMENT_PARTIAL;
   } else if (regex_match(xlogfilename, what, filter_partial_compressed)) {
     filestatus = WAL_SEGMENT_PARTIAL_COMPRESSED;
+  } else if (regex_match(xlogfilename, what, filter_tli_history_file)) {
+    filestatus = WAL_SEGMENT_TLI_HISTORY_FILE;
+  } else if (regex_match(xlogfilename, what, filter_tli_history_file_compressed)) {
+    filestatus = WAL_SEGMENT_TLI_HISTORY_FILE_COMPRESSED;
   } else {
     /* Seems not a correctly named XLOG segment file. */
     filestatus = WAL_SEGMENT_INVALID_FILENAME;
@@ -560,17 +689,17 @@ unsigned long long ArchiveLogDirectory::getXlogSegmentSize(path segmentFile,
   return fileSize;
 }
 
-void ArchiveLogDirectory::identifyDeletionPoints(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {
+void ArchiveLogDirectory::identifyDeletionOffset(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {
 
   if (cleanupDescr == nullptr)
     throw CArchiveIssue("cannot identify wal deletion points without basebackup data");
 
   /*
    * We expect cleanup descriptors here being initialized
-   * with BASEBACKUP_KEEP.
+   * with BASEBACKUP_DELETE.
    */
-  if (cleanupDescr->basebackupMode != BASEBACKUP_KEEP)
-    throw CArchiveIssue("expected basebackup mode set to KEEP for WAL segment cleanup");
+  if (cleanupDescr->basebackupMode != BASEBACKUP_DELETE)
+    throw CArchiveIssue("expected cleanup mode must be set to DROP for WAL segment cleanup");
 
   /*
    * WAL cleanup mode WAL_CLEANUP_RANGE currently not implemented.
@@ -578,24 +707,51 @@ void ArchiveLogDirectory::identifyDeletionPoints(std::shared_ptr<BackupCleanupDe
   if (cleanupDescr->mode == WAL_CLEANUP_RANGE)
     throw CArchiveIssue("WAL cleanup with RANGE mode currently not implemented");
 
+  if (cleanupDescr->basebackups.size() == 0) {
+
+    /*
+     * Nothing to do, set the deletion mode accordingly.
+     */
+    cleanupDescr->mode = NO_WAL_TO_DELETE;
+
+#ifdef __DEBUG__
+    cerr << "no basebackups to identify WAL cleanup offset found" << endl;
+#endif
+
+    return;
+
+  }
+
   /*
    * The specified cleanupDescr holds a list of basebackups to keep,
    * assumed to be sorted in descending order, from newest to oldest.
-   * We go through this list and check their starting and ending XLOG locations.
    *
-   * In detail, the algorithm works as follows:
-   *
-   * - Retrieve the start and end location of the *last* item in cleanupDescr basebackup
-   *   list. This is the one we are interested in, since all newer basebackups surely
-   *   want to keep their WALs as well.
-   *
-   * - Depending on the WAL cleanup mode, set the offset or range
-   *   of XLogRecPtr pointers being deleted. Since the list holds basebackups
-   *   to keep, we must set the XLogRecPtr offset (or range) to the *previous*
-   *   WAL segment we identified for the deletion starting point.
+   * We safe the oldest XLogRecPtr from this keep list into the
+   * cleanup descriptor.
    */
+  if (cleanupDescr->wal_cleanup_end_pos == InvalidXLogRecPtr) {
 
-  for (auto &bbdescr : cleanupDescr->basebackups) {
+    cleanupDescr->wal_cleanup_start_pos = PGStream::decodeXLOGPos(cleanupDescr->basebackups.back()->xlogposend);
+    cleanupDescr->wal_cleanup_end_pos   = cleanupDescr->wal_cleanup_start_pos;
+
+  } else {
+
+    /* We only move the XLogRecPtr backwards ! */
+
+    XLogRecPtr recptr = PGStream::decodeXLOGPos(cleanupDescr->basebackups.back()->xlogposend);
+
+    if (recptr < cleanupDescr->wal_cleanup_end_pos) {
+
+      cleanupDescr->wal_cleanup_end_pos = recptr;
+      cleanupDescr->wal_cleanup_start_pos = cleanupDescr->wal_cleanup_end_pos;
+
+#ifdef __DEBUG__
+      cerr << "DEBUG: identifyDeletionOffset(), move XLogRecPtr "
+           << recptr << " backward, new "
+           << cleanupDescr->wal_cleanup_end_pos;
+#endif
+
+    }
 
   }
 
@@ -801,6 +957,22 @@ void BackupDirectory::fsync_recursive(path handle) {
     }
 
   }
+
+}
+
+void BackupDirectory::unlink_path(path backup_path) {
+
+  /* backup_path should exist */
+  if (!exists(backup_path)) {
+
+    ostringstream oss;
+
+    oss << "backup path " << backup_path.string() << " cannot be deleted: does not exist";
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  remove_all(backup_path);
 
 }
 

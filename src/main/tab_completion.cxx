@@ -165,6 +165,7 @@ completion_word list_backup_list_completion[] = { { "IN", COMPL_KEYWORD, list_ba
                                                   { "", COMPL_EOL, NULL } };
 
 completion_word list_retention_completion[] = { { "POLICIES", COMPL_KEYWORD, NULL },
+                                                { "POLICY", COMPL_KEYWORD, list_archive_ident_completion },
                                                 { "", COMPL_EOL, NULL } };
 
 completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
