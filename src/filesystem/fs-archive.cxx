@@ -446,7 +446,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
   /* If something found, calculate the XLogRecPtr */
   if (segmentNumber > 0) {
 
-    XLogRecPtr recptr;
+    XLogRecPtr recptr = InvalidXLogRecPtr;
     std::ostringstream recptrstr;
 
     /*
