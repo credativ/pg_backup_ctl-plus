@@ -808,14 +808,18 @@ namespace credativ {
    * cleanup threshold and the timelines which
    * it belongs to.
    */
-  typedef std::map<unsigned int, XLogRecPtr> tli_cleanup_offsets;
-
-  class xlog_cleanup_map {
+  class xlog_cleanup_off_t {
   public:
 
-    std::map<std::string, tli_cleanup_offsets> clnp_map;
+    unsigned int timeline;
+    unsigned int wal_segment_size;
+    XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
+    XLogRecPtr wal_cleanup_end_pos   = InvalidXLogRecPtr;
 
   };
+
+  typedef std::map<unsigned int,
+                   std::shared_ptr<xlog_cleanup_off_t>> tli_cleanup_offsets;
 
   /**
    * A BackupCleanupDescr descriptor instance describes
@@ -844,6 +848,8 @@ namespace credativ {
     unsigned int cleanup_tli = 0;
     XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
     XLogRecPtr wal_cleanup_end_pos = InvalidXLogRecPtr;
+
+    tli_cleanup_offsets off_list;
 
     WALCleanupMode mode = NO_WAL_TO_DELETE;
 

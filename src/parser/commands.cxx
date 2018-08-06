@@ -2703,8 +2703,6 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
 
     this->bblist = this->catalog->getBackupList(this->archive_name);
 
-    this->catalog->commitTransaction();
-
     /*
      * Apply the rule(s) attached to this policy.
      */
@@ -2715,9 +2713,6 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
       cout << "no basebackups matches retention policy" << endl;
       return;
     }
-
-    /* no TX active anymore at this point */
-    has_tx = false;
 
     /*
      * Loop through the final cleanup descriptor. During this loop
@@ -2734,12 +2729,6 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
       if (wal_segment_size == 0) {
         wal_segment_size = basebackup->wal_segment_size;
       }
-
-      /*
-       * Delete catalog entries first.
-       */
-      this->catalog->startTransaction();
-      has_tx = true;
 
       this->catalog->deleteBaseBackup(basebackup->id);
 

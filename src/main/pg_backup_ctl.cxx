@@ -118,7 +118,8 @@ static void processCmdLineArgs(int argc,
   /*
    * Make proper handle initialization.
    */
-  memset(handle, 0x0, sizeof(PGBackupCtlArgs));
+  //  memset(handle, 0x0, sizeof(PGBackupCtlArgs));
+  handle = 0;
 
   /*
    * Set libpopt options.

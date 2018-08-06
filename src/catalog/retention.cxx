@@ -221,6 +221,77 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
   return result;
 }
 
+bool Retention::setXLogCleanupPos(shared_ptr<BackupCleanupDescr> cleanupDescr,
+                                  XLogRecPtr start,
+                                  XLogRecPtr end,
+                                  unsigned int timeline,
+                                  unsigned int wal_segment_size,
+                                  WALCleanupMode mode) {
+
+  tli_cleanup_offsets::iterator it;
+
+  if (cleanupDescr == nullptr)
+    return false;
+
+  /*
+   * Get the cleanup offset for the specified timeline, if any.
+   */
+  it = cleanupDescr->off_list.find(timeline);
+
+  if (it != cleanupDescr->off_list.end()) {
+
+    XLogRecPtr new_start_pos = PGStream::XLOGSegmentStartPosition(start,
+                                                                  wal_segment_size);
+    XLogRecPtr new_end_pos   = PGStream::XLOGSegmentStartPosition(end,
+                                                                  wal_segment_size);
+
+    /*
+     * Okay, looks like this timeline already has a valid offset descriptor,
+     * check what we can do here.
+     *
+     * Iff the specified start RecPtr is past the current specified one,
+     * update it. Do it anyways of the current start position is
+     * not initialized yet.
+     */
+
+    shared_ptr<xlog_cleanup_off_t> offdescr = it->second;
+
+    /* Force if start or end is an InvalidXLogRecPtr */
+    if (offdescr->wal_cleanup_start_pos == InvalidXLogRecPtr) {
+      offdescr->wal_cleanup_start_pos = new_start_pos;
+    }
+
+    if (offdescr->wal_cleanup_end_pos == InvalidXLogRecPtr) {
+      offdescr->wal_cleanup_end_pos = new_end_pos;
+    }
+
+    /*
+     * Check if the new start position is older than the current
+     * one, if true assign it to the descriptor.
+     */
+    if (new_start_pos < offdescr->wal_cleanup_start_pos) {
+      offdescr->wal_cleanup_start_pos = new_start_pos;
+    }
+
+  } else {
+
+    /* new offset descriptor required */
+    shared_ptr<xlog_cleanup_off_t> offdescr = make_shared<xlog_cleanup_off_t>();
+
+    offdescr->wal_cleanup_start_pos = PGStream::XLOGSegmentStartPosition(start,
+                                                                         wal_segment_size);
+    offdescr->wal_cleanup_end_pos   = PGStream::XLOGSegmentStartPosition(end,
+                                                                         wal_segment_size);
+    offdescr->timeline              = timeline;
+    offdescr->wal_segment_size      = wal_segment_size;
+
+    /* stick new descriptor into cleanup descriptor map */
+    cleanupDescr->off_list.emplace(timeline, offdescr);
+
+  }
+  return true;
+}
+
 void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
                      vector<shared_ptr<BaseBackupDescr>> source,
                      shared_ptr<BaseBackupDescr> bbdescr,
