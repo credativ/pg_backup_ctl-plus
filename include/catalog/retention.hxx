@@ -65,6 +65,17 @@ namespace credativ {
     virtual void reset();
 
     /**
+     * Initialize a retention policy with a given cleanup descriptor
+     * from an earlier retention.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr) = 0;
+
+    /**
+     * Initialize the retention policy instance.
+     */
+    virtual void init() = 0;
+
+    /**
      * Assign catalog handle.
      */
     virtual void setCatalog(std::shared_ptr<BackupCatalog> catalog);
@@ -92,30 +103,15 @@ namespace credativ {
      */
     virtual std::shared_ptr<BackupCleanupDescr> getCleanupDescr();
 
-    /**
-     * Helper function to set specified XLOG cleanup offset
-     * to a cleanup descriptor. cleanupDescr must be a valid
-     * pointer to a BackupCleanupDescr descriptor instance, otherwise
-     * this method is a no-op.
-     *
-     * setXLogCleanupPos() moves the offset pointers into the WAL stream
-     * backwards, as long as the specified XLogRecPtr define a valid
-     * range where *start* is in the past of the current settings found
-     * in cleanupDescr.
-     *
-     * If cleanupDescr is a virgin descriptor which doesn't have a
-     * a range already set, we just assign the current values.
-     *
-     * When XLOG positions are assigned, they always are set to the *beginning*
-     * of a XLOG segment, so they aren't necessarily the same than specified
-     * to this method.
+    /*
+     * Sets the specified XLOG pointers within the cleanup descriptor
+     * to keep at least all *younger* XLOG segments starting after the
+     * starting offset.
      */
-    static bool setXLogCleanupPos(std::shared_ptr<BackupCleanupDescr> cleanupDescr,
-                                  XLogRecPtr start,
-                                  XLogRecPtr end,
-                                  unsigned int timeline,
-                                  unsigned int wal_segment_size,
-                                  WALCleanupMode mode);
+    static bool XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDescr,
+                                      XLogRecPtr start,
+                                      unsigned int timeline,
+                                      unsigned int wal_segment_size);
 
     /**
      * Factory method, returns a Retention object instances identified
@@ -197,6 +193,17 @@ namespace credativ {
                    std::shared_ptr<CatalogDescr> archiveDescr,
                    std::shared_ptr<BackupCatalog> catalog);
     virtual ~LabelRetention();
+
+    /**
+     * Initialize a retention policy with a given cleanup descriptor
+     * from an earlier retention.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+
+    /**
+     * Initialize the retention policy instance.
+     */
+    virtual void init();
 
     /**
      * Implementation of the string representation routine
@@ -350,6 +357,17 @@ namespace credativ {
                  std::shared_ptr<CatalogDescr> archiveDescr,
                  std::shared_ptr<BackupCatalog> catalog);
     virtual ~PinRetention();
+
+    /**
+     * Initialize a retention policy with a given cleanup descriptor
+     * from an earlier retention.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+
+    /**
+     * Initialize the retention policy instance.
+     */
+    virtual void init();
 
     /**
      * Returns the string representation of a PIN/UNPIN action.

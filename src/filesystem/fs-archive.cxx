@@ -476,6 +476,9 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDescr,
                                       unsigned long long wal_segment_size) {
 
+  /* TLI=0 doesn't exist, so take this as a starting value */
+  unsigned int lowest_tli = 0;
+
   if (cleanupDescr == nullptr) {
     throw CArchiveIssue("physical cleanup of WAL files requires a valid cleanup descriptor");
   }
@@ -492,6 +495,31 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
   if (cleanupDescr->mode == NO_WAL_TO_DELETE) {
     throw CArchiveIssue("removing XLOG segment files requires a valid starting XLOG position");
   }
+
+  /*
+   * Loop through the offset list, getting an idea which is the oldest
+   * timeline in there. We need this information later to determine wether
+   * this TLI is somehow reachable.
+   *
+   * XXX: This is just a weak guess, since it doesn't mean that this
+   *      TLI is really reachable from a later TLI from any
+   *      basebackup. Though it prevents us from removing any
+   *      XLOG segments when there are still older TLIs around (without
+   *      any basebackups requiring it) and thus diggin' holes into
+   *      the WAL stream unnecessarily.
+   */
+  for (auto const &offset_item : cleanupDescr->off_list) {
+
+    /* nothing done yet */
+    if (lowest_tli == 0) {
+      lowest_tli = offset_item.first;
+    }
+
+    if (offset_item.first < lowest_tli) {
+      lowest_tli = offset_item.first;
+    }
+
+  };
 
   /*
    * Establish directory iterator.
@@ -528,6 +556,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
         unsigned int xlog_tli = 0;
         unsigned int xlog_segno = 0;
         XLogRecPtr recptr = InvalidXLogRecPtr;
+        tli_cleanup_offsets::iterator it;
 
 #if PG_VERSION_NUM < 110000
         XLogFromFileName(direntname.c_str(), &xlog_tli, &xlog_segno);
@@ -539,7 +568,28 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
         recptr -= XLogSegmentOffset(recptr, wal_segment_size);
 #endif
 
-        if (recptr < cleanupDescr->wal_cleanup_end_pos) {
+        /*
+         * Get the offset for the specified timeline from
+         * the cleanup descriptor. If no offset can be found, then
+         * this means that the cleanup descriptor didn't see this
+         * during the retention initialization.
+         *
+         * In this case, if the timeline is in the past (so lower
+         * than any encountered timeline), we drop the XLOG segment,
+         * since there's no basebackup depending on it.
+         */
+        it = cleanupDescr->off_list.find(xlog_tli);
+
+        if ((it == cleanupDescr->off_list.end()) && (lowest_tli > xlog_tli)) {
+
+          /*
+           * TLI not seen in basebackup list and current segment
+           * has older TLI.
+           */
+          remove(entry.path());
+
+        } else if ( (it->first == xlog_tli)
+                    && (recptr < (it->second)->wal_cleanup_start_pos) ) {
 
 #ifdef __DEBUG__
           cerr << "XLogRecPtr is older than requested position, deleting file "
@@ -729,31 +779,7 @@ void ArchiveLogDirectory::identifyDeletionOffset(std::shared_ptr<BackupCleanupDe
    * We safe the oldest XLogRecPtr from this keep list into the
    * cleanup descriptor.
    */
-  if (cleanupDescr->wal_cleanup_end_pos == InvalidXLogRecPtr) {
 
-    cleanupDescr->wal_cleanup_start_pos = PGStream::decodeXLOGPos(cleanupDescr->basebackups.back()->xlogposend);
-    cleanupDescr->wal_cleanup_end_pos   = cleanupDescr->wal_cleanup_start_pos;
-
-  } else {
-
-    /* We only move the XLogRecPtr backwards ! */
-
-    XLogRecPtr recptr = PGStream::decodeXLOGPos(cleanupDescr->basebackups.back()->xlogposend);
-
-    if (recptr < cleanupDescr->wal_cleanup_end_pos) {
-
-      cleanupDescr->wal_cleanup_end_pos = recptr;
-      cleanupDescr->wal_cleanup_start_pos = cleanupDescr->wal_cleanup_end_pos;
-
-#ifdef __DEBUG__
-      cerr << "DEBUG: identifyDeletionOffset(), move XLogRecPtr "
-           << recptr << " backward, new "
-           << cleanupDescr->wal_cleanup_end_pos;
-#endif
-
-    }
-
-  }
 
 }
 

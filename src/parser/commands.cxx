@@ -2596,9 +2596,12 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
       throw CArchiveIssue("unexpected nullptr for cleanup descriptor, cannot clean backups");
     }
 
-    /*
+   /*
      * Emplace basebackup descriptor into the filesystem
      * lookup table, but only if it's not already there.
+     *
+     * Also save the basebackup descriptor in the final
+     * cleanup descriptor instance.
      */
     for(auto &bbdescr : cleanupDescr->basebackups) {
 
@@ -2614,8 +2617,10 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
 #endif
 
         fslookuptable.emplace(bbdescr->fsentry, bbdescr);
-        result->basebackups.push_back(bbdescr);
       }
+
+      /* push it into the final cleanup descriptor */
+      result->basebackups.push_back(bbdescr);
 
     }
 
@@ -2730,15 +2735,12 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
         wal_segment_size = basebackup->wal_segment_size;
       }
 
-      this->catalog->deleteBaseBackup(basebackup->id);
-
-      this->catalog->commitTransaction();
-      has_tx = false;
-
       /*
-       * Catalog transaction successful, remove physical
-       * file(s).
+       * Drop the basebackup from the catalog database. If this
+       * succeeds we go over and unlink the file(s) and director(y|ies)
+       * physically.
        */
+      this->catalog->deleteBaseBackup(basebackup->id);
       BackupDirectory::unlink_path(path(basebackup->fsentry));
 
     }
@@ -2756,6 +2758,14 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
     archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
 
     /*
+     * Now it's time to commit all database work. It might
+     * happen that we fail here, but redoing the whole work
+     * should be possible.
+     */
+    this->catalog->commitTransaction();
+    has_tx = false;
+
+    /*
      * Fsync backup directory contents.
      */
     BackupDirectory::fsync_recursive(backupDir->getArchiveDir());
@@ -2768,7 +2778,16 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
     /* don't hide any errors to caller */
     throw e;
 
+  } catch(filesystem_error &e) {
+
+    if (has_tx)
+      this->catalog->rollbackTransaction();
+
+    /* remap to internal pg_backup_ctl++ exception */
+    throw CPGBackupCtlFailure(e.what());
+
   }
+
 
 }
 

@@ -845,10 +845,7 @@ namespace credativ {
     std::vector<std::shared_ptr<BaseBackupDescr>> basebackups;
     BasebackupCleanupMode basebackupMode = BASEBACKUP_KEEP;
 
-    unsigned int cleanup_tli = 0;
-    XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
-    XLogRecPtr wal_cleanup_end_pos = InvalidXLogRecPtr;
-
+    /* List if TLI/XLOG cleanup offset items */
     tli_cleanup_offsets off_list;
 
     WALCleanupMode mode = NO_WAL_TO_DELETE;

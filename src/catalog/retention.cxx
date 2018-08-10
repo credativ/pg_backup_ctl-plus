@@ -221,75 +221,63 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
   return result;
 }
 
-bool Retention::setXLogCleanupPos(shared_ptr<BackupCleanupDescr> cleanupDescr,
-                                  XLogRecPtr start,
-                                  XLogRecPtr end,
-                                  unsigned int timeline,
-                                  unsigned int wal_segment_size,
-                                  WALCleanupMode mode) {
+bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDescr,
+                                      XLogRecPtr start,
+                                      unsigned int timeline,
+                                      unsigned int wal_segment_size) {
 
+  bool result = false;
   tli_cleanup_offsets::iterator it;
-
-  if (cleanupDescr == nullptr)
-    return false;
+  shared_ptr<xlog_cleanup_off_t> cleanup_offset = nullptr;
 
   /*
-   * Get the cleanup offset for the specified timeline, if any.
+   * We always define the offset for XLOG cleanup
+   * to be on the starting offset to its segment.
+   */
+  XLogRecPtr start_segment_ptr = PGStream::XLOGSegmentStartPosition(start,
+                                                                    wal_segment_size);
+
+  /*
+   * Sanity check, cleanup descriptor is valid.
+   */
+  if (cleanupDescr == nullptr)
+    return result;
+
+  /*
+   * Check wether the current timeline is already initialized.
    */
   it = cleanupDescr->off_list.find(timeline);
 
   if (it != cleanupDescr->off_list.end()) {
 
-    XLogRecPtr new_start_pos = PGStream::XLOGSegmentStartPosition(start,
-                                                                  wal_segment_size);
-    XLogRecPtr new_end_pos   = PGStream::XLOGSegmentStartPosition(end,
-                                                                  wal_segment_size);
+    cleanup_offset = make_shared<xlog_cleanup_off_t>();
+    cleanup_offset->timeline = timeline;
+    cleanup_offset->wal_segment_size = wal_segment_size;
+    cleanup_offset->wal_cleanup_start_pos = start_segment_ptr;
 
-    /*
-     * Okay, looks like this timeline already has a valid offset descriptor,
-     * check what we can do here.
-     *
-     * Iff the specified start RecPtr is past the current specified one,
-     * update it. Do it anyways of the current start position is
-     * not initialized yet.
-     */
-
-    shared_ptr<xlog_cleanup_off_t> offdescr = it->second;
-
-    /* Force if start or end is an InvalidXLogRecPtr */
-    if (offdescr->wal_cleanup_start_pos == InvalidXLogRecPtr) {
-      offdescr->wal_cleanup_start_pos = new_start_pos;
-    }
-
-    if (offdescr->wal_cleanup_end_pos == InvalidXLogRecPtr) {
-      offdescr->wal_cleanup_end_pos = new_end_pos;
-    }
-
-    /*
-     * Check if the new start position is older than the current
-     * one, if true assign it to the descriptor.
-     */
-    if (new_start_pos < offdescr->wal_cleanup_start_pos) {
-      offdescr->wal_cleanup_start_pos = new_start_pos;
-    }
+    result = true;
 
   } else {
 
-    /* new offset descriptor required */
-    shared_ptr<xlog_cleanup_off_t> offdescr = make_shared<xlog_cleanup_off_t>();
+    cleanup_offset = it->second;
 
-    offdescr->wal_cleanup_start_pos = PGStream::XLOGSegmentStartPosition(start,
-                                                                         wal_segment_size);
-    offdescr->wal_cleanup_end_pos   = PGStream::XLOGSegmentStartPosition(end,
-                                                                         wal_segment_size);
-    offdescr->timeline              = timeline;
-    offdescr->wal_segment_size      = wal_segment_size;
+    /*
+     * Iff given offset is *older* in the stream, assign it,
+     * since we need to keep the other XLOG segments located after
+     * it.
+     */
+    if (start_segment_ptr < cleanup_offset->wal_cleanup_start_pos) {
 
-    /* stick new descriptor into cleanup descriptor map */
-    cleanupDescr->off_list.emplace(timeline, offdescr);
+      cleanup_offset->wal_cleanup_start_pos = start_segment_ptr;
+
+      result = true;
+
+    }
 
   }
-  return true;
+
+  return result;
+
 }
 
 void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
@@ -381,11 +369,7 @@ string LabelRetention::asString() {
 
 }
 
-unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteList) {
-
-  unsigned int currindex = 0;
-  unsigned int result = 0;
-  vector<shared_ptr<BaseBackupDescr>> keep;
+void LabelRetention::init(shared_ptr<BackupCleanupDescr> prevCleanupDescr) {
 
   /*
    * We don't expect an initialized cleanupDescr here, this usually
@@ -396,13 +380,13 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
     throw CArchiveIssue("cannot apply retention module repeatedly, "
                         "call Retention::reset() before");
 
-  /*
-   * Nothing to do if list of basebackups is empty.
-   */
-  if (deleteList.size() == 0)
-    return 0;
+  this->cleanupDescr = prevCleanupDescr;
 
-  /*
+}
+
+void LabelRetention::init() {
+
+    /*
    * Initialize the cleanup descriptor. Currently we just support
    * deleting by a starting XLogRecPtr and removing all subsequent (older)
    * WAL files from the archive.
@@ -410,6 +394,27 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
   this->cleanupDescr                  = make_shared<BackupCleanupDescr>();
   this->cleanupDescr->mode            = WAL_CLEANUP_OFFSET;
   this->cleanupDescr->basebackupMode  = BASEBACKUP_DELETE;
+
+}
+
+unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteList) {
+
+  unsigned int currindex = 0;
+  unsigned int result = 0;
+  vector<shared_ptr<BaseBackupDescr>> keep;
+
+  /*
+   * Nothing to do if list of basebackups is empty.
+   */
+  if (deleteList.size() == 0)
+    return 0;
+
+  /*
+   * Make sure init() was called before.
+   */
+  if (this->cleanupDescr == nullptr) {
+    throw CArchiveIssue("cannot apply retention rule without initialization: call init() before");
+  }
 
   /*
    * Loop through the list of basebackups, filtering out every basebackup
@@ -426,6 +431,23 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
     boost::smatch what;
 
     XLogRecPtr bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
+
+    /*
+     * Move the XLogRecPtr in the cleanup descriptor backwards, so
+     * that unneeded XLOG segments can be remove automatically. We *must*
+     * call this on any basebackup we examine here to not miss
+     * any important XLogRecPtr.
+     */
+    bool modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                         bbxlogrecptr,
+                                                                         bbdescr->timeline,
+                                                                         bbdescr->wal_segment_size);
+
+#ifdef __DEBUG__
+    if (modified_xlog_cleanup_offset) {
+      cerr << "modified XLOG cleanup offset: recptr = " << PGStream::encodeXLOGPos(bbxlogrecptr);
+    }
+#endif
 
     /*
      * Apply regex to label.
@@ -449,21 +471,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
         {
           /*
            * KEEP basebackup.
-           *
-           * If the cleanup XLogRecPtr offset was set
-           * to a valid XLOG offset, we must invalidate this
-           * position, but only if it's describing a position
-           * *younger* in the stream (otherwise the kept basebackup
-           * wouldn't be able to replay to a up-to-date position).
            */
-          if ( (cleanupDescr->wal_cleanup_start_pos != InvalidXLogRecPtr)
-               && (cleanupDescr->wal_cleanup_start_pos > bbxlogrecptr) ) {
-
-            cleanupDescr->wal_cleanup_start_pos = InvalidXLogRecPtr;
-            cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
-
-          }
-
           break;
         }
 
@@ -475,7 +483,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
            * The current regex matches should be dropped.
            *
            * We need to check for any PINs before moving the
-           * basebackup descriptor in the cleanup descriptor.
+           * basebackup descriptor into the cleanup descriptor.
            *
            * If we detect a PIN, we keep this backup. The same
            * applies to a basebackup currently "in progress"...
@@ -532,22 +540,6 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
       case RETENTION_DROP_WITH_LABEL:
         {
-          /*
-           * If the cleanup XLogRecPtr offset was set
-           * to a valid XLOG offset, we must invalidate this
-           * position, but only if it's describing a position
-           * *younger* in the stream (otherwise the kept basebackup
-           * wouldn't be able to replay to a up-to-date position).
-           */
-
-          if ( (cleanupDescr->wal_cleanup_start_pos != InvalidXLogRecPtr)
-               && (cleanupDescr->wal_cleanup_start_pos > bbxlogrecptr) ) {
-
-            cleanupDescr->wal_cleanup_start_pos = InvalidXLogRecPtr;
-            cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
-
-          }
-
           break;
         }
 
@@ -578,19 +570,6 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
                        bbdescr,
                        currindex);
             result++;
-
-            /*
-             * Initialize cleanup XLogRecPtr to the current one
-             * (if it preceeds the current one, if any).
-             */
-            if (cleanupDescr->wal_cleanup_start_pos == InvalidXLogRecPtr) {
-
-              cleanupDescr->wal_cleanup_start_pos
-                = PGStream::XLOGSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogposend),
-                                                     bbdescr->wal_segment_size);
-              cleanupDescr->wal_cleanup_end_pos = cleanupDescr->wal_cleanup_start_pos;
-
-            }
 
           }
 
@@ -676,6 +655,9 @@ void PinRetention::reset() {
   this->count_pin_context.expected = 0;
 
 }
+
+void PinRetention::init(shared_ptr<BackupCleanupDescr> prevCleanupDescr) {}
+void PinRetention::init() {}
 
 unsigned int PinRetention::action_Pinned(vector<shared_ptr<BaseBackupDescr>> &list) {
 
