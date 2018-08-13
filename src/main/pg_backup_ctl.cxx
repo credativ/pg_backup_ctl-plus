@@ -118,8 +118,15 @@ static void processCmdLineArgs(int argc,
   /*
    * Make proper handle initialization.
    */
-  //  memset(handle, 0x0, sizeof(PGBackupCtlArgs));
-  handle = 0;
+  handle->hostname   = NULL;
+  handle->archiveDir = NULL;
+  handle->action     = NULL;
+  handle->archive_name = NULL;
+  handle->catalogDir   = NULL;
+  handle->actionFile   = NULL;
+  handle->start_launcher = 0;
+  handle->start_wal_streaming = 0;
+  handle->backup_profile      = NULL;
 
   /*
    * Set libpopt options.
