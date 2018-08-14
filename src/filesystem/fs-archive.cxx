@@ -262,8 +262,13 @@ std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
   unsigned int logSegNo;
   char fname[MAXFNAMELEN];
 
+#if PG_VERSION_NUM < 110000
+  XLByteToPrevSeg(recptr, logSegNo);
+  XLogFileName(fname, timeline, logSegNo);
+#else
   XLByteToPrevSeg(recptr, logSegNo, wal_segment_size);
   XLogFileName(fname, timeline, logSegNo, wal_segment_size);
+#endif
 
   return string(fname);
 
@@ -277,8 +282,13 @@ string ArchiveLogDirectory::XLogFileByRecPtr(XLogRecPtr recptr,
   unsigned int logSegNo;
   char fname[MAXFNAMELEN];
 
+#if PG_VERSION_NUM < 110000
+  XLByteToSeg(recptr, logSegNo);
+  XLogFileName(fname, timeline, logSegNo);
+#else
   XLByteToSeg(recptr, logSegNo, wal_segment_size);
   XLogFileName(fname, timeline, logSegNo, wal_segment_size);
+#endif
 
   return string(fname);
 
