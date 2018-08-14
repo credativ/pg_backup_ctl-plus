@@ -145,7 +145,7 @@ XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos) {
 #if PG_VERSION_NUM < 110000
   return pos - (pos % XLOG_SEG_SIZE);
 #else
-  return pos - (pos - XLogSegmentOffset(pos, this->walSegmentSize));
+  return pos - XLogSegmentOffset(pos, this->walSegmentSize);
 #endif
 
 }
@@ -156,7 +156,7 @@ XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos,
 #if PG_VERSION_NUM < 110000
   return pos - (pos % wal_segment_size);
 #else
-  return pos - (pos - XLogSegmentOffset(pos, wal_segment_size));
+  return pos - XLogSegmentOffset(pos, wal_segment_size);
 #endif
 
 }
