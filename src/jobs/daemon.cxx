@@ -167,6 +167,9 @@ void BackgroundWorker::prepareShutdown() {
   }
 
   catalog->commitTransaction();
+
+  /* close database */
+  catalog->close();
 }
 
 void BackgroundWorker::assign_reaper(background_reaper *reaper) {
@@ -356,6 +359,13 @@ void BackgroundWorker::initialize() {
          << e.what()
          << endl;
 #endif
+
+    /*
+     * In case we've opened the catalog database
+     * already, close it again
+     */
+    if (this->catalog->available())
+      this->catalog->close();
 
     _pgbckctl_shutdown_mode = DAEMON_TERM_EMERGENCY;
   }
@@ -1252,12 +1262,8 @@ static pid_t daemonize(job_info &info) {
     bool cmd_ok;
 
     /*
-     * Register launcher in the database.
-     */
-    worker.initialize();
-
-    /*
-     * If initialization got exit signal, exit.
+     * If initialization got exit signal, exit. Do this here before
+     * doing any initialization stuff.
      */
     if ( (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY)
          || (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) ) {
@@ -1265,6 +1271,11 @@ static pid_t daemonize(job_info &info) {
          exit(_pgbckctl_shutdown_mode);
 
     }
+
+    /*
+     * Register launcher in the database.
+     */
+    worker.initialize();
 
     /* mark this as a background worker */
     info.background_exec = true;
