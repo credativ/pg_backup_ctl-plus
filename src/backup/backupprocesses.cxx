@@ -840,7 +840,7 @@ void WALStreamerProcess::start() {
   query << "START_REPLICATION SLOT "
         << escapedLabel
         << " PHYSICAL "
-        << this->streamident.xlogpos
+        << escapedXlogPos
         << " TIMELINE "
         << this->streamident.timeline
         << ";";
