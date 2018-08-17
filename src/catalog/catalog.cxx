@@ -2022,6 +2022,50 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
   return basebackup;
 }
 
+std::shared_ptr<BaseBackupDescr> BackupCatalog::getLatestBaseBackup(bool valid_only) {
+
+  std::shared_ptr<BaseBackupDescr> result = std::make_shared<BaseBackupDescr>();
+  string backupCols = "";
+  std::ostringstream query;
+  std::vector<int> backupAttrs;
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /* List of columns to retrieve */
+  backupAttrs.push_back(SQL_BACKUP_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_ARCHIVE_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOSEND_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_TIMELINE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_LABEL_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+
+  /* Column list */
+  backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                               backupAttrs);
+
+  /* Generate the query */
+  query << "SELECT "
+        << backupCols
+        << " FROM backup b ";
+
+  if (valid_only) {
+    query << "WHERE status = 'ready' ";
+  }
+
+  query << "ORDER BY stopped LIMIT 1;";
+
+  return result;
+}
+
 std::vector<std::shared_ptr<BaseBackupDescr>>
 BackupCatalog::getBackupList(std::string archive_name) {
 
