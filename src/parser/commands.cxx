@@ -1355,6 +1355,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     startpos = pgstream->streamident.xlogposDecoded();
     cerr << "IDENTIFY XLOG after decode says: " << PGStream::encodeXLOGPos(startpos) << endl;
     startpos = pgstream->XLOGSegmentStartPosition(startpos);
+    cerr << "XLOG start position " << PGStream::encodeXLOGPos(startpos) << endl;
     pgstream->streamident.xlogpos = PGStream::encodeXLOGPos(startpos);
 
 
