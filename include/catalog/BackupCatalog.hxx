@@ -620,14 +620,16 @@ namespace credativ {
     getBackupList(std::string archive_name);
 
     /**
-     * Returns the latest backup in the catalog.
+     * Returns a specific basebackup in the catalog, identified
+     * by the BaseBackupRetrieveMode mode.
      *
      * valid_only specified wether the method should only
      * consider basebackups in state "ready". If set to false,
      * getLatestBaseBackup() will also consider "in progress" or
      * "aborted" basebackups.
      */
-    virtual std::shared_ptr<BaseBackupDescr> getLatestBaseBackup(bool valid_only);
+    virtual std::shared_ptr<BaseBackupDescr> getBaseBackup(BaseBackupRetrieveMode mode,
+                                                           bool valid_only);
 
     /**
      * Returns a basebackup descriptor, describing the

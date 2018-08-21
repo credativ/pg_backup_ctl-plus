@@ -2022,12 +2022,15 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
   return basebackup;
 }
 
-std::shared_ptr<BaseBackupDescr> BackupCatalog::getLatestBaseBackup(bool valid_only) {
+std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieveMode mode,
+                                                              bool valid_only) {
 
   std::shared_ptr<BaseBackupDescr> result = std::make_shared<BaseBackupDescr>();
+  sqlite3_stmt *stmt = NULL;
   string backupCols = "";
   std::ostringstream query;
   std::vector<int> backupAttrs;
+  int rc;
 
   if (!this->available()) {
     throw CCatalogIssue("catalog database not opened");
@@ -2057,12 +2060,71 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getLatestBaseBackup(bool valid_o
         << backupCols
         << " FROM backup b ";
 
+  /*
+   * Check if we are instructed to consider every state
+   * of basebackup or just the ones with "ready"
+   */
   if (valid_only) {
     query << "WHERE status = 'ready' ";
   }
 
-  query << "ORDER BY stopped LIMIT 1;";
+  /*
+   * Prepare the WHERE condition, depending on the
+   * specified retrieval mode.
+   */
+  switch(mode) {
+  case BASEBACKUP_OLDEST:
+    {
+      query << "ORDER BY stopped ASC LIMIT 1;";
+      break;
+    }
+  case BASEBACKUP_NEWEST:
+    {
+      query << "ORDER BY stopped DESC LIMIT 1;";
+      break;
+    }
+  }
 
+  /* Prepare the query */
+  rc = sqlite3_prepare(this->db_handle,
+                       query.str().c_str(),
+                       -1,
+                       &stmt,
+                       NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* No WHERE condition currently to bind, so proceed and execute the query */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+
+    oss << "error retrieving basebackup candidate: "
+        << sqlite3_errmsg(this->db_handle);
+
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * We expect only one tuple so far
+   *
+   * XXX: This might change if we introduce other retrieval modes
+   *      in BaseBackupRetrieveMode...
+   */
+  if (rc == SQLITE_ROW) {
+
+    this->fetchBackupIntoDescr(stmt, result,
+                                 Range(0, backupAttrs.size() - 1));
+
+  }
+
+  sqlite3_finalize(stmt);
   return result;
 }
 

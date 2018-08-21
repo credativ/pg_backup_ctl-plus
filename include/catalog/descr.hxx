@@ -851,6 +851,15 @@ namespace credativ {
     WALCleanupMode mode = NO_WAL_TO_DELETE;
 
   };
+
+  /**
+   * Basebackup retrieval modes for BackupCatalog::getBaseBackup().
+   */
+  typedef enum {
+                BASEBACKUP_NEWEST,
+                BASEBACKUP_OLDEST
+  } BaseBackupRetrieveMode;
+
 }
 
 #endif
