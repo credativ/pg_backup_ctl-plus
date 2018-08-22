@@ -200,6 +200,21 @@ namespace credativ {
   };
 
   class StartBasebackupCatalogCommand : public BaseCatalogCommand {
+  protected:
+
+    /**
+     * This is a helper method, performing various checks before starting
+     * a basebackup. Returns a BackupCatalogErrorCode flag, telling the
+     * current state wether START BASEBACKUP is allowed to proceed.
+     *
+     * check() expects a StreamIdentification structure initialized
+     * by a PGStream::identify() call.
+     *
+     * If everything is in shape, check() returns a BASEBACKUP_CATALOG_OK
+     * flag, telling us that we are allowed to proceed.
+     */
+    virtual BackupCatalogErrorCode check(StreamIdentification ident);
+
   public:
     StartBasebackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);
     StartBasebackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog);

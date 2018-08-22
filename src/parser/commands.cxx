@@ -1588,6 +1588,8 @@ void ListBackupListCommand::execute(bool flag) {
                                        % "WAL start" % basebackup->xlogpos);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "WAL stop" % basebackup->xlogposend);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "System ID" % basebackup->systemid);
 
     /*
      * Print tablespace information belonging to the current basebackup
@@ -1703,6 +1705,36 @@ StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<Bac
 StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
 
   this->copy(*(descr.get()));
+
+}
+
+BackupCatalogErrorCode StartBasebackupCatalogCommand::check(StreamIdentification ident) {
+
+  shared_ptr<BaseBackupDescr> bbdescr = nullptr;
+  BackupCatalogErrorCode result = BASEBACKUP_CATALOG_OK;
+
+  /*
+   * Check if a previous basebackup exists. If true, check
+   * it's systemid. We allow the check to succeed if the systemid
+   * matches. In case of a mismatch, return BASEBACKUP_INVALID_SYSTEMID.
+   *
+   * Only consider valid basebackups, since aborted or errorneous
+   * basebackups aren't real backups ;)
+   */
+  bbdescr = this->catalog->getBaseBackup(BASEBACKUP_NEWEST, true);
+
+  if (bbdescr->id < 0) {
+
+    /* Not a valid descriptor, so nothing found */
+    return result;
+
+  }
+
+  /* Descriptor seems valid, check systemid. */
+  if (ident.systemid != bbdescr->systemid)
+    result = BASEBACKUP_CATALOG_INVALID_SYSTEMID;
+
+  return result;
 
 }
 
@@ -1884,6 +1916,41 @@ void StartBasebackupCatalogCommand::execute(bool background) {
 #ifdef __DEBUG__
     cerr << "DEBUG: identify stream" << endl;
 #endif
+
+    /*
+     * Check if we have a compatible previous
+     * basebackup already in the catalog. check() doesn't
+     * throw, but will return a BaseBackupState flag
+     * telling us what went wrong.
+     */
+    switch(this->check(pgstream.streamident)) {
+    case BASEBACKUP_CATALOG_INVALID_SYSTEMID:
+      {
+        /*
+         * There is a previous basebackup with a different
+         * systemid. we don't want to implicitely migrate
+         * any basebackup here to another cluster, so tell the
+         * caller that this is wrong.
+         *
+         * NOTE: We are already within a try..catch block,
+         *       so we don't do any cleanup here and leave it
+         *       up to the exception handler to clean everything
+         *       behind us.
+         */
+
+        ostringstream oss;
+
+        oss << "systemid("
+            << pgstream.streamident.systemid
+            << ") of last basebackup in the catalog does not match";
+        throw CCatalogIssue(oss.str());
+
+      }
+
+    default:
+      /* nothing to do here */
+      break;
+    }
 
     /*
      * Get basebackup stream handle.

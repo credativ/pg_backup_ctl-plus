@@ -856,10 +856,23 @@ namespace credativ {
    * Basebackup retrieval modes for BackupCatalog::getBaseBackup().
    */
   typedef enum {
-                BASEBACKUP_NEWEST,
-                BASEBACKUP_OLDEST
+		BASEBACKUP_NEWEST,
+		BASEBACKUP_OLDEST
   } BaseBackupRetrieveMode;
 
+  /**
+   * Backup process error flags during initialization.
+   *
+   * Used to indicate various error conditions.
+   */
+  typedef enum {
+
+                BASEBACKUP_CATALOG_OK,
+                BASEBACKUP_CATALOG_INVALID_SYSTEMID,
+                ARCHIVE_OK,
+                ARCHIVE_INVALID_XLOG_EXISTS
+
+  } BackupCatalogErrorCode;
 }
 
 #endif
