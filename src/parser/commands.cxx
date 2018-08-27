@@ -1920,7 +1920,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     /*
      * Check if we have a compatible previous
      * basebackup already in the catalog. check() doesn't
-     * throw, but will return a BaseBackupState flag
+     * throw, but will return a BaseBackupErrorCode flag
      * telling us what went wrong.
      */
     switch(this->check(pgstream.streamident)) {
