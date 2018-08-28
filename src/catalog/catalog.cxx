@@ -2051,6 +2051,9 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
 
+  /* Safe column list to descriptor */
+  result->setAffectedAttributes(backupAttrs);
+
   /* Column list */
   backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
                                                backupAttrs);
@@ -2084,6 +2087,10 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
       break;
     }
   }
+
+#ifdef __DEBUG__
+  cerr << "DEBUG: execute SQL " << query.str() << endl;
+#endif
 
   /* Prepare the query */
   rc = sqlite3_prepare(this->db_handle,
