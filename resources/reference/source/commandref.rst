@@ -364,11 +364,21 @@ START BASEBACKUP FOR ARCHIVE
 
 Syntax::
 
-  START BASEBACKUP FOR ARCHIVE <identifier> [PROFILE <identifier>]
+  START BASEBACKUP FOR ARCHIVE <identifier> [PROFILE <identifier>] [FORCE_SYSTEMID_UPDATE]
 
 Starts a basebackup in the archive recognized by ``<identifier>``, using
 the backup profile ``<identifier>``. If ``PROFILE`` is omitted, the
 ``default`` backup profile will be used.
+
+.. note::
+
+   The ``FORCE_SYSTEMID_UPDATE`` option allows to stream a basebackup into
+   a backup archive, which catalog already contains former basebackups with
+   a different SYSTEMID. This usually means that the source database instance
+   was freshly initialized and contains a new database cluster directory. pg_backup_ctl++
+   usually refuses to stream basebackups with a new systemid if there are already existing
+   basebackups with a mismatching SYSTEMID, but specifying the ``FORCE_SYSTEMID_UPDATE`` option
+   allows to override this protection. Use with care!
 
 Example::
 

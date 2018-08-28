@@ -260,6 +260,8 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->compression = source.compression;
   this->directory = source.directory;
   this->check_connection = source.check_connection;
+  this->force_systemid_update = source.force_systemid_update;
+  this->forceXLOGPosRestart = source.forceXLOGPosRestart;
   this->coninfo->pghost = source.coninfo->pghost;
   this->coninfo->pgport = source.coninfo->pgport;
   this->coninfo->pguser = source.coninfo->pguser;
@@ -562,6 +564,10 @@ void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
 
   }
 
+}
+
+void CatalogDescr::setForceSystemIDUpdate(bool const& force_sysid_update) {
+  this->force_systemid_update = force_sysid_update;
 }
 
 void CatalogDescr::setVerifyOption(VerifyOption const& option) {

@@ -12,6 +12,10 @@ BaseCatalogCommand::~BaseCatalogCommand() {}
 
 void BaseCatalogCommand::copy(CatalogDescr& source) {
 
+  /*
+   * IMPORTANT: Keep this in sync with
+   *            CatalogDescr::operator=() in catalog.cxx.
+   */
   this->tag = source.tag;
   this->id  = source.id;
   this->archive_name = source.archive_name;
@@ -20,6 +24,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->compression  = source.compression;
   this->directory    = source.directory;
   this->check_connection = source.check_connection;
+  this->force_systemid_update = source.force_systemid_update;
   this->forceXLOGPosRestart = source.forceXLOGPosRestart;
 
   /*
@@ -1731,8 +1736,19 @@ BackupCatalogErrorCode StartBasebackupCatalogCommand::check(StreamIdentification
   }
 
   /* Descriptor seems valid, check systemid. */
-  if (ident.systemid != bbdescr->systemid)
-    result = BASEBACKUP_CATALOG_INVALID_SYSTEMID;
+  if (ident.systemid != bbdescr->systemid) {
+
+    /*
+     * If this command handle has force_systemid_update
+     * set, ignore this mismatch, but return an appropiate
+     * BackupCatalogErrCode.
+     */
+    if (this->force_systemid_update)
+      result = BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE;
+    else
+      result = BASEBACKUP_CATALOG_INVALID_SYSTEMID;
+
+  }
 
   return result;
 
@@ -1924,6 +1940,12 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * telling us what went wrong.
      */
     switch(this->check(pgstream.streamident)) {
+    case BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE:
+      {
+        cerr << "WARNING: we are streaming a basebackup with a new systemid" << endl;
+        cerr << "         new systemid = " << pgstream.streamident.systemid << endl;
+        break;
+      }
     case BASEBACKUP_CATALOG_INVALID_SYSTEMID:
       {
         /*

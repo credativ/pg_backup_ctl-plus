@@ -172,7 +172,7 @@ namespace credativ {
                                                 ( cmd_start_basebackup
                                                   >> identifier
                                                   [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                                                  >> -(with_profile) )
+                                                  >> -(with_profile) >> -(force_systemid_update) )
                                                 | ( cmd_start_launcher )
                                                 | ( cmd_start_streaming )
                                                 )
@@ -650,6 +650,10 @@ namespace credativ {
         with_profile = no_case[lexeme [ lit("PROFILE") ]] >> identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
 
+        /* handle FORCE_SYSTEMID_UPDATE option */
+        force_systemid_update = no_case[ lexeme [ lit("FORCE_SYSTEMID_UPDATE") ] ]
+          [ boost::bind(&CatalogDescr::setForceSystemIDUpdate, &cmd, true) ];
+
         /*
          * error handling
          */
@@ -717,6 +721,7 @@ namespace credativ {
         profile_noverify_checksums_option.name("NOVERIFY");
         retention_rule_with_label.name("WITH LABEL");
         regexp_expression.name("<regular expression>");
+        force_systemid_update.name("FORCE_SYSTEMID_UPDATE");
       }
 
       /*
@@ -757,7 +762,8 @@ namespace credativ {
                           profile_noverify_checksums_option,
                           backup_profile_opts,
                           retention_keep_action,
-                          retention_drop_action;
+                          retention_drop_action,
+                          force_systemid_update;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,

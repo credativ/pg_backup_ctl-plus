@@ -175,10 +175,14 @@ completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_i
                                       { "RETENTION", COMPL_KEYWORD, list_retention_completion },
                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
-completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+completion_word start_basebackup_opt_force_sysid_upd[] = { { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, NULL },
+                                                           { "", COMPL_EOL, NULL } };
+
+completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, start_basebackup_opt_force_sysid_upd },
                                                      { "", COMPL_EOL, NULL } };
 
 completion_word start_basebackup_profile[] = { { "PROFILE", COMPL_KEYWORD, start_basebackup_profile_ident },
+                                               { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, NULL },
                                                { "", COMPL_EOL, NULL } };
 
 completion_word start_basebackup_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_basebackup_profile },

@@ -480,6 +480,11 @@ namespace credativ {
     std::string directory;
 
     /**
+     * Option flag, indicating a SYSTEMID catalog update.
+     */
+    bool force_systemid_update = false;
+
+    /**
      * A PinDescr instance is initialized by the parser when
      * handling a PIN command. By default, a caller can only
      * be sure if a pin descriptor instance is correctly
@@ -521,6 +526,11 @@ namespace credativ {
      * Static class methods.
      */
     static std::string commandTagName(CatalogTag tag);
+
+    /**
+     * Set the FORCE_SYSTEMID_OPTION option.
+     */
+    void setForceSystemIDUpdate(bool const& force_sysid_update);
 
     /*
      * Returns command tag as string.
@@ -869,6 +879,7 @@ namespace credativ {
 
                 BASEBACKUP_CATALOG_OK,
                 BASEBACKUP_CATALOG_INVALID_SYSTEMID,
+                BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE,
                 ARCHIVE_OK,
                 ARCHIVE_INVALID_XLOG_EXISTS
 
