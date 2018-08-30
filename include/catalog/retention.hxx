@@ -197,11 +197,21 @@ namespace credativ {
     /**
      * Initialize a retention policy with a given cleanup descriptor
      * from an earlier retention.
+     *
+     * In addition to init() without any argument, this initializes
+     * the internal rule state according to the state currently set
+     * in the specified BackupCleanupDescr.
+     *
+     * This must happen before finally calling apply(), which
+     * executes the encoded rule against the given basebackup set.
      */
     virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
 
     /**
      * Initialize the retention policy instance.
+     *
+     * This must happen before finally calling apply(), which
+     * executes the encoded rule against the given basebackup set.
      */
     virtual void init();
 

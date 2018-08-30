@@ -517,6 +517,8 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
    *      XLOG segments when there are still older TLIs around (without
    *      any basebackups requiring it) and thus diggin' holes into
    *      the WAL stream unnecessarily.
+   *
+   * XXX: Incorporate HISTORY files here.
    */
   for (auto const &offset_item : cleanupDescr->off_list) {
 

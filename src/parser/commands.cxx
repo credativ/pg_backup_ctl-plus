@@ -2655,6 +2655,27 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
    */
   for(auto &retention_rule : rules) {
 
+    /*
+     * Check if the cleanupDescr was not yet
+     * initialized. If still a nullptr reference,
+     * no rule was applied before, so we have to do
+     * it first. This is achieved by calling init()
+     * without arguments on the current rule. The
+     * cleanupDescr is then reused in subsequent iterations.
+     */
+    if (cleanupDescr == nullptr) {
+
+      retention_rule->init();
+
+    } else {
+
+      retention_rule->init(cleanupDescr);
+
+    }
+
+    /*
+     * Now we're ready to execute the rule.
+     */
     deleted += retention_rule->apply(this->bblist);
 
 #ifdef __DEBUG__
@@ -2681,7 +2702,7 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
      */
     cleanupDescr = retention_rule->getCleanupDescr();
 
-    /* Check if the cleanup descr is valid */
+    /* Check if the cleanup descr is still valid */
     if (cleanupDescr == nullptr) {
       throw CArchiveIssue("unexpected nullptr for cleanup descriptor, cannot clean backups");
     }

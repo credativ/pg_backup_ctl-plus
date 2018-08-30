@@ -248,7 +248,7 @@ bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDesc
    */
   it = cleanupDescr->off_list.find(timeline);
 
-  if (it != cleanupDescr->off_list.end()) {
+  if (it == cleanupDescr->off_list.end()) {
 
     cleanup_offset = make_shared<xlog_cleanup_off_t>();
     cleanup_offset->timeline = timeline;
@@ -386,7 +386,7 @@ void LabelRetention::init(shared_ptr<BackupCleanupDescr> prevCleanupDescr) {
 
 void LabelRetention::init() {
 
-    /*
+  /*
    * Initialize the cleanup descriptor. Currently we just support
    * deleting by a starting XLogRecPtr and removing all subsequent (older)
    * WAL files from the archive.
