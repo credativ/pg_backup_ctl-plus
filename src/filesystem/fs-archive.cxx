@@ -542,6 +542,10 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
     std::string direntname     = entry.path().filename().string();
     WALSegmentFileStatus fstat = WAL_SEGMENT_UNKNOWN;
 
+#ifdef __DEBUG_XLOG__
+    cerr << "DEBUG XLOG: examining file: " << direntname << endl;
+#endif
+
     /*
      * Retrieve the XLogRecPtr from this segment file.
      */
@@ -991,7 +995,12 @@ void BackupDirectory::fsync_recursive(path handle) {
       file.fsync();
       file.close();
     } catch (CArchiveIssue &e) {
-      /* ignore any errors while recursing. */
+      /*
+       * Ignore any errors while recursing, but don't
+       * leak possible opened file descriptors
+       */
+      if (file.isOpen())
+        file.close();
     }
 
   }
@@ -1062,9 +1071,14 @@ void BackupDirectory::fsync(path syncPath) {
         << syncPath.string()
         << "\": "
         << strerror(errno);
+
+    /* Should be a valid descriptor here, make sure it's closed */
+    close(dh);
+
     throw CArchiveIssue(oss.str());
   }
 
+  close(dh);
 }
 
 shared_ptr<ArchiveLogDirectory> BackupDirectory::logdirectory() {
