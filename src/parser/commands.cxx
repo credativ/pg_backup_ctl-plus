@@ -1820,8 +1820,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     /* Requested archive doesn't exist, error out */
     std::ostringstream oss;
 
-    oss << "archive " << this->archive_name << " doesn't exist";
-    this->catalog->rollbackTransaction();
+    oss << "archive " << this->archive_name << " does not exist";
     throw CArchiveIssue(oss.str());
   }
 
