@@ -430,7 +430,32 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
     boost::smatch what;
 
-    XLogRecPtr bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
+    /*
+     * Extract the end location of the WAL stream from the current
+     * basebackup. This location (and the next segment in the WAL stream),
+     * marks the starting offset were potentially unneeded segments can
+     * be deleted later. Though, we must be careful for aborted
+     * basebackups, since those don't have an end location. Since those
+     * basebackups aren't usable either, we stick the *start* position
+     * of them into our cleanup procedure.
+     *
+     * If a basebackup is in progress, we handle the XLogRecPtr according
+     * to an aborted one. But a basebackup in progress will get a special
+     * handling either anyways, since those are handled the same
+     * way as a pinned basebackup (see below).
+     */
+    XLogRecPtr bbxlogrecptr;
+
+    if ((bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED)
+        || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)) {
+
+      bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogpos);
+
+    } else {
+
+      bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
+
+    }
 
     /*
      * Move the XLogRecPtr in the cleanup descriptor backwards, so
