@@ -548,17 +548,8 @@ namespace credativ {
                      unsigned long long wal_segment_size);
 
     /**
-     * Examine the cleanup descriptor and
-     * the basebackups found within. Returns a XLogRecPtr describing the
-     * starting position of XLOG segments that can be deleted, determined
-     * by the oldest basebackup XLOG end position found in the cleanup
-     * descriptor.
-     *
-     * The specified cleanupDescr should be initialized by a descendant of
-     * the Retention class, holding a list of basebackups which should be kept.
-     * identifyDeletionOffset() examines this list for XLogRecPtr which can
-     * be used for offset or range of WAL segment files which can be deleted.
-     * The identified XLogRecPtr offset or range is stored within the cleanupDescr.
+     * Check specified cleanup descriptor being suitable to perform a
+     * XLOG cleanup.
      *
      * If no XLogRecPtr offset or range can be identified, the cleanupDescr mode will
      * be set to NO_WAL_TO_DELETE.
@@ -566,18 +557,9 @@ namespace credativ {
      * If cleanupDescr wasn't initialized with BASEBACKUP_DELETE, an CArchiveIssue
      * will be thrown.
      *
-     * When called, identifyDeletionOffset() doesn't assume the basebackups list
-     * being in any sorted order, instead it goes through the complete list and checks
-     * the XLogRecPtr values for being beyond the current ones. The oldest
-     * XLogRecPtr is then assigned for being the start offset for removing
-     * log files from the archive. Because of this algorithm the caller
-     * can call the identifyDeletionOffset multiple times with a changed
-     * list of basebackups, as long as the XLogRecPtr positions located in the
-     * descriptor is kept.
-     *
      * For further information, see also the comments in src/catalog/retention.cxx.
      */
-    virtual void identifyDeletionOffset(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+    virtual void checkCleanupDescriptor(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
   };
 
   /*

@@ -2837,6 +2837,8 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
      */
     for(auto &basebackup : archiveCleanupDescr->basebackups) {
 
+      boost::system::error_code ec;
+
 #ifdef __DEBUG__
       cerr << "deleting fs path " << basebackup->fsentry << endl;
 #endif
@@ -2845,27 +2847,49 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
         wal_segment_size = basebackup->wal_segment_size;
       }
 
+#ifdef __DEBUG_XLOG__
+      cerr << "DEBUG: cleaning with wal_segment_size="
+           << wal_segment_size
+           << endl;
+#endif
+
       /*
        * Drop the basebackup from the catalog database. If this
        * succeeds we go over and unlink the file(s) and director(y|ies)
        * physically.
        */
       this->catalog->deleteBaseBackup(basebackup->id);
-      BackupDirectory::unlink_path(path(basebackup->fsentry));
+      remove_all(path(basebackup->fsentry), ec);
 
-    }
+      /*
+       * Explicitely warn in case the file was already deleted.
+       */
+      if (ec.value() == boost::system::errc::no_such_file_or_directory) {
 
-    /*
-     * Perform archive cleanup procedures...
-     */
+        cerr << "WARNING: basebackup in file/directory "
+             << basebackup->fsentry
+             << " already gone."
+             << endl;
+
+      } else if (ec.value() != boost::system::errc::success) {
+
+        throw CArchiveIssue(ec.message());
+
+      }
+
+      /*
+       * Perform archive cleanup procedures...
+       */
 #ifdef __DEBUG__
-    cerr << "DEBUG: cleaning archive log directory "
-         << archiveLogDir->getPath()
-         << endl;
+      cerr << "DEBUG: cleaning archive log directory "
+           << archiveLogDir->getPath()
+           << endl;
 #endif
 
-    archiveLogDir->identifyDeletionOffset(archiveCleanupDescr);
-    archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
+      archiveLogDir->checkCleanupDescriptor(archiveCleanupDescr);
+      archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
+
+    }
 
     /*
      * Now it's time to commit all database work. It might

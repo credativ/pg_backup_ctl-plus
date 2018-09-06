@@ -194,6 +194,7 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       std::string filename = myfile->getFilePath();
 
       myfile->setExecutable("pbzip2");
+      myfile->pushExecArgument("-l");
       myfile->pushExecArgument("-c");
       myfile->pushExecArgument(">");
       myfile->pushExecArgument(filename);
@@ -580,7 +581,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
 #else
         XLogFromFileName(direntname.c_str(), &xlog_tli,
                          &xlog_segno, wal_segment_size);
-        XLogSegNoOffsetToRecPtr(xlog_segno, 0, recptr, wal_segment_size);
+        XLogSegNoOffsetToRecPtr(xlog_segno, 0, wal_segment_size, recptr);
         recptr -= XLogSegmentOffset(recptr, wal_segment_size);
 #endif
 
@@ -608,7 +609,9 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
                     && (recptr < (it->second)->wal_cleanup_start_pos) ) {
 
 #ifdef __DEBUG__
-          cerr << "XLogRecPtr is older than requested position, deleting file "
+          cerr << "XLogRecPtr is older than requested position("
+               << PGStream::encodeXLOGPos(recptr)
+               << "), deleting file "
                << direntname
                << endl;
 #endif
@@ -755,7 +758,7 @@ unsigned long long ArchiveLogDirectory::getXlogSegmentSize(path segmentFile,
   return fileSize;
 }
 
-void ArchiveLogDirectory::identifyDeletionOffset(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {
+void ArchiveLogDirectory::checkCleanupDescriptor(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {
 
   if (cleanupDescr == nullptr)
     throw CArchiveIssue("cannot identify wal deletion points without basebackup data");
@@ -787,15 +790,6 @@ void ArchiveLogDirectory::identifyDeletionOffset(std::shared_ptr<BackupCleanupDe
     return;
 
   }
-
-  /*
-   * The specified cleanupDescr holds a list of basebackups to keep,
-   * assumed to be sorted in descending order, from newest to oldest.
-   *
-   * We safe the oldest XLogRecPtr from this keep list into the
-   * cleanup descriptor.
-   */
-
 
 }
 
