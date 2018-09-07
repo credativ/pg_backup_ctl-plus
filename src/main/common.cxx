@@ -517,6 +517,32 @@ std::string CPGBackupCtlBase::basebackup_filename() {
 
 }
 
+std::string CPGBackupCtlBase::stdout_red(std::string in, bool bold) {
+
+  /* In case not a terminal, return plain string */
+  if (!isatty(fileno(stdout)))
+    return in;
+
+  if (bold)
+    return string("\033[1;31m" + in + " \033[0m");
+  else
+    return string("\033[0;31m" + in + " \033[0m");
+
+}
+
+std::string CPGBackupCtlBase::stdout_green(std::string in, bool bold) {
+
+    /* In case not a terminal, return plain string */
+  if (!isatty(fileno(stdout)))
+    return in;
+
+  if (bold)
+    return string("\033[1;32m" + in + " \033[0m");
+  else
+    return string("\033[0;32m" + in + " \033[0m");
+
+}
+
 /*
  * This code is borrowed from PostgreSQL's pg_size_pretty()
  * function, see src/backend/utils/adt/dbsize.c

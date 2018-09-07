@@ -233,6 +233,14 @@ namespace credativ {
                                   boost::format& format,
                                   int width);
 
+    /**
+     * Format string with color escape sequence. If
+     * STDOUT is *not* a terminal, those routines
+     * are effectively a no-op.
+     */
+    static std::string stdout_red(std::string in, bool bold);
+    static std::string stdout_green(std::string in, bool bold);
+
     /*
      * Writes the specified msg into the specified file, while
      * replacing its whole content!

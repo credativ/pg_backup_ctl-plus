@@ -1638,9 +1638,19 @@ void ListBackupListCommand::execute(bool flag) {
      * Display the state and local size of the basebackup. If the basebackup
      * doesn't exist anymore, print a warning instead.
      */
-    cout << boost::format("%-25s\t%-40s")
-      % "Backup status (ON-DISK):"
-      % BackupDirectory::verificationCodeAsString(bbstatus) << endl;
+    if (bbstatus != BASEBACKUP_OK) {
+
+      cout << boost::format("%-25s\t%-40s")
+        % CPGBackupCtlBase::stdout_red("Backup status (ON-DISK):", true)
+        % CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
+
+    } else {
+
+      cout << boost::format("%-25s\t%-40s")
+        % CPGBackupCtlBase::stdout_green("Backup status (ON-DISK):", true)
+        % CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
+
+    }
 
     if (bbstatus == BASEBACKUP_OK) {
       cout << boost::format("%-25s\t%-40s")
