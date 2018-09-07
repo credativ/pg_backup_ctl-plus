@@ -255,6 +255,29 @@ bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDesc
     cleanup_offset->wal_segment_size = wal_segment_size;
     cleanup_offset->wal_cleanup_start_pos = start_segment_ptr;
 
+    /*
+     * Insert the new timeline cleanup offset.
+     */
+    if (!cleanupDescr->off_list.insert(std::pair<int, shared_ptr<xlog_cleanup_off_t>>(timeline,
+                                                                                      cleanup_offset)).second) {
+
+      /*
+       * This is unexpected. We have checked wether the timeline
+       * already has a cleanup offset attached. If we're landing here,
+       * this means something went terribly wrong.
+       */
+      throw CArchiveIssue("could not attach new timeline cleanup offset");
+
+    }
+
+#ifdef __DEBUG__XLOG__
+    cerr << "DEBUG: insert new tli/offset "
+         << timeline
+         << "/"
+         << cleanup_offset->wal_cleanup_start_pos
+         << endl;
+#endif
+
     result = true;
 
   } else {
@@ -429,6 +452,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
   for(auto &bbdescr : deleteList) {
 
     boost::smatch what;
+    bool modified_xlog_cleanup_offset = false;
 
     /*
      * Extract the end location of the WAL stream from the current
@@ -459,18 +483,20 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
     /*
      * Move the XLogRecPtr in the cleanup descriptor backwards, so
-     * that unneeded XLOG segments can be remove automatically. We *must*
+     * that unneeded XLOG segments can be removed automatically. We *must*
      * call this on any basebackup we examine here to not miss
      * any important XLogRecPtr.
      */
-    bool modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
-                                                                         bbxlogrecptr,
-                                                                         bbdescr->timeline,
-                                                                         bbdescr->wal_segment_size);
+    modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                    bbxlogrecptr,
+                                                                    bbdescr->timeline,
+                                                                    bbdescr->wal_segment_size);
 
 #ifdef __DEBUG__
     if (modified_xlog_cleanup_offset) {
-      cerr << "modified XLOG cleanup offset: recptr = " << PGStream::encodeXLOGPos(bbxlogrecptr);
+      cerr << "modified XLOG cleanup offset: recptr = "
+           << PGStream::encodeXLOGPos(bbxlogrecptr)
+           << endl;
     }
 #endif
 
@@ -783,10 +809,6 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
       /* fetch descriptor */
       shared_ptr<BaseBackupDescr> bbdescr = list[currindex];
 
-      /* basebackup directory handle for verification */
-      StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
-                                       this->archiveDescr->directory);
-
       /* check if initialized */
       if (bbdescr->id < 0) {
         continue;
@@ -798,7 +820,7 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
       }
 
       /* Verify on-disk representation */
-      if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
+      if (StreamingBaseBackupDirectory::verify(bbdescr) != BASEBACKUP_OK) {
         continue;
       }
 
@@ -816,10 +838,6 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
 
     for (auto bbdescr : boost::adaptors::reverse(list)) {
 
-      /* basebackup directory handle for verification */
-      StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
-                                       this->archiveDescr->directory);
-
       /* check if initialized */
       if (bbdescr->id < 0) {
         continue;
@@ -831,7 +849,7 @@ unsigned int PinRetention::action_NewestOrOldest(vector<shared_ptr<BaseBackupDes
       }
 
       /* Verify on-disk representation */
-      if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
+      if (StreamingBaseBackupDirectory::verify(bbdescr) != BASEBACKUP_OK) {
         continue;
       }
 
@@ -870,9 +888,6 @@ unsigned int PinRetention::action_ID(vector<shared_ptr<BaseBackupDescr>> &list) 
 
   for(auto &bbdescr : list) {
 
-    StreamingBaseBackupDirectory dir(path(bbdescr->fsentry).filename().string(),
-                                     this->archiveDescr->directory);
-
     /* if uninitialized, ignore the basebackup descriptor */
     if (bbdescr->id < 0) {
       continue;
@@ -888,7 +903,7 @@ unsigned int PinRetention::action_ID(vector<shared_ptr<BaseBackupDescr>> &list) 
     /*
      * If the basebackup does not exist on disk, don't pin it.
      */
-    if (dir.verify_basebackup(bbdescr) != BASEBACKUP_OK) {
+    if (StreamingBaseBackupDirectory::verify(bbdescr) != BASEBACKUP_OK) {
       continue;
     }
 
@@ -928,9 +943,6 @@ unsigned int PinRetention::action_Count(vector<shared_ptr<BaseBackupDescr>> &lis
    */
   for (auto &bbitem : list) {
 
-    StreamingBaseBackupDirectory dir(path(bbitem->fsentry).filename().string(),
-                                     this->archiveDescr->directory);
-
     /*
      * Don't operate on uninitialized basebackup descriptors.
      */
@@ -949,7 +961,7 @@ unsigned int PinRetention::action_Count(vector<shared_ptr<BaseBackupDescr>> &lis
     /*
      * Basebackup available on disk? If not, don't pin it.
      */
-    if (dir.verify_basebackup(bbitem) != BASEBACKUP_OK)
+    if (StreamingBaseBackupDirectory::verify(bbitem) != BASEBACKUP_OK)
       continue;
 
     basebackupIds.push_back(bbitem->id);

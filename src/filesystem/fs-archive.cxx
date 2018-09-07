@@ -95,7 +95,7 @@ StreamingBaseBackupDirectory *StreamingBaseBackupDirectory::getInstance(string d
 
 }
 
-BaseBackupVerificationCode StreamingBaseBackupDirectory::verify_basebackup(std::shared_ptr<BaseBackupDescr> bbdescr) {
+BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<BaseBackupDescr> bbdescr) {
 
   /*
    * Sanity check for specified basebackup descriptor.
@@ -120,21 +120,9 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify_basebackup(std::
   }
 
   /*
-   * Before we do any on-disk verification, make
-   * sure the backup descriptor and this
-   * StreamingBaseBackupDirectory instance point to the
-   * same path. We use boost::filesystem::equivalent() here, since
-   * we want to make sure we point to exactly the same
-   * phyiscal filesystem entity.
-   */
-  if (!equivalent(this->streaming_subdir, path(bbdescr->fsentry))) {
-    return BASEBACKUP_DIRECTORY_MISMATCH;
-  }
-
-  /*
    * Check if streaming directory exists.
    */
-  if (!exists(this->streaming_subdir)) {
+  if (!exists(bbdescr->fsentry)) {
     return BASEBACKUP_DIRECTORY_MISSING;
   }
 
@@ -796,6 +784,57 @@ void ArchiveLogDirectory::checkCleanupDescriptor(std::shared_ptr<BackupCleanupDe
 /******************************************************************************
  * BackupDirectory Implementation
  ******************************************************************************/
+
+string BackupDirectory::verificationCodeAsString(BaseBackupVerificationCode code) {
+
+  string code_str;
+
+  switch(code) {
+
+  case BASEBACKUP_OK:
+    code_str = "OK";
+    break;
+
+  case BASEBACKUP_ABORTED:
+    code_str = "ABORTED";
+    break;
+
+  case BASEBACKUP_IN_PROGRESS:
+    code_str = "IN PROGRESS";
+    break;
+
+  case BASEBACKUP_START_WAL_MISSING:
+    code_str = "WAL START POSITION MISSING";
+    break;
+
+  case BASEBACKUP_END_WAL_MISSING:
+    code_str = "WAL END_POSITION MISSING";
+    break;
+
+  case BASEBACKUP_DIRECTORY_MISSING:
+    code_str = "BASEBACKUP DIRECTORY MISSING";
+    break;
+
+  case BASEBACKUP_DESCR_INVALID:
+    code_str = "BASEBACKUP CATALOG DESCRIPTOR INVALID";
+    break;
+
+  case BASEBACKUP_DIRECTORY_MISMATCH:
+    code_str = "BASEBACKUP CATALOG DIRECTORY AND ON DISK DIRECTORY NOT IDENTICAL";
+    break;
+
+  case BASEBACKUP_GENERIC_VERIFICATION_FAILURE:
+    code_str = "GENERIC BASEBACKUP VERIFICATION FAILURE";
+    break;
+
+  default:
+    code_str = "N/A";
+    break;
+
+  }
+
+  return code_str;
+}
 
 void BackupDirectory::create() {
   if (!exists(this->handle)) {

@@ -1575,6 +1575,8 @@ void ListBackupListCommand::execute(bool flag) {
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
                                            temp_descr->directory);
 
+    BaseBackupVerificationCode bbstatus = StreamingBaseBackupDirectory::verify(basebackup);
+
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "ID" % basebackup->id);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
@@ -1582,7 +1584,7 @@ void ListBackupListCommand::execute(bool flag) {
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Backup" % basebackup->fsentry);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Status" % basebackup->status);
+                                       % "Catalog State" % basebackup->status);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Label" % basebackup->label);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
@@ -1631,9 +1633,25 @@ void ListBackupListCommand::execute(bool flag) {
     cout << "Summary:" << endl;
     cout << boost::format("%-25s\t%-40s")
       % "Total size upstream:" % CPGBackupCtlBase::prettySize(upstream_total_size * 1024) << endl;
+
+    /*
+     * Display the state and local size of the basebackup. If the basebackup
+     * doesn't exist anymore, print a warning instead.
+     */
     cout << boost::format("%-25s\t%-40s")
-      % "Total local backup size:"
-      % CPGBackupCtlBase::prettySize(directory.size()) << endl;
+      % "Backup status (ON-DISK):"
+      % BackupDirectory::verificationCodeAsString(bbstatus) << endl;
+
+    if (bbstatus == BASEBACKUP_OK) {
+      cout << boost::format("%-25s\t%-40s")
+        % "Total local backup size:"
+        % CPGBackupCtlBase::prettySize(directory.size()) << endl;
+    } else {
+      cout << boost::format("%-25s\t%-40s")
+        % "Total local backup size:"
+        % "NOT AVAILABLE" << endl;
+    }
+
 
     cout << CPGBackupCtlBase::makeLine(80) << endl;
 
