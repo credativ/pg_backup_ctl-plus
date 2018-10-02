@@ -2758,6 +2758,18 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
 
   }
 
+  /*
+   * If nothing was deleted, we need to create
+   * a dummy cleanup descriptor, telling the caller
+   * that there's nothing to do.
+   */
+  if (deleted == 0 && cleanupDescr == nullptr) {
+
+    cleanupDescr = make_shared<BackupCleanupDescr>();
+    cleanupDescr->basebackupMode = NO_BASEBACKUPS;
+
+  }
+
   return cleanupDescr;
 
 }
