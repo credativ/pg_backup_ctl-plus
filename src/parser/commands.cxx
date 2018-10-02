@@ -2650,19 +2650,16 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
   vector<shared_ptr<Retention>> rules = Retention::get(this->retention_name,
                                                        archiveDescr,
                                                        this->catalog);
+
+  /*
+   * WAL cleanup descr gets initialized during retention rule
+   * validation.
+   */
   shared_ptr<BackupCleanupDescr> cleanupDescr = nullptr;
 
   unsigned int deleted = 0;
   map<string, shared_ptr<BaseBackupDescr>> fslookuptable;
   map<string, shared_ptr<BaseBackupDescr>>::iterator it;
-
-  /*
-   * Result cleanup descriptor for later WAL cleanup.
-   */
-  shared_ptr<BackupCleanupDescr> result = make_shared<BackupCleanupDescr>();
-
-  result->basebackupMode = NO_BASEBACKUPS;
-  result->mode           = WAL_CLEANUP_OFFSET;
 
   if (rules.size() == 0) {
 
@@ -2757,20 +2754,11 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
         fslookuptable.emplace(bbdescr->fsentry, bbdescr);
       }
 
-      /* push it into the final cleanup descriptor */
-      result->basebackups.push_back(bbdescr);
-
     }
 
   }
 
-  /*
-   * Everything should be in shape now. Return the final cleanup descriptor.
-   */
-  if (deleted > 0)
-    result->basebackupMode = BASEBACKUP_DELETE;
-
-  return result;
+  return cleanupDescr;
 
 }
 

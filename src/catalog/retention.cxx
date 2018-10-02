@@ -482,25 +482,6 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
     }
 
     /*
-     * Move the XLogRecPtr in the cleanup descriptor backwards, so
-     * that unneeded XLOG segments can be removed automatically. We *must*
-     * call this on any basebackup we examine here to not miss
-     * any important XLogRecPtr.
-     */
-    modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
-                                                                    bbxlogrecptr,
-                                                                    bbdescr->timeline,
-                                                                    bbdescr->wal_segment_size);
-
-#ifdef __DEBUG__
-    if (modified_xlog_cleanup_offset) {
-      cerr << "modified XLOG cleanup offset: recptr = "
-           << PGStream::encodeXLOGPos(bbxlogrecptr)
-           << endl;
-    }
-#endif
-
-    /*
      * Apply regex to label.
      *
      * The outcoming action here depends on the RetentionRuleId
@@ -523,6 +504,18 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
           /*
            * KEEP basebackup.
            */
+
+          /*
+           * Move the XLogRecPtr in the cleanup descriptor backwards, so
+           * that unneeded XLOG segments can be removed automatically. We *must*
+           * call this on any basebackup we examine here to not miss
+           * any important XLogRecPtr.
+           */
+          modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                          bbxlogrecptr,
+                                                                          bbdescr->timeline,
+                                                                          bbdescr->wal_segment_size);
+
           break;
         }
 
@@ -546,6 +539,18 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
                  << bbdescr->fsentry
                  << "\""
                  << endl;
+
+            /*
+             * Move the XLogRecPtr in the cleanup descriptor backwards, so
+             * that unneeded XLOG segments can be removed automatically. We *must*
+             * call this on any basebackup we examine here to not miss
+             * any important XLogRecPtr.
+             */
+            modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                            bbxlogrecptr,
+                                                                            bbdescr->timeline,
+                                                                            bbdescr->wal_segment_size);
+
 
           } else {
 
@@ -591,6 +596,17 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
       case RETENTION_DROP_WITH_LABEL:
         {
+          /*
+           * Move the XLogRecPtr in the cleanup descriptor backwards, so
+           * that unneeded XLOG segments can be removed automatically. We *must*
+           * call this on any basebackup we examine here to not miss
+           * any important XLogRecPtr.
+           */
+          modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                          bbxlogrecptr,
+                                                                          bbdescr->timeline,
+                                                                          bbdescr->wal_segment_size);
+
           break;
         }
 
@@ -608,6 +624,18 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
                  << bbdescr->fsentry
                  << "\""
                  << endl;
+
+            /*
+             * Move the XLogRecPtr in the cleanup descriptor backwards, so
+             * that unneeded XLOG segments can be removed automatically. We *must*
+             * call this on any basebackup we examine here to not miss
+             * any important XLogRecPtr.
+             */
+            modified_xlog_cleanup_offset = Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                                                            bbxlogrecptr,
+                                                                            bbdescr->timeline,
+                                                                            bbdescr->wal_segment_size);
+
 
           } else {
 
@@ -633,6 +661,14 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
       } /* switch...case */
 
     } /* if regex_match() */
+
+#ifdef __DEBUG_XLOG__
+    if (modified_xlog_cleanup_offset) {
+      cerr << "modified XLOG cleanup offset: recptr = "
+           << PGStream::encodeXLOGPos(bbxlogrecptr)
+           << endl;
+    }
+#endif
 
     /* Increase current position counter */
     currindex++;
