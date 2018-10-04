@@ -430,17 +430,38 @@ namespace credativ {
         retention_keep_action =
           no_case[ lexeme[ lit("KEEP") ] ]
           >> ( retention_rule_with_label
-               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_KEEP_WITH_LABEL, ::_1) ] );
+               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_KEEP_WITH_LABEL, ::_1) ]
+               |
+               retention_rule_newer_datetime
+               );
 
         retention_drop_action =
           no_case[ lexeme[ lit("DROP") ] ]
           >> ( retention_rule_with_label
-               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_DROP_WITH_LABEL, ::_1) ]);
+               [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_DROP_WITH_LABEL, ::_1) ]
+               |
+               retention_rule_older_datetime );
 
         retention_rule_with_label =
           no_case[ lexeme[ lit("WITH") ] ]
           >> no_case[ lexeme[ lit("LABEL") ] ]
           >> regexp_expression;
+
+        retention_rule_older_datetime =
+          no_case[ lexeme[ lit("OLDER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
+                                            >> -(retention_datetime_spec
+                                                 [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_DROP_BY_DATETIME, ::_1)]);
+
+        retention_rule_newer_datetime =
+          no_case[ lexeme[ lit("NEWER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
+                                            >> -(retention_datetime_spec
+                                                 [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_KEEP_BY_DATETIME, ::_1)]);
+
+        retention_datetime_spec =
+          -(+(char_("0-9")) >> no_case[ lexeme[ lit("YEARS") ] ])
+          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("MONTHS") ] ])
+          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("DAYS") ] ])
+          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("HOURS") ] ]);
 
         regexp_expression =
           +char_("+-_A-Za-z0-9.[{}()\\*+?|^$");
@@ -699,6 +720,9 @@ namespace credativ {
         cmd_list_retention.name("LIST RETENTION");
         retention_keep_action.name("KEEP");
         retention_drop_action.name("DROP");
+        retention_rule_older_datetime.name("OLDER THAN");
+        retention_rule_older_datetime.name("NEWER THAN");
+        retention_datetime_spec.name("[nnn YEARS] [nnn MONTHS] [nnn DAYS] [nnn HOURS]");
         identifier.name("object identifier");
         executable.name("executable name");
         hostname.name("ip or hostname");
@@ -763,6 +787,8 @@ namespace credativ {
                           backup_profile_opts,
                           retention_keep_action,
                           retention_drop_action,
+                          retention_rule_older_datetime,
+                          retention_rule_newer_datetime,
                           force_systemid_update;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
@@ -781,6 +807,7 @@ namespace credativ {
                           with_profile,
                           executable,
                           retention_rule_with_label,
+                          retention_datetime_spec,
                           regexp_expression;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
