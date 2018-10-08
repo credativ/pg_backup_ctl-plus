@@ -457,7 +457,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
      * Calculate offset into XLOG end (or start)
      */
 #if PG_VERSION_NUM >= 110000
-    XLogSegNoOffsetToRecPtr(segmentNumber, 0, recptr, xlogsegsize);
+    XLogSegNoOffsetToRecPtr(segmentNumber, 0, xlogsegsize, recptr);
     recptr -= XLogSegmentOffset(recptr, xlogsegsize);
 #else
     XLogSegNoOffsetToRecPtr(segmentNumber, 0, recptr);
