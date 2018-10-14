@@ -151,13 +151,21 @@ namespace credativ {
      */
     virtual int XLOGOffset(XLogRecPtr pos);
 
-    /**
+     /**
      * Returns the starting XLogRecPtr position of a XLOG segment
      * relative to the specified XLOG position.
      */
     virtual XLogRecPtr XLOGSegmentStartPosition(XLogRecPtr pos);
     static  XLogRecPtr XLOGSegmentStartPosition(XLogRecPtr pos,
                                                 uint32 wal_segment_size);
+
+    virtual XLogRecPtr XLOGNextSegmentStartPosition(XLogRecPtr pos);
+    static XLogRecPtr XLOGNextSegmentStartPosition(XLogRecPtr pos,
+                                                   uint32 wal_segment_size);
+
+    virtual XLogRecPtr XLOGPrevSegmentStartPosition(XLogRecPtr pos);
+    static XLogRecPtr XLOGPrevSegmentStartPosition(XLogRecPtr pos,
+                                                   uint32 wal_segment_size);
 
     /**
      * PostgreSQL version number this library

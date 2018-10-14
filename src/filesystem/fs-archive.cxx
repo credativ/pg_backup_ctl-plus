@@ -565,12 +565,11 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
 
 #if PG_VERSION_NUM < 110000
         XLogFromFileName(direntname.c_str(), &xlog_tli, &xlog_segno);
-        recptr -= recptr % wal_segment_size;
+        XLogSegNoOffsetToRecPtr(xlog_segno, 0, recptr);
 #else
         XLogFromFileName(direntname.c_str(), &xlog_tli,
                          &xlog_segno, wal_segment_size);
         XLogSegNoOffsetToRecPtr(xlog_segno, 0, wal_segment_size, recptr);
-        recptr -= XLogSegmentOffset(recptr, wal_segment_size);
 #endif
 
         /*
@@ -582,6 +581,15 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
          * In this case, if the timeline is in the past (so lower
          * than any encountered timeline), we drop the XLOG segment,
          * since there's no basebackup depending on it.
+         *
+         * If the encountered XLogRecPtr is on a timeline seen
+         * during retention initialization, we check wether the cleanup_start
+         * pos (which is the starting point from where we are going to
+         * remove XLOG segment files from the archive) is *equal* or *smaller*
+         * than the XLOG segment starting offset retrieved above.
+         *
+         * If true, then this means that the current XLOG segment file
+         * is older and can be removed.
          */
         it = cleanupDescr->off_list.find(xlog_tli);
 
@@ -594,7 +602,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
           remove(entry.path());
 
         } else if ( (it->first == xlog_tli)
-                    && (recptr < (it->second)->wal_cleanup_start_pos) ) {
+                    && (recptr <= (it->second)->wal_cleanup_start_pos) ) {
 
 #ifdef __DEBUG__
           cerr << "XLogRecPtr is older than requested position("

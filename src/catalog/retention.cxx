@@ -455,29 +455,29 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
     bool modified_xlog_cleanup_offset = false;
 
     /*
-     * Extract the end location of the WAL stream from the current
-     * basebackup. This location (and the next segment in the WAL stream),
-     * marks the starting offset were potentially unneeded segments can
-     * be deleted later. Though, we must be careful for aborted
-     * basebackups, since those don't have an end location. Since those
-     * basebackups aren't usable either, we stick the *start* position
-     * of them into our cleanup procedure.
+     * Get the start position of the current basebackup and extract
+     * its XLogRecPtr (xlogpos), which describes the starting segment
+     * required for this basebackup. Then calculate the previous segment, since
+     * this is the one where the cleanup offsets starts.
      *
-     * If a basebackup is in progress, we handle the XLogRecPtr according
-     * to an aborted one. But a basebackup in progress will get a special
-     * handling either anyways, since those are handled the same
-     * way as a pinned basebackup (see below).
+     * We must be careful for a basebackup in progress, so treat this as a
+     * normal basebackup we are required to keep.
+     *
+     * An aborted basebackup does have a starting xlogpos but in normal
+     * cases no xlogposend. In case a basebackup is aborted, we include its
+     * starting XLOG segment and avoid to use the previous one.
      */
     XLogRecPtr bbxlogrecptr;
 
-    if ((bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED)
-        || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)) {
+    if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED) {
 
       bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogpos);
 
-    } else {
+    } else if ((bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_READY)
+               || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)) {
 
-      bbxlogrecptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
+      bbxlogrecptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogposend),
+                                                            bbdescr->wal_segment_size);
 
     }
 

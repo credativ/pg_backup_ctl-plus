@@ -161,6 +161,82 @@ XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos,
 
 }
 
+XLogRecPtr PGStream::XLOGNextSegmentStartPosition(XLogRecPtr pos) {
+
+#if PG_VERSION_NUM < 110000
+  return (pos - (pos % XLOG_SEG_SIZE)) + XLOG_SEG_SIZE +1;
+#else
+  return (pos - XLogSegmentOffset(pos, this->walSegmentSize)) + this->walSegmentSize + 1;
+#endif
+
+}
+
+XLogRecPtr PGStream::XLOGNextSegmentStartPosition(XLogRecPtr pos,
+                                                  uint32 wal_segment_size) {
+
+#if PG_VERSION_NUM < 110000
+  return (pos - (pos % wal_segment_size)) + wal_segment_size +1;
+#else
+  return (pos - XLogSegmentOffset(pos, wal_segment_size)) + wal_segment_size + 1;
+#endif
+
+}
+
+XLogRecPtr PGStream::XLOGPrevSegmentStartPosition(XLogRecPtr pos) {
+
+  XLogRecPtr prev_recptr = InvalidXLogRecPtr;
+
+  /*
+   * Get the starting position of the current segment
+   * file, move the recptr then one byte backward and calculate
+   * the offset again. This should give us the starting offset
+   * of the previous XLOG segment the given XLogRecPtr belongs to.
+   */
+
+#if PG_VERSION_NUM < 110000
+
+  prev_recptr = (pos - (pos % this->walSegmentSize)) - 1;
+  prev_recptr = (prev_recptr - (prev_recptr % this->walSegmentSize));
+
+#else
+
+  prev_recptr = (pos - XLogSegmentOffset(pos, this->walSegmentSize)) - 1 ;
+  prev_recptr = (prev_recptr - XLogSegmentOffset(prev_recptr, this->walSegmentSize));
+
+#endif
+
+  return prev_recptr;
+
+}
+
+XLogRecPtr PGStream::XLOGPrevSegmentStartPosition(XLogRecPtr pos,
+                                                  uint32 wal_segment_size) {
+
+  XLogRecPtr prev_recptr = InvalidXLogRecPtr;
+
+  /*
+   * Get the starting position of the current segment
+   * file, move the recptr then one byte backward and calculate
+   * the offset again. This should give us the starting offset
+   * of the previous XLOG segment the given XLogRecPtr belongs to.
+   */
+
+#if PG_VERSION_NUM < 110000
+
+  prev_recptr = (pos - (pos % wal_segment_size)) - 1;
+  prev_recptr = (prev_recptr - (prev_recptr % wal_segment_size));
+
+#else
+
+  prev_recptr = (pos - XLogSegmentOffset(pos, wal_segment_size)) - 1 ;
+  prev_recptr = (prev_recptr - XLogSegmentOffset(prev_recptr, wal_segment_size));
+
+#endif
+
+  return prev_recptr;
+
+}
+
 std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
   std::string result = "";
