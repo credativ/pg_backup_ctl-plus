@@ -1592,6 +1592,8 @@ void ListBackupListCommand::execute(bool flag) {
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "Started" % basebackup->started);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "Timeline" % basebackup->timeline);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "WAL start" % basebackup->xlogpos);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "WAL stop" % basebackup->xlogposend);
