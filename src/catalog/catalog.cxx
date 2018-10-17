@@ -50,7 +50,8 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "pinned",
     "status",
     "systemid",
-    "wal_segment_size"
+    "wal_segment_size",
+    "used_profile"
   };
 
 std::vector<std::string> BackupCatalog::streamCatalogCols =
@@ -1057,6 +1058,10 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::fetchBackupIntoDescr(sqlite3_stm
       descr->wal_segment_size = sqlite3_column_int(stmt, current_stmt_col);
       break;
 
+    case SQL_BACKUP_USED_PROFILE_ATTNO:
+      descr->used_profile = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
     default:
       break;
 
@@ -1904,6 +1909,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -1928,7 +1934,8 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
         << "COALESCE(bt.spcoid, -1) AS spcoid, "
         << "COALESCE(spclocation, 'no location') AS spclocation, "
         << "COALESCE(spcsize, -1) AS spcsize, "
-        << "b.wal_segment_size AS wal_segment_size "
+        << "b.wal_segment_size AS wal_segment_size, "
+        << "b.used_profile AS backup_profile_id "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
         << "WHERE b.id = ?1 AND b.archive_id = ?2;";
@@ -2056,6 +2063,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
 
   /* Safe column list to descriptor */
   result->setAffectedAttributes(backupAttrs);
@@ -2174,6 +2182,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
   backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -2201,7 +2210,8 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "COALESCE(bt.spcoid, -1) AS spcoid, "
         << "COALESCE(spclocation, 'no location') AS spclocation, "
         << "COALESCE(spcsize, -1) AS spcsize, "
-        << "b.wal_segment_size AS wal_segment_size "
+        << "b.wal_segment_size AS wal_segment_size, "
+        << "b.used_profile AS backup_profile_id "
         << "FROM "
         << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
         << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started DESC;";
@@ -2544,6 +2554,100 @@ BackupCatalog::getBackupProfiles() {
 
   sqlite3_finalize(stmt);
   return result;
+}
+
+std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(int profile_id) {
+
+  std::shared_ptr<BackupProfileDescr> descr = std::make_shared<BackupProfileDescr>();
+  sqlite3_stmt *stmt;
+  int rc;
+  std::ostringstream query;
+  Range range(0, 8);
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Any negative id is treated as an error internally.
+   */
+  if (profile_id < 0) {
+    ostringstream oss;
+
+    oss << "invalid backup profile id (\"" << profile_id
+        << "\") while trying to fetch backup profile data";
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Build the query
+   */
+  query << "SELECT id, name, compress_type, max_rate, label, "
+        << "fast_checkpoint, include_wal, wait_for_wal, noverify_checksums "
+        << "FROM backup_profiles WHERE id = ?1;";
+
+#ifdef __DEBUG__
+  cout << "QUERY : " << query.str() << endl;
+#endif
+
+  /*
+   * Prepare the query
+   */
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  /* Should match column order of query */
+  descr->pushAffectedAttribute(SQL_BCK_PROF_ID_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_NAME_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_COMPRESS_TYPE_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_MAX_RATE_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_LABEL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_FAST_CHKPT_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_INCL_WAL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
+  descr->pushAffectedAttribute(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind the values.
+   */
+  sqlite3_bind_int(stmt, 1, profile_id);
+
+  /* ...and execute ... */
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    ostringstream oss;
+    oss << "unexpected result in catalog query: " << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  try {
+    /*
+     * At this point only a single tuple expected...
+     */
+    if (rc == SQLITE_ROW) {
+      this->fetchBackupProfileIntoDescr(stmt, descr, range);
+    }
+
+  } catch (exception &e) {
+    /* don't leak sqlite3 statement handle */
+    sqlite3_finalize(stmt);
+    /* re-throw exception for caller */
+    throw e;
+  }
+
+  sqlite3_finalize(stmt);
+  return descr;
+
 }
 
 std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string name) {
@@ -2996,6 +3100,11 @@ int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbde
     case SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO:
       sqlite3_bind_int(stmt, result,
                        bbdescr->wal_segment_size);
+      break;
+
+    case SQL_BACKUP_USED_PROFILE_ATTNO:
+      sqlite3_bind_int(stmt, result,
+                       bbdescr->used_profile);
       break;
 
     default:
@@ -3688,8 +3797,9 @@ void BackupCatalog::registerBasebackup(int archive_id,
   }
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid, wal_segment_size) "
-                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
+                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid,"
+                          " wal_segment_size, used_profile) "
+                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
                           -1,
                           &stmt,
                           NULL);
@@ -3711,6 +3821,7 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 6, backupDescr->started.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt, 7, backupDescr->systemid.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 8, backupDescr->wal_segment_size);
+  sqlite3_bind_int(stmt, 9, backupDescr->used_profile);
 
   /*
    * Execute the statement.

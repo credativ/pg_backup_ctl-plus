@@ -31,7 +31,9 @@ CREATE TABLE backup(
        status text default 'in progress',
        systemid text not null,
        wal_segment_size int not null,
-       FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE
+       used_profile int not null,
+       FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE,
+       FOREIGN KEY(used_profile) REFERENCES backup_profiles(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE INDEX backup_id_idx ON backup(id);

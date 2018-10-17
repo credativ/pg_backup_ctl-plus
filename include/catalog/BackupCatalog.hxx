@@ -313,6 +313,13 @@ namespace credativ {
      */
     virtual std::shared_ptr<BackupProfileDescr> getBackupProfile(std::string name);
 
+    /**
+     * Returns the specified backup profile by its id.
+     *
+     * NOTE: A negative backup profile id will always throw!
+     */
+    virtual std::shared_ptr<BackupProfileDescr> getBackupProfile(int profile_id);
+
     /*
      * Create a catalog database connection entry.
      */
