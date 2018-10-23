@@ -20,7 +20,7 @@ set(CMAKE_BUILD_TYPE Debug)
 ##
 ## Compiled in sqlite catalog database filename.
 ##
-set(PG_BACKUP_CTL_SQLITE "/home/bernd/.pg_backup_ctl.sqlite" CACHE FILEPATH "path to sqlite database")
+set(PG_BACKUP_CTL_SQLITE "~/.pg_backup_ctl.sqlite" CACHE FILEPATH "path to sqlite database")
 message("sqlite database will be located in ${PG_BACKUP_CTL_SQLITE}")
 
 ##
