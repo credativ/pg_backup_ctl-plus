@@ -213,7 +213,8 @@ namespace credativ {
      * If everything is in shape, check() returns a BASEBACKUP_CATALOG_OK
      * flag, telling us that we are allowed to proceed.
      */
-    virtual BackupCatalogErrorCode check(StreamIdentification ident);
+    virtual BackupCatalogErrorCode check(int archive_id,
+                                         StreamIdentification ident);
 
   public:
     StartBasebackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);

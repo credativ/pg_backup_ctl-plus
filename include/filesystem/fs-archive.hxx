@@ -566,6 +566,17 @@ namespace credativ {
      * For further information, see also the comments in src/catalog/retention.cxx.
      */
     virtual void checkCleanupDescriptor(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+
+    /**
+     * Returns a new, allocated history file handle.
+     *
+     * The returned file handle is not closed nor synced, this
+     * is left to the caller. Timeline and the XLogRecPtr which
+     * should be flushed into the new history file are required.
+     */
+    virtual std::shared_ptr<BackupFile> allocateHistoryFile(int timeline,
+                                                            XLogRecPtr pos,
+                                                            bool compressed);
   };
 
   /*

@@ -1743,7 +1743,8 @@ StartBasebackupCatalogCommand::StartBasebackupCatalogCommand(std::shared_ptr<Cat
 
 }
 
-BackupCatalogErrorCode StartBasebackupCatalogCommand::check(StreamIdentification ident) {
+BackupCatalogErrorCode StartBasebackupCatalogCommand::check(int archive_id,
+                                                            StreamIdentification ident) {
 
   shared_ptr<BaseBackupDescr> bbdescr = nullptr;
   BackupCatalogErrorCode result = BASEBACKUP_CATALOG_OK;
@@ -1756,7 +1757,7 @@ BackupCatalogErrorCode StartBasebackupCatalogCommand::check(StreamIdentification
    * Only consider valid basebackups, since aborted or errorneous
    * basebackups aren't real backups ;)
    */
-  bbdescr = this->catalog->getBaseBackup(BASEBACKUP_NEWEST, true);
+  bbdescr = this->catalog->getBaseBackup(BASEBACKUP_NEWEST, archive_id, true);
 
   if (bbdescr->id < 0) {
 
@@ -1968,7 +1969,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * throw, but will return a BaseBackupErrorCode flag
      * telling us what went wrong.
      */
-    switch(this->check(pgstream.streamident)) {
+    switch(this->check(temp_descr->id, pgstream.streamident)) {
     case BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE:
       {
         cerr << "WARNING: we are streaming a basebackup with a new systemid" << endl;

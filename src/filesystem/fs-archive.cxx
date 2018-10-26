@@ -789,6 +789,16 @@ void ArchiveLogDirectory::checkCleanupDescriptor(std::shared_ptr<BackupCleanupDe
 
 }
 
+std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timeline,
+                                                                     XLogRecPtr pos,
+                                                                     bool compressed) {
+
+
+  shared_ptr<BackupFile> file = nullptr;
+  return file;
+
+}
+
 /******************************************************************************
  * BackupDirectory Implementation
  ******************************************************************************/

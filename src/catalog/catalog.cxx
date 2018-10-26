@@ -2029,6 +2029,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
 }
 
 std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieveMode mode,
+                                                              int archive_id,
                                                               bool valid_only) {
 
   std::shared_ptr<BaseBackupDescr> result = std::make_shared<BaseBackupDescr>();
@@ -2074,7 +2075,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
    * of basebackup or just the ones with "ready"
    */
   if (valid_only) {
-    query << "WHERE status = 'ready' ";
+    query << "WHERE status = 'ready' AND archive_id = ?1 ";
   }
 
   /*
@@ -2111,7 +2112,19 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
     throw CCatalogIssue(oss.str());
   }
 
-  /* No WHERE condition currently to bind, so proceed and execute the query */
+  if (sqlite3_bind_int(stmt, 1, archive_id) != SQLITE_OK) {
+    ostringstream oss;
+
+    oss << "could not bind archive_id(\""
+        << archive_id << "\")"
+        << " in catalog query: "
+        << sqlite3_errmsg(this->db_handle);
+
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* Execute the query */
   rc = sqlite3_step(stmt);
 
   if (rc != SQLITE_ROW && rc != SQLITE_DONE) {

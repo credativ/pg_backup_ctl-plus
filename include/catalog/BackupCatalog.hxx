@@ -620,8 +620,8 @@ namespace credativ {
     getBackupList(std::string archive_name);
 
     /**
-     * Returns a specific basebackup in the catalog, identified
-     * by the BaseBackupRetrieveMode mode.
+     * Returns a specific basebackup in the catalog for an archive,
+     * identified by the BaseBackupRetrieveMode mode.
      *
      * valid_only specified wether the method should only
      * consider basebackups in state "ready". If set to false,
@@ -629,6 +629,7 @@ namespace credativ {
      * "aborted" basebackups.
      */
     virtual std::shared_ptr<BaseBackupDescr> getBaseBackup(BaseBackupRetrieveMode mode,
+                                                           int archive_id,
                                                            bool valid_only);
 
     /**
