@@ -1412,9 +1412,14 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      */
     while (1) {
 
-      MemoryBuffer timelineHistory;
       string historyFilename;
       StreamIdentification walstreamerIdent;
+
+#ifdef __DEBUG_XLOG__
+      cerr << "DEBUG: WAL streaming on timeline "
+           << walstreamer->getCurrentTimeline()
+           << endl;
+#endif
 
       /*
        * Get the timeline history file content, but only if we
@@ -1422,13 +1427,47 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
        * never writes a history file, thus ignore it.
        */
       if (walstreamer->getCurrentTimeline() > 1) {
-        pgstream->timelineHistoryFileContent(timelineHistory,
-                                             historyFilename,
-                                             walstreamer->getCurrentTimeline());
+
+        /* physical TLI history file handle */
+        shared_ptr<BackupFile> tli_history_file = nullptr;
+
+        /* Buffer holding timeline history file data */
+        MemoryBuffer timelineHistory;
+
+        /*
+         * If the requested timeline history file already exists,
+         * we move forward.
+         */
+        if (!this->logdir->historyFileExists(walstreamer->getCurrentTimeline(),
+                                             temp_descr->compression)) {
+
+          pgstream->timelineHistoryFileContent(timelineHistory,
+                                               historyFilename,
+                                               walstreamer->getCurrentTimeline());
+
+          try {
+
+            tli_history_file = this->logdir->allocateHistoryFile(walstreamer->getCurrentTimeline(),
+                                                                 temp_descr->compression);
+            tli_history_file->write(timelineHistory.ptr(),
+                                    timelineHistory.getSize());
+            tli_history_file->fsync();
+            tli_history_file->close();
+
 #ifdef __DEBUG_XLOG_
-        std::cerr << "got history file " << historyFilename
-                  << " and its content" << std::endl;
+            std::cerr << "got history file " << historyFilename
+                      << " and its content" << std::endl;
 #endif
+          } catch (CArchiveIssue &ai) {
+
+            if ((tli_history_file != nullptr) && (tli_history_file->isOpen())) {
+              /* don't leak descriptor here */
+              tli_history_file->close();
+              throw ai;
+            }
+
+          }
+        }
       }
 
       walstreamer->start();

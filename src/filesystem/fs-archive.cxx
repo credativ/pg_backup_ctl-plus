@@ -789,12 +789,76 @@ void ArchiveLogDirectory::checkCleanupDescriptor(std::shared_ptr<BackupCleanupDe
 
 }
 
+bool ArchiveLogDirectory::historyFileExists(int timeline,
+                                            bool compression) {
+
+  string tli_history_filename = "";
+  bool result = false;
+
+  if (compression) {
+
+    tli_history_filename = (boost::format("%08X.history.gz") % timeline).str();
+
+  } else {
+
+    tli_history_filename = (boost::format("%08X.history") % timeline).str();
+
+  }
+
+  try {
+
+    result = exists(this->getPath() / tli_history_filename);
+
+  } catch(filesystem_error &e) {
+    /* remap to CArchiveIssue which is recognized by the API */
+    ostringstream oss;
+
+    oss << "error checking for history file \""
+        << tli_history_filename << "\": "
+        << e.what();
+
+    throw CArchiveIssue(oss.str());
+  }
+
+  return result;
+
+}
+
 std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timeline,
-                                                                     XLogRecPtr pos,
                                                                      bool compressed) {
 
 
   shared_ptr<BackupFile> file = nullptr;
+  string tli_history_filename = "";
+
+  /*
+   * We don't operate on TLI smaller than 1 (indeed,
+   * in PostgreSQL there's never a timeline < 1).
+   */
+  if (timeline < 1) {
+    throw CArchiveIssue("cannot allocate a timeline history file with TLI=" + timeline);
+  }
+
+  /* TLI History filename, see PG's src/include/access/xlog_internal.h */
+
+  /*
+   * Allocate a ordinary ArchiveFile handle (or CompressedArchiveFile).
+   * Write the formatted contents and return the opened file handle.
+   */
+  if (compressed) {
+
+    tli_history_filename = (boost::format("%08X.history.gz") % timeline).str();
+    file = make_shared<CompressedArchiveFile>(this->getPath() / tli_history_filename);
+
+  } else {
+
+    tli_history_filename = (boost::format("%08X.history.") % timeline).str();
+    file = make_shared<ArchiveFile>(this->getPath() / tli_history_filename);
+
+  }
+
+  file->open();
+
   return file;
 
 }
