@@ -1118,8 +1118,10 @@ void StartStreamingForArchiveCommand::prepareStream() {
              * We could extract a new XLogRecPtr from the archive.
              */
 #ifdef __DEBUG_XLOG__
-            cerr << "new XLOG start position determined by archive: "
+            cerr << "new XLOG/TLI start position determined by archive: "
                  << xlogpos
+                 << "/"
+                 << new_tli
                  << endl;
 #endif
             pgstream->streamident.xlogpos = xlogpos;

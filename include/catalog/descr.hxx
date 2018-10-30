@@ -2,6 +2,7 @@
 #define __HAVE_CATALOGDESCR__
 
 #include <common.hxx>
+#include <unordered_set>
 
 namespace credativ {
 
@@ -103,6 +104,75 @@ namespace credativ {
     RETENTION_UNPIN = 600
 
   } RetentionRuleId;
+
+  /**
+   * Type of ConfigVariable.
+   */
+  typedef enum {
+
+    RT_CONFIG_VAR_BOOL,
+    RT_CONFIG_VAR_STRING,
+    RT_CONFIG_VAR_ENUM, /* always a vector of strings */
+    RT_CONFIG_VAR_INTEGER,
+    RT_CONFIG_VAR_UNKNOWN_TYPE
+
+  } ConfigVariableType;
+
+  /**
+   * Base class for config runtime variables.
+   */
+  class ConfigVariable {
+  protected:
+    ConfigVariableType type = RT_CONFIG_VAR_UNKNOWN_TYPE;
+  public:
+
+    ConfigVariable() {};
+    virtual ~ConfigVariable() {};
+
+  };
+
+  class BoolConfigVariable : public ConfigVariable {
+  public:
+
+    BoolConfigVariable();
+    BoolConfigVariable(std::string name, bool value, bool defaultval);
+    virtual ~BoolConfigVariable() {};
+
+  };
+
+  class StringConfigVariable : public ConfigVariable {
+  public:
+
+    StringConfigVariable() {};
+    StringConfigVariable(std::string name,
+                         std::string value,
+                         std::string defaultval);
+    virtual ~StringConfigVariable() {};
+
+  };
+
+  class EnumConfigVariable : public ConfigVariable {
+  public:
+
+    EnumConfigVariable() {};
+    EnumConfigVariable(std::string name,
+                       std::string value,
+                       std::string defaultval,
+                       std::unordered_set<std::string> possible_values);
+    virtual ~EnumConfigVariable() {};
+
+  };
+
+  class IntegerConfigVariable : public ConfigVariable {
+  public:
+
+    IntegerConfigVariable() {};
+    IntegerConfigVariable(std::string name,
+                          int value,
+                          int defaultval);
+    virtual ~IntegerConfigVariable() {};
+
+  };
 
   /*
    * Represents a physical replication slot.
@@ -469,7 +539,7 @@ namespace credativ {
 
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
-    ~CatalogDescr();
+    virtual ~CatalogDescr();
 
     CatalogTag tag;
     int id = -1;

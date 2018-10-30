@@ -113,6 +113,37 @@ std::vector<std::string>BackupCatalog::retentionRulesCatalogCols =
     "value"
   };
 
+BoolConfigVariable::BoolConfigVariable() {
+
+  this->type = RT_CONFIG_VAR_BOOL;
+
+}
+
+BoolConfigVariable::BoolConfigVariable(string name,
+                                       bool   value,
+                                       bool   defaultval) {
+
+}
+
+StringConfigVariable::StringConfigVariable(string name,
+                                           string value,
+                                           string defaultval) {
+
+}
+
+EnumConfigVariable::EnumConfigVariable(string name,
+                                       string value,
+                                       string defaultval,
+                                       std::unordered_set<string> possible_values) {
+
+}
+
+IntegerConfigVariable::IntegerConfigVariable(string name,
+                                             int value,
+                                             int defaultval) {
+
+}
+
 PushableCols::PushableCols() {}
 PushableCols::~PushableCols() {}
 
