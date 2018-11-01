@@ -852,11 +852,12 @@ std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timelin
 
   } else {
 
-    tli_history_filename = (boost::format("%08X.history.") % timeline).str();
+    tli_history_filename = (boost::format("%08X.history") % timeline).str();
     file = make_shared<ArchiveFile>(this->getPath() / tli_history_filename);
 
   }
 
+  file->setOpenMode("wb");
   file->open();
 
   return file;

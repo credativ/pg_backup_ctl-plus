@@ -1427,8 +1427,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
        * Get the timeline history file content, but only if we
        * are on a timeline greater than 1. The first timeline
        * never writes a history file, thus ignore it.
+       *
+       * Rely on the timeline previously identified
+       * by prepareStream(), but check if we had missed
+       * a switch by upstream.
        */
-      if (walstreamer->getCurrentTimeline() > 1) {
+      if (pgstream->streamident.timeline > 1) {
 
         /* physical TLI history file handle */
         shared_ptr<BackupFile> tli_history_file = nullptr;
@@ -1436,16 +1440,23 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         /* Buffer holding timeline history file data */
         MemoryBuffer timelineHistory;
 
+#ifdef __DEBUG_XLOG__
+        cerr << "DEBUG: checking timeline "
+             << pgstream->streamident.timeline
+             << " history"
+             << endl;
+#endif
+
         /*
          * If the requested timeline history file already exists,
          * we move forward.
          */
-        if (!this->logdir->historyFileExists(walstreamer->getCurrentTimeline(),
+        if (!this->logdir->historyFileExists(pgstream->streamident.timeline,
                                              temp_descr->compression)) {
 
           pgstream->timelineHistoryFileContent(timelineHistory,
                                                historyFilename,
-                                               walstreamer->getCurrentTimeline());
+                                               pgstream->streamident.timeline);
 
           try {
 
@@ -1460,13 +1471,15 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
             std::cerr << "got history file " << historyFilename
                       << " and its content" << std::endl;
 #endif
+
           } catch (CArchiveIssue &ai) {
 
             if ((tli_history_file != nullptr) && (tli_history_file->isOpen())) {
               /* don't leak descriptor here */
               tli_history_file->close();
-              throw ai;
             }
+
+            throw ai;
 
           }
         }
