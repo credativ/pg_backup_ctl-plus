@@ -257,12 +257,22 @@ namespace credativ {
      */
     virtual void setPGConnection(PGconn *conn);
 
-    /*
-     * Identify the system. This is required before initiating the stream.
+    /**
+     * Identify the system. This is required before initiating the stream,
+     * since it initialized the stream identification of a PGStream
+     * object instance.
      */
     virtual void identify();
 
-    /*
+    /**
+     * Same as above identify() without arguments, though it allows to retrieve
+     * identification into a separate copy of a StreamIdentification struct.
+     *
+     * Useful to get information about a stream already in-progress.
+     */
+    virtual void identify(StreamIdentification &ident);
+
+    /**
      * Create a replication slot for the identified stream.
      *
      * Throws a StreamingExecutionError if the creation fails or

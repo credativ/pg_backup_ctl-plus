@@ -1458,12 +1458,17 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
                                                historyFilename,
                                                pgstream->streamident.timeline);
 
+          /*
+           * Okay, ready to write TLI history content to disk.
+           */
           try {
 
             tli_history_file = this->logdir->allocateHistoryFile(walstreamer->getCurrentTimeline(),
                                                                  temp_descr->compression);
             tli_history_file->write(timelineHistory.ptr(),
                                     timelineHistory.getSize());
+
+            /* not really critical, but make sure it lands on the disk */
             tli_history_file->fsync();
             tli_history_file->close();
 

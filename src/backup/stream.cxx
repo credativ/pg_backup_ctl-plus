@@ -675,7 +675,7 @@ std::string PGStream::getServerSetting(std::string name) {
   return value;
 }
 
-void PGStream::identify() {
+void PGStream::identify(StreamIdentification &ident) {
 
   ExecStatusType es;
   PGresult      *result;
@@ -718,21 +718,28 @@ void PGStream::identify() {
   /*
    * Read properties into internal identification object.
    */
-  this->streamident.systemid
+  ident.systemid
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "systemid")));
-  this->streamident.timeline
+  ident.timeline
     = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(result, 0,
                                                         PQfnumber(result, "timeline"))));
-  this->streamident.xlogpos
+  ident.xlogpos
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "xlogpos")));
-  this->streamident.dbname
+  ident.dbname
     = std::string(PQgetvalue(result, 0, PQfnumber(result, "dbname")));
 
-  this->streamident.create_date
+  ident.create_date
     = CPGBackupCtlBase::current_timestamp();
 
   this->identified = true;
   PQclear(result);
+
+}
+
+void PGStream::identify() {
+
+  this->identify(this->streamident);
+
 }
 
 std::shared_ptr<WALStreamerProcess> PGStream::walstreamer() {

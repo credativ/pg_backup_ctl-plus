@@ -825,7 +825,6 @@ bool ArchiveLogDirectory::historyFileExists(int timeline,
 }
 
 std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timeline,
-                                                                     XLogRecPtr pos,
                                                                      bool compressed) {
 
 
