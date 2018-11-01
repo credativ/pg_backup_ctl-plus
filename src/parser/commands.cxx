@@ -1629,7 +1629,17 @@ void ListBackupListCommand::execute(bool flag) {
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
                                            temp_descr->directory);
 
-    BaseBackupVerificationCode bbstatus = StreamingBaseBackupDirectory::verify(basebackup);
+    /*
+     * Details for the backup profile used by the current basebackup.
+     */
+    shared_ptr<BackupProfileDescr> backupProfile
+      = this->catalog->getBackupProfile(basebackup->used_profile);
+
+    /*
+     * Verify state of the current basebackup.
+     */
+    BaseBackupVerificationCode bbstatus
+      = StreamingBaseBackupDirectory::verify(basebackup);
 
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "ID" % basebackup->id);
@@ -1653,6 +1663,8 @@ void ListBackupListCommand::execute(bool flag) {
                                        % "WAL stop" % basebackup->xlogposend);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "System ID" % basebackup->systemid);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "Used Backup Profile" % backupProfile->name);
 
     /*
      * Print tablespace information belonging to the current basebackup

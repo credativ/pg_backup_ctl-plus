@@ -1055,6 +1055,15 @@ void BaseBackupProcess::start() {
   this->baseBackupDescr->wal_segment_size = this->wal_segment_size;
 
   /*
+   * Also the backup profile used for this basebackup.
+   *
+   * NOTE: This will be safed into the catalog later, which will
+   *       protect the used backup profile from being deleted,
+   *       as long as this basebackup exists.
+   */
+  this->baseBackupDescr->used_profile = this->profile->profile_id;
+
+  /*
    * We always expect the timeline from the server here. Older
    * PostgreSQL instances than 9.3 don't send the timeline via
    * the BASE_BACKUP result set!
