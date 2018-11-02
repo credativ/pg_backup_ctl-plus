@@ -65,7 +65,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/catalog")
 include_directories ("${PROJECT_SOURCE_DIR}/include/parser")
 include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 include_directories ("${PROJECT_SOURCE_DIR}/include/recovery")
-add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
+add_executable (pg_backup_ctl++ src/main/rtconfig.cxx src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
 add_library (pgbckctl-common SHARED src/main/common.cxx src/jobs/signalhandler.cxx src/jobs/daemon.cxx
   src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
   src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx

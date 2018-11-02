@@ -18,6 +18,7 @@
 #include <signalhandler.hxx>
 #include <fs-archive.hxx>
 #include <parser.hxx>
+#include <rtconfig.hxx>
 
 using namespace credativ;
 using namespace std;
@@ -482,6 +483,11 @@ int main(int argc, const char **argv) {
   }
 
   try {
+
+    /**
+     * Build map of runtime parameters.
+     */
+
     /*
      * Process command line arguments.
      */
