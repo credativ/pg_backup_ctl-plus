@@ -797,6 +797,7 @@ namespace credativ {
     std::string status = "in progress";
     std::string systemid;
     unsigned long long wal_segment_size = 0;
+    int used_profile = -1;
 
     /*
      * Static const specifiers for status flags.

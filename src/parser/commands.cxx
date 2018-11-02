@@ -1427,8 +1427,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
        * Get the timeline history file content, but only if we
        * are on a timeline greater than 1. The first timeline
        * never writes a history file, thus ignore it.
+       *
+       * Rely on the timeline previously identified
+       * by prepareStream(), but check if we had missed
+       * a switch by upstream.
        */
-      if (walstreamer->getCurrentTimeline() > 1) {
+      if (pgstream->streamident.timeline > 1) {
 
         /* physical TLI history file handle */
         shared_ptr<BackupFile> tli_history_file = nullptr;
@@ -1436,23 +1440,35 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         /* Buffer holding timeline history file data */
         MemoryBuffer timelineHistory;
 
+#ifdef __DEBUG_XLOG__
+        cerr << "DEBUG: checking timeline "
+             << pgstream->streamident.timeline
+             << " history"
+             << endl;
+#endif
+
         /*
          * If the requested timeline history file already exists,
          * we move forward.
          */
-        if (!this->logdir->historyFileExists(walstreamer->getCurrentTimeline(),
+        if (!this->logdir->historyFileExists(pgstream->streamident.timeline,
                                              temp_descr->compression)) {
 
           pgstream->timelineHistoryFileContent(timelineHistory,
                                                historyFilename,
-                                               walstreamer->getCurrentTimeline());
+                                               pgstream->streamident.timeline);
 
+          /*
+           * Okay, ready to write TLI history content to disk.
+           */
           try {
 
             tli_history_file = this->logdir->allocateHistoryFile(walstreamer->getCurrentTimeline(),
                                                                  temp_descr->compression);
             tli_history_file->write(timelineHistory.ptr(),
                                     timelineHistory.getSize());
+
+            /* not really critical, but make sure it lands on the disk */
             tli_history_file->fsync();
             tli_history_file->close();
 
@@ -1460,13 +1476,15 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
             std::cerr << "got history file " << historyFilename
                       << " and its content" << std::endl;
 #endif
+
           } catch (CArchiveIssue &ai) {
 
             if ((tli_history_file != nullptr) && (tli_history_file->isOpen())) {
               /* don't leak descriptor here */
               tli_history_file->close();
-              throw ai;
             }
+
+            throw ai;
 
           }
         }
@@ -1616,7 +1634,17 @@ void ListBackupListCommand::execute(bool flag) {
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
                                            temp_descr->directory);
 
-    BaseBackupVerificationCode bbstatus = StreamingBaseBackupDirectory::verify(basebackup);
+    /*
+     * Details for the backup profile used by the current basebackup.
+     */
+    shared_ptr<BackupProfileDescr> backupProfile
+      = this->catalog->getBackupProfile(basebackup->used_profile);
+
+    /*
+     * Verify state of the current basebackup.
+     */
+    BaseBackupVerificationCode bbstatus
+      = StreamingBaseBackupDirectory::verify(basebackup);
 
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "ID" % basebackup->id);
@@ -1640,6 +1668,8 @@ void ListBackupListCommand::execute(bool flag) {
                                        % "WAL stop" % basebackup->xlogposend);
     cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
                                        % "System ID" % basebackup->systemid);
+    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
+                                       % "Used Backup Profile" % backupProfile->name);
 
     /*
      * Print tablespace information belonging to the current basebackup
