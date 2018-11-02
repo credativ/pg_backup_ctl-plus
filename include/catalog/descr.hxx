@@ -124,6 +124,7 @@ namespace credativ {
   class ConfigVariable {
   protected:
     ConfigVariableType type = RT_CONFIG_VAR_UNKNOWN_TYPE;
+    std::string name = "unkown";
   public:
 
     ConfigVariable() {};
@@ -132,11 +133,24 @@ namespace credativ {
   };
 
   class BoolConfigVariable : public ConfigVariable {
+  private:
+    bool value = false;
+    bool default_value = false;
   public:
 
     BoolConfigVariable();
     BoolConfigVariable(std::string name, bool value, bool defaultval);
     virtual ~BoolConfigVariable() {};
+
+    /**
+     * Set runtime value
+     */
+    virtual void setValue(bool value);
+
+    /**
+     * Set default value
+     */
+    virtual void setDefault(bool value);
 
   };
 
@@ -152,6 +166,9 @@ namespace credativ {
   };
 
   class EnumConfigVariable : public ConfigVariable {
+  private:
+    std::unordered_set<std::string> allowed_values;
+    std::string value = "";
   public:
 
     EnumConfigVariable() {};
@@ -160,6 +177,18 @@ namespace credativ {
                        std::string defaultval,
                        std::unordered_set<std::string> possible_values);
     virtual ~EnumConfigVariable() {};
+
+    /**
+     * Throws a CPGBackupCtlFailure
+     * exception in case the value is rejected.
+     */
+    void setValue(std::string value);
+
+    /**
+     * Insert a string into the internal list
+     * of allowed values.
+     */
+    void addAllowedValue(std::string value);
 
   };
 
