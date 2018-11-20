@@ -47,6 +47,11 @@ volatile bool command_abort_requested = false;
 ConditionalSignalHandler *sigStop = new ConditionalSignalHandler(&command_abort_requested);
 
 /*
+ * Runtime configuration handler.
+ */
+std::shared_ptr<RuntimeConfiguration> RtCfg = nullptr;
+
+/*
  * Handle for command line arguments
  */
 typedef struct PGBackupCtlArgs {
@@ -180,6 +185,20 @@ static void processCmdLineArgs(int argc,
 }
 
 /*
+ * Build runtime configuration.
+ */
+void init_RtCfg() {
+
+  RtCfg = make_shared<RuntimeConfiguration>();
+
+  /*
+   * walstreamer.wait_timeout
+   */
+  RtCfg->create("walstreamer.wait_timeout", 60, 60, 0, 86400);
+
+}
+
+/*
  * Initialize a command handle with the given command string.
  * The returned command is suitable to be executed immediately.
  *
@@ -194,7 +213,7 @@ std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
 
   try {
 
-    PGBackupCtlParser parser;
+    PGBackupCtlParser parser(RtCfg);
     JobSignalHandler *stopHandler;
 
     /*
@@ -212,6 +231,9 @@ std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
     stopHandler = dynamic_cast<JobSignalHandler *>(sigStop);
     command->assignSigStopHandler(stopHandler);
 
+  } catch(CParserIssue &pe) {
+    cerr << "parser error: " << pe.what() << endl;
+    throw pe;
   } catch(std::exception &e) {
 
     throw e;
@@ -226,7 +248,7 @@ std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
  */
 static void handle_interactive(std::string in,
                                PGBackupCtlArgs *args) {
-  PGBackupCtlParser parser;
+  PGBackupCtlParser parser(RtCfg);
   shared_ptr<PGBackupCtlCommand> command;
 
   try {
@@ -259,7 +281,8 @@ static void handle_interactive(std::string in,
 
 static int handle_inputfile(PGBackupCtlArgs *args) {
 
-  PGBackupCtlParser parser(path(string(args->actionFile)));
+  PGBackupCtlParser parser(path(string(args->actionFile)),
+                           RtCfg);
   shared_ptr<PGBackupCtlCommand> command;
 
   try {
@@ -487,6 +510,7 @@ int main(int argc, const char **argv) {
     /**
      * Build map of runtime parameters.
      */
+    init_RtCfg();
 
     /*
      * Process command line arguments.
@@ -697,9 +721,8 @@ int main(int argc, const char **argv) {
 
     exit(0);
 
-  }
-  catch (exception& e) {
-    cerr << e.what() << "\n";
+  } catch (exception& e) {
+    cerr << e.what() << endl;
     exit(1);
   }
 

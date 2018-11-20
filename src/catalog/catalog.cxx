@@ -309,7 +309,41 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
    */
   this->retention = source.getRetentionPolicyP();
 
+  /* Copy over runtime configuration, if present */
+  if (source.getRuntimeConfiguration() != nullptr)
+    this->runtime_config = source.getRuntimeConfiguration();
+
+  /*
+   * In case this instance was instantiated
+   * by a SET <variable> parser command, copy
+   * over state variable as well
+   */
+  this->var_type = source.var_type;
+  this->var_name = source.var_name;
+  this->var_val_str = source.var_val_str;
+  this->var_val_int = source.var_val_int;
+  this->var_val_bool = source.var_val_bool;
+
   return *this;
+}
+
+void CatalogDescr::setVariableName(string const& name) {
+  this->var_name = name;
+}
+
+void CatalogDescr::setVariableValueInteger(string const& var_value) {
+  this->var_type    = VAR_TYPE_INTEGER;
+  this->var_val_int = CPGBackupCtlBase::strToInt(var_value);
+}
+
+void CatalogDescr::setVariableValueString(string const& var_value) {
+  this->var_type    = VAR_TYPE_STRING;
+  this->var_val_str = var_value;
+}
+
+void CatalogDescr::setVariableValueBool(bool const& var_value) {
+  this->var_val_bool = var_value;
+  this->var_type     = VAR_TYPE_BOOL;
 }
 
 void CatalogDescr::setStreamingForceXLOGPositionRestart( bool const& restart ) {
@@ -452,6 +486,14 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "EXEC";
   case SHOW_WORKERS:
     return "SHOW WORKERS";
+  case SHOW_VARIABLES:
+    return "SHOW VARIABLES";
+  case SHOW_VARIABLE:
+    return "SHOW VARIABLE";
+  case SET_VARIABLE:
+    return "SET VARIABLE";
+  case RESET_VARIABLE:
+    return "RESET VARIABLE";
   case LIST_BACKUP_LIST:
     return "LIST BASEBACKUPS";
   case PIN_BASEBACKUP:

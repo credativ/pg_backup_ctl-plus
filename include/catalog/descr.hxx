@@ -2,6 +2,7 @@
 #define __HAVE_CATALOGDESCR__
 
 #include <common.hxx>
+#include <rtconfig.hxx>
 #include <unordered_set>
 
 namespace credativ {
@@ -57,7 +58,11 @@ namespace credativ {
     LIST_RETENTION_POLICIES,
     LIST_RETENTION_POLICY,
     DROP_RETENTION_POLICY,
-    APPLY_RETENTION_POLICY
+    APPLY_RETENTION_POLICY,
+    SHOW_VARIABLES,
+    SHOW_VARIABLE,
+    SET_VARIABLE,
+    RESET_VARIABLE
   } CatalogTag;
 
   /*
@@ -444,6 +449,19 @@ namespace credativ {
   } VerifyOption;
 
   /**
+   * Type of ConfigVariable.
+   */
+  typedef enum {
+
+    VAR_TYPE_BOOL,
+    VAR_TYPE_STRING,
+    VAR_TYPE_ENUM, /* always a vector of strings */
+    VAR_TYPE_INTEGER,
+    VAR_TYPE_UNKNOWN
+
+  } ConfigVariableType;
+
+  /**
    * A catalog descriptor is a reference
    * into the catalog database, representing an interface
    * between CPGBackupCtlFS and BackupCatalog objects.
@@ -454,7 +472,10 @@ namespace credativ {
    * adjust the BaseCatalogCommand::copy() method to reference
    * your new members during copy as well!
    */
-  class CatalogDescr : protected CPGBackupCtlBase, public PushableCols {
+  class CatalogDescr : protected CPGBackupCtlBase,
+                       public PushableCols,
+                       public RuntimeVariableEnvironment {
+
   protected:
 
     std::shared_ptr<BackupProfileDescr> backup_profile = std::make_shared<BackupProfileDescr>();
@@ -480,6 +501,15 @@ namespace credativ {
     std::string label;
     bool compression = false;
     std::string directory;
+
+    /**
+     * Used to parse SET variable = value commands.
+     */
+    ConfigVariableType var_type = VAR_TYPE_UNKNOWN;
+    std::string var_name;
+    std::string var_val_str;
+    int         var_val_int;
+    bool        var_val_bool;
 
     /**
      * Option flag, indicating a SYSTEMID catalog update.
@@ -595,6 +625,11 @@ namespace credativ {
      * The methods below are used by our spirit::parser
      * implementation.
      */
+    void setVariableName(std::string const& var_name);
+    void setVariableValueString(std::string const& var_value);
+    void setVariableValueInteger(std::string const& var_value);
+    void setVariableValueBool(bool const& var_value);
+
     void setExecString(std::string const& execStr);
 
     void setDbName(std::string const& db_name);

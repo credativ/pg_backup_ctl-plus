@@ -7,6 +7,10 @@ using namespace std;
  * ConfigVariable Base class
  * ****************************************************************************/
 
+string ConfigVariable::getName() {
+  return this->name;
+}
+
 void ConfigVariable::setValue(string value) {
   throw CPGBackupCtlFailure("cannot use runtime variable assignment in default implementation");
 }
@@ -63,6 +67,9 @@ void ConfigVariable::getDefault(int &value) {
   throw CPGBackupCtlFailure("cannot retrieve default value from base configuration class");
 }
 
+void ConfigVariable::reset() {
+  throw CPGBackupCtlFailure("cannot reset default value within base configuration class");
+}
 
 /* *****************************************************************************
  * BoolConfigVariable Runtime Variable Implementation
@@ -71,6 +78,12 @@ void ConfigVariable::getDefault(int &value) {
 BoolConfigVariable::BoolConfigVariable(string name) {
 
   this->name = name;
+
+}
+
+void BoolConfigVariable::reset() {
+
+  this->value = this->default_value;
 
 }
 
@@ -97,6 +110,12 @@ void BoolConfigVariable::getValue(bool &value) {
   value = this->value;
 }
 
+void BoolConfigVariable::getValue(string &value) {
+
+  (this->value) ? value = "true" : value = "false";
+
+}
+
 void BoolConfigVariable::getDefault(bool &value) {
   value = this->default_value;
 }
@@ -112,6 +131,12 @@ StringConfigVariable::StringConfigVariable(string name,
   this->name = name;
   this->value = value;
   this->default_value = defaultval;
+
+}
+
+void StringConfigVariable::reset() {
+
+  this->value = this->default_value;
 
 }
 
@@ -157,6 +182,12 @@ EnumConfigVariable::EnumConfigVariable(string name,
 
   this->setValue(value);
   this->setDefault(defaultval);
+
+}
+
+void EnumConfigVariable::reset() {
+
+  this->value = this->default_value;
 
 }
 
@@ -256,8 +287,20 @@ void IntegerConfigVariable::getDefault(int &value) {
   value = this->default_value;
 }
 
+void IntegerConfigVariable::getValue(string &value) {
+
+  value = CPGBackupCtlBase::intToStr(this->value);
+
+}
+
 void IntegerConfigVariable::getValue(int &value) {
   value = this->value;
+}
+
+void IntegerConfigVariable::reset() {
+
+  this->value = this->default_value;
+
 }
 
 void IntegerConfigVariable::check(int value) {
@@ -294,6 +337,11 @@ bool IntegerConfigVariable::enforceRangeConstraint(bool force) {
   bool oldval = this->enforce_rangecheck;
 
   this->enforce_rangecheck = force;
+
+  /* if turned on, force a check against current value */
+  if (oldval || this->enforce_rangecheck)
+    this->check(this->value);
+
   return oldval;
 
 }
@@ -313,21 +361,288 @@ void IntegerConfigVariable::setDefault(int defaultval) {
 }
 
 /* *****************************************************************************
+ * Runtime environment implementation
+ * ****************************************************************************/
+
+RuntimeVariableEnvironment::RuntimeVariableEnvironment(shared_ptr<RuntimeConfiguration> rtc) {
+  this->runtime_config = rtc;
+}
+
+shared_ptr<RuntimeConfiguration> RuntimeVariableEnvironment::createRuntimeConfiguration() {
+  return make_shared<RuntimeConfiguration>();
+}
+
+shared_ptr<RuntimeConfiguration> RuntimeVariableEnvironment::getRuntimeConfiguration() {
+  return this->runtime_config;
+}
+
+void RuntimeVariableEnvironment::assignRuntimeConfiguration(std::shared_ptr<RuntimeConfiguration> ptr) {
+  this->runtime_config = ptr;
+}
+
+/* *****************************************************************************
  * Runtime Configuration Implementation
  * ****************************************************************************/
 
-RuntimeConfiguration::RuntimeConfiguration() {
+RuntimeConfiguration::RuntimeConfiguration() {}
+
+RuntimeConfiguration::~RuntimeConfiguration() {}
+
+config_variable_iterator RuntimeConfiguration::end() {
+  return this->variables.end();
+}
+
+config_variable_iterator RuntimeConfiguration::begin() {
+  return this->variables.begin();
+}
+
+void RuntimeConfiguration::reset(string name) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+
+  } else {
+
+    throw CPGBackupCtlFailure("variable does not exist: \"" + name + "\"");
+
+  }
 
 }
 
-RuntimeConfiguration::~RuntimeConfiguration() {
+shared_ptr<ConfigVariable> RuntimeConfiguration::get(string name) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+
+  } else {
+
+    throw CPGBackupCtlFailure("variable does not exist: \"" + name + "\"");
+
+  }
+
+  return var;
 
 }
 
-ConfigVariable RuntimeConfiguration::get (string name) {
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name,
+                                                             bool value,
+                                                             bool default_value) {
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Check if the variable already exists. If true, assign
+   * the new value and default_value.
+   */
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setDefault(default_value);
+    var->setValue(value);
+
+  } else {
+
+    var = make_shared<BoolConfigVariable>(name, value, default_value);
+    this->variables.insert(make_pair(name, var));
+
+  }
+
+  return var;
 
 }
 
-void RuntimeConfiguration::set(ConfigVariable variable) {
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name, int value, int default_value,
+                                                             int range_min, int range_max) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Check if the variable already exists. If true, assign
+   * the new value and default_value.
+   */
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setDefault(default_value);
+    var->setRange(range_min, range_max);
+    var->enforceRangeConstraint(true);
+    var->setValue(value);
+
+  } else {
+
+    var = make_shared<IntegerConfigVariable>(name, value, default_value, true);
+    this->variables.insert(make_pair(name, var));
+
+  }
+
+  return var;
 
 }
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name,
+                                                             string value,
+                                                             string default_value,
+                                                             std::unordered_set<string> possible_values) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Check if the variable already exists. If true, assign
+   * the new value and default_value.
+   */
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setValue(value);
+
+  } else {
+
+    var = make_shared<EnumConfigVariable>(name,
+                                          value,
+                                          default_value,
+                                          possible_values);
+    this->variables.insert(make_pair(name, var));
+
+  }
+
+  return var;
+}
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name, int value, int default_value) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Check if the variable already exists. If true, just
+   * assign the new value.
+   */
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setValue(value);
+
+  } else {
+
+    /*
+     * Make the configuration variable first and then
+     * assign new values. If we fail here, the pointer will be
+     * released automatically, since it won't get into
+     * the map.
+     */
+    var = make_shared<IntegerConfigVariable>(name, value, default_value, false);
+    this->variables.insert(make_pair(name, var));
+
+  }
+
+  return var;
+
+}
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name,
+                                                             string value,
+                                                             string default_value) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setValue(value);
+
+  } else {
+
+    var = make_shared<StringConfigVariable>(name, value, default_value);
+    this->variables.insert(make_pair(name, var));
+  }
+
+  return var;
+
+}
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::set(string name, bool value) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setValue(value);
+
+  } else {
+
+    throw CPGBackupCtlFailure("unknown runtime variable: \"" + name + "\"");
+
+  }
+
+  return var;
+}
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::set(string name, string value) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+    var->setValue(value);
+
+  } else {
+
+    throw CPGBackupCtlFailure("unknown runtime variable: \"" + name + "\"");
+
+  }
+
+  return var;
+
+}
+
+std::shared_ptr<ConfigVariable> RuntimeConfiguration::set(std::string name, int value) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Check if the variable already exists. If true, assign
+   * the new value and default_value.
+   */
+  auto it = this->variables.find(name);
+
+  if (it != this->variables.end()) {
+
+    var = it->second;
+
+    /* set new value */
+    var->setValue(value);
+
+  } else {
+
+    throw CPGBackupCtlFailure("unknown runtime variable: \"" + name + "\"");
+
+  }
+
+  return var;
+
+}
+

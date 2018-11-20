@@ -5,6 +5,7 @@
 #include <common.hxx>
 #include <parser.hxx>
 #include <signalhandler.hxx>
+#include <rtconfig.hxx>
 
 #include <iostream>
 #include <unordered_map>
@@ -27,7 +28,7 @@ namespace credativ {
   /*
    * Encapsulates command properties.
    */
-  class PGBackupCtlCommand {
+  class PGBackupCtlCommand : public RuntimeVariableEnvironment {
   private:
     /*
      * Catalog descriptor wraps internal
@@ -48,6 +49,7 @@ namespace credativ {
      */
     JobSignalHandler *stopHandler = nullptr;
     JobSignalHandler *intHandler  = nullptr;
+
   public:
 
     PGBackupCtlCommand(CatalogTag tag);
@@ -95,9 +97,11 @@ namespace credativ {
      * or not yet initialized.
      */
     virtual std::string archive_name();
+
   };
 
-  class PGBackupCtlParser : CPGBackupCtlBase {
+  class PGBackupCtlParser : CPGBackupCtlBase,
+                            public RuntimeVariableEnvironment {
   protected:
 
     boost::filesystem::path sourceFile;
@@ -109,7 +113,10 @@ namespace credativ {
      * Public c'tors.
      */
     PGBackupCtlParser();
+    PGBackupCtlParser(std::shared_ptr<RuntimeConfiguration> rtc);
     PGBackupCtlParser(boost::filesystem::path sourceFile);
+    PGBackupCtlParser(boost::filesystem::path sourceFile,
+                      std::shared_ptr<RuntimeConfiguration> rtc);
     virtual ~PGBackupCtlParser();
 
     /*

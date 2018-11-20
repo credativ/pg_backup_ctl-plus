@@ -8,19 +8,6 @@
 namespace credativ {
 
   /**
-   * Type of ConfigVariable.
-   */
-  typedef enum {
-
-    RT_CONFIG_VAR_BOOL,
-    RT_CONFIG_VAR_STRING,
-    RT_CONFIG_VAR_ENUM, /* always a vector of strings */
-    RT_CONFIG_VAR_INTEGER,
-    RT_CONFIG_VAR_UNKNOWN_TYPE
-
-  } ConfigVariableType;
-
-  /**
    * Base class for config runtime variables.
    */
   class ConfigVariable {
@@ -31,6 +18,8 @@ namespace credativ {
     virtual ~ConfigVariable() {};
 
     virtual bool enforceRangeConstraint(bool force);
+
+    virtual std::string getName();
 
     virtual void setValue(std::string value);
     virtual void setValue(bool value);
@@ -48,6 +37,8 @@ namespace credativ {
     virtual void getDefault(std::string &value);
     virtual void getDefault(int &value);
     virtual void getDefault(bool &value);
+
+    virtual void reset();
   };
 
   class BoolConfigVariable : public ConfigVariable {
@@ -76,9 +67,20 @@ namespace credativ {
     virtual void getValue(bool &value);
 
     /**
+     * Returns the string represention of the current
+     * bool value.
+     */
+    virtual void getValue(std::string &value);
+
+    /**
      * Stores the current default value in defaultval.
      */
     virtual void getDefault(bool &value);
+
+    /**
+     * Reset current value back to its default.
+     */
+    virtual void reset();
 
   };
 
@@ -116,6 +118,12 @@ namespace credativ {
      * Stores the current default value in defaultval.
      */
     virtual void getDefault(std::string &value);
+
+    /**
+     * Reset the configuration value back to
+     * its default value.
+     */
+    virtual void reset();
 
   };
 
@@ -161,7 +169,7 @@ namespace credativ {
      * Insert a string into the internal list
      * of allowed values.
      */
-    void addAllowedValue(std::string value);
+    virtual void addAllowedValue(std::string value);
 
     /**
      * Stores the current value in value.
@@ -172,6 +180,12 @@ namespace credativ {
      * Stores the current default value in defaultval.
      */
     virtual void getDefault(std::string &value);
+
+    /**
+     * Reset the configuration value back to
+     * its default value.
+     */
+    virtual void reset();
 
   };
 
@@ -237,21 +251,113 @@ namespace credativ {
     virtual void getValue(int &value);
 
     /**
+     * Returns the string represention if the current value.
+     */
+    virtual void getValue(std::string &value);
+
+    /**
      * Stores the current default value in defaultval.
      */
     virtual void getDefault(int &value);
 
+    /**
+     * Reset the configuration value back to
+     * its default value.
+     */
+    virtual void reset();
+
   };
 
+  /**
+   * Config variable iterator.
+   */
+  typedef std::unordered_map<std::string,
+                             std::shared_ptr<ConfigVariable>>::const_iterator config_variable_iterator;
+
+  /**
+   * Runtime configuration class, encapsulates access
+   * to configuration variables used, set and updated
+   * during runtime.
+   *
+   * Since a runtime configuration variables must be accessible
+   * globally, every ConfigVariable instance is managed as a shared
+   * pointer internally. This means, that if copies are kept anywhere
+   * and are set, updated, those changes are visible through
+   * any layer using the same reference to a runtime configuration.
+   *
+   * Classes which depend on those settings should inherit from
+   * the RuntimeVariableEnvironment base class.
+   */
   class RuntimeConfiguration {
   protected:
-    std::unordered_map<std::string, ConfigVariable> variables;
+    std::unordered_map<std::string, std::shared_ptr<ConfigVariable>> variables;
   public:
+
     RuntimeConfiguration();
     virtual ~RuntimeConfiguration();
 
-    ConfigVariable get(std::string name);
-    void set(ConfigVariable variable);
+    virtual std::shared_ptr<ConfigVariable> get(std::string name);
+
+    virtual std::shared_ptr<ConfigVariable> set(std::string name, int value);
+    virtual std::shared_ptr<ConfigVariable> set(std::string name,
+                                                std::string value);
+    virtual std::shared_ptr<ConfigVariable> set(std::string name,
+                                                bool value);
+
+    virtual std::shared_ptr<ConfigVariable> create(std::string name, int value, int default_value);
+    virtual std::shared_ptr<ConfigVariable> create(std::string name, int value, int default_value,
+                                                   int range_min, int range_max);
+    virtual std::shared_ptr<ConfigVariable> create(std::string name,
+                                                   std::string value,
+                                                   std::string default_value,
+                                                   std::unordered_set<std::string> possible_values);
+    virtual std::shared_ptr<ConfigVariable> create(std::string name,
+                                                   std::string value,
+                                                   std::string default_value);
+    virtual std::shared_ptr<ConfigVariable> create(std::string name,
+                                                   bool value,
+                                                   bool default_value);
+
+    virtual config_variable_iterator begin();
+    virtual config_variable_iterator end();
+
+    virtual void reset(std::string name);
+
+  };
+
+
+  /**
+   * Base interface for classes using runtime configurations.
+   *
+   * This is a shell class, transporting references to runtime
+   * object instances. Usually they aren't instantiated
+   * by this shell class itself, but are created and assigned
+   * from a single caller, since those objects have a global
+   * visibility.
+   */
+  class RuntimeVariableEnvironment {
+  protected:
+    std::shared_ptr<RuntimeConfiguration> runtime_config = nullptr;
+  public:
+
+    RuntimeVariableEnvironment() {};
+    RuntimeVariableEnvironment(std::shared_ptr<RuntimeConfiguration>);
+    virtual ~RuntimeVariableEnvironment() {};
+
+    /**
+     * Factory method
+     */
+    static std::shared_ptr<RuntimeConfiguration> createRuntimeConfiguration();
+
+    /*
+     * Returns the current runtime configuration instance.
+     */
+    virtual std::shared_ptr<RuntimeConfiguration> getRuntimeConfiguration();
+
+    /*
+     * Assigns a new runtime configuration instance.
+     */
+    virtual void assignRuntimeConfiguration(std::shared_ptr<RuntimeConfiguration> rtc);
 
   };
 

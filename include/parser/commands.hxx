@@ -1,6 +1,7 @@
 #ifndef __HAVE_COMMANDS__
 #define __HAVE_COMMANDS__
 
+#include <rtconfig.hxx>
 #include <BackupCatalog.hxx>
 #include <fs-archive.hxx>
 #include <signalhandler.hxx>
@@ -49,6 +50,47 @@ namespace credativ {
      * Assign a SIGINT signal handler object.
      */
     virtual void assignSigIntHandler(JobSignalHandler *handler);
+
+  };
+
+  class ShowVariableCatalogCommand : public BaseCatalogCommand {
+  public:
+    ShowVariableCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    ShowVariableCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    ShowVariableCatalogCommand();
+    virtual ~ShowVariableCatalogCommand();
+
+    virtual void execute(bool flag);
+  };
+
+  class ResetVariableCatalogCommand : public BaseCatalogCommand {
+  public:
+    ResetVariableCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    ResetVariableCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    ResetVariableCatalogCommand();
+    virtual ~ResetVariableCatalogCommand();
+
+    virtual void execute(bool flag);
+  };
+
+  class SetVariableCatalogCommand : public BaseCatalogCommand {
+  public:
+    SetVariableCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    SetVariableCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    SetVariableCatalogCommand();
+    virtual ~SetVariableCatalogCommand();
+
+    virtual void execute(bool flag);
+  };
+
+  class ShowVariablesCatalogCommand : public BaseCatalogCommand {
+  public:
+    ShowVariablesCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    ShowVariablesCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+    ShowVariablesCatalogCommand();
+    virtual ~ShowVariablesCatalogCommand();
+
+    virtual void execute(bool flag);
   };
 
   class ExecCommandCatalogCommand : public BaseCatalogCommand {

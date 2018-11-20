@@ -5,6 +5,7 @@
 #include <fs-pipe.hxx>
 #include <shm.hxx>
 #include <retention.hxx>
+#include <rtconfig.hxx>
 
 using namespace credativ;
 
@@ -80,6 +81,23 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
 
   /* Copy retention policy */
   this->retention = source.getRetentionPolicyP();
+
+  /* Copy runtime configuration, if present */
+  if (source.getRuntimeConfiguration() != nullptr)
+    this->runtime_config = source.getRuntimeConfiguration();
+
+  /*
+   * In case this instance was instantiated
+   * by a SET <variable> parser command, copy
+   * over parser state as well
+   */
+
+  this->var_type = source.var_type;
+  this->var_name = source.var_name;
+  this->var_val_str = source.var_val_str;
+  this->var_val_int = source.var_val_int;
+  this->var_val_bool = source.var_val_bool;
+
 }
 
 void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
@@ -106,6 +124,157 @@ void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
   }
 
   this->intHandler = handler;
+}
+
+ResetVariableCatalogCommand::ResetVariableCatalogCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ResetVariableCatalogCommand::ResetVariableCatalogCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+ResetVariableCatalogCommand::ResetVariableCatalogCommand() {}
+
+ResetVariableCatalogCommand::~ResetVariableCatalogCommand() {}
+
+void ResetVariableCatalogCommand::execute(bool flag) {
+
+  /*
+   * Variable must exist.
+   */
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /* will throw in case variable name cannot be found */
+  var = this->runtime_config->get(this->var_name);
+
+  /* Reset back to default value */
+  var->reset();
+
+}
+
+SetVariableCatalogCommand::SetVariableCatalogCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+SetVariableCatalogCommand::SetVariableCatalogCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+SetVariableCatalogCommand::SetVariableCatalogCommand() {}
+
+SetVariableCatalogCommand::~SetVariableCatalogCommand() {}
+
+void SetVariableCatalogCommand::execute(bool flag) {
+
+  shared_ptr<ConfigVariable> var = nullptr;
+
+  /*
+   * Variable must exist within runtime configuration.
+   */
+
+  /*
+   * Parser told us which type we can expect.
+   */
+  switch(this->var_type) {
+  case VAR_TYPE_INTEGER:
+    this->runtime_config->set(this->var_name, this->var_val_int);
+    break;
+  case VAR_TYPE_STRING:
+    this->runtime_config->set(this->var_name, this->var_val_str);
+    break;
+  case VAR_TYPE_BOOL:
+    this->runtime_config->set(this->var_name, this->var_val_bool);
+    break;
+  default:
+    /* should not really happen */
+    throw CPGBackupCtlFailure("unexpected type of variable value");
+  }
+
+}
+
+ShowVariablesCatalogCommand::ShowVariablesCatalogCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ShowVariablesCatalogCommand::~ShowVariablesCatalogCommand() {}
+
+ShowVariablesCatalogCommand::ShowVariablesCatalogCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+ShowVariablesCatalogCommand::ShowVariablesCatalogCommand() {}
+
+void ShowVariablesCatalogCommand::execute(bool flag) {
+
+  auto it_start = this->runtime_config->begin();
+  auto it_end = this->runtime_config->end();
+
+  cout << CPGBackupCtlBase::makeHeader("Runtime Variables",
+                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
+                                       80);
+
+  for(; it_start != it_end; ++it_start) {
+
+    shared_ptr<ConfigVariable> var = it_start->second;
+    string str_value;
+
+    var->getValue(str_value);
+
+    cout << boost::format("%-30s | %-40s") % var->getName() % str_value
+         << endl;
+
+  }
+
+}
+
+ShowVariableCatalogCommand::ShowVariableCatalogCommand() {}
+
+ShowVariableCatalogCommand::ShowVariableCatalogCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+ShowVariableCatalogCommand::ShowVariableCatalogCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+ShowVariableCatalogCommand::~ShowVariableCatalogCommand() {}
+
+void ShowVariableCatalogCommand::execute(bool flag) {
+
+  /* throws in case variable is unkown */
+  std::shared_ptr<ConfigVariable> var = this->runtime_config->get(this->var_name);
+  string str_value;
+
+  /* extract value */
+  var->getValue(str_value);
+
+  cout << CPGBackupCtlBase::makeHeader("Runtime Variables",
+                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
+                                       80);
+  cout << boost::format("%-30s | %-40s") % var->getName() % str_value
+       << endl;
+
 }
 
 PinCatalogCommand::PinCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {
