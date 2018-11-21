@@ -272,6 +272,21 @@ IntegerConfigVariable::IntegerConfigVariable(string name) {
 
 IntegerConfigVariable::IntegerConfigVariable(string name,
                                              int value,
+                                             int default_value,
+                                             int range_min,
+                                             int range_max,
+                                             bool enforceRangeConstraint) : IntegerConfigVariable(name) {
+
+  this->setRange(range_min, range_max);
+  this->enforceRangeConstraint(enforceRangeConstraint);
+
+  this->setDefault(default_value);
+  this->setValue(value);
+
+}
+
+IntegerConfigVariable::IntegerConfigVariable(string name,
+                                             int value,
                                              int defaultval,
                                              bool enforceRangeConstraint) : IntegerConfigVariable(name) {
 
@@ -307,7 +322,7 @@ void IntegerConfigVariable::check(int value) {
 
 
   if (this->enforce_rangecheck
-      && (value > this->max && value < this->min)) {
+      && (value > this->max || value < this->min)) {
 
     ostringstream oss;
     oss << "value "
@@ -338,9 +353,11 @@ bool IntegerConfigVariable::enforceRangeConstraint(bool force) {
 
   this->enforce_rangecheck = force;
 
-  /* if turned on, force a check against current value */
-  if (oldval || this->enforce_rangecheck)
+  /* if turned on, force a check against current values */
+  if (oldval || this->enforce_rangecheck) {
     this->check(this->value);
+    this->check(this->default_value);
+  }
 
   return oldval;
 
@@ -483,7 +500,7 @@ std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name, int va
 
   } else {
 
-    var = make_shared<IntegerConfigVariable>(name, value, default_value, true);
+    var = make_shared<IntegerConfigVariable>(name, value, default_value, range_min, range_max);
     this->variables.insert(make_pair(name, var));
 
   }
@@ -546,7 +563,7 @@ std::shared_ptr<ConfigVariable> RuntimeConfiguration::create(string name, int va
      * released automatically, since it won't get into
      * the map.
      */
-    var = make_shared<IntegerConfigVariable>(name, value, default_value, false);
+    var = make_shared<IntegerConfigVariable>(name, value, default_value);
     this->variables.insert(make_pair(name, var));
 
   }

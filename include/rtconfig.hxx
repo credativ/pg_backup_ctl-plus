@@ -210,7 +210,13 @@ namespace credativ {
     IntegerConfigVariable(std::string name,
                           int value,
                           int defaultval,
-                          bool enforceRangConstraint);
+                          bool enforceRangeConstraint = false);
+    IntegerConfigVariable(std::string name,
+                          int value,
+                          int defaultval,
+                          int range_min,
+                          int range_max,
+                          bool enforceRangeConstraint = true);
     virtual ~IntegerConfigVariable() {};
 
     /**
@@ -224,10 +230,16 @@ namespace credativ {
     /**
      * Sets the range of valid values.
      *
-     * Only enforce if enforceRangeConstraint() was
+     * Only enforced if enforceRangeConstraint() was
      * called with true, turning range checks on.
      *
      * Throws CPGBackupCtlFailure if min is larger than max.
+     *
+     * NOTE: Changing a range does not revalidate current
+     *       assigned value and default value!
+     *       To recheck current assigned values, the caller
+     *       should turn off range checks and turn it on, which
+     *       will revalidate the settings!
      */
     virtual void setRange(int min, int max);
 
