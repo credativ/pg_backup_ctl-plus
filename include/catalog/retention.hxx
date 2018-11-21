@@ -248,6 +248,24 @@ namespace credativ {
   };
 
   /**
+   * DateTimeRetention policy class.
+   *
+   * Basically applies a retention policy based
+   * on a timestamp definition to the catalog.
+   */
+  class DateTimeRetention : public Retention {
+  public:
+
+    DateTimeRetention();
+    DateTimeRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+                      std::shared_ptr<BackupCatalog> catalog);
+    DateTimeRetention(std::shared_ptr<RetentionRuleDescr> rule);
+
+    virtual ~DateTimeRetention();
+
+  };
+
+  /**
    * A PinRetention is to some degree a special
    * kind of retention. Instead of deleting and cleaning
    * up basebackups from the catalog, it just applies PIN or

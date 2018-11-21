@@ -336,6 +336,25 @@ void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
 }
 
 /* *****************************************************************************
+ * DateTimeRetention implementation
+ * ****************************************************************************/
+
+DateTimeRetention::DateTimeRetention() {}
+
+DateTimeRetention::DateTimeRetention(std::shared_ptr<RetentionRuleDescr> descr)
+  : Retention(descr) {
+
+}
+
+DateTimeRetention::DateTimeRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+                                     std::shared_ptr<BackupCatalog> catalog)
+  : Retention(archiveDescr, catalog) {
+
+}
+
+DateTimeRetention::~DateTimeRetention() {}
+
+/* *****************************************************************************
  * LabelRetention implementation
  * ****************************************************************************/
 
