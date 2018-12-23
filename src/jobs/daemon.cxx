@@ -1028,14 +1028,6 @@ static void _pgbckctl_sigchld_handler(int sig) {
 
   while ((pid = waitpid(-1, &wait_status, WNOHANG)) != -1) {
 
-    /*
-     * Check status of exited child.
-     */
-    if (WIFEXITED(wait_status)) {
-      /* child terminated via exit() */
-      cerr << "child pid " << pid << " exited with status " << wait_status << endl;
-    }
-
     if (WIFSIGNALED(wait_status)) {
 
       /*
@@ -1078,6 +1070,20 @@ static void _pgbckctl_sigchld_handler(int sig) {
       }
 
     }
+
+    /*
+     * Check status of exited child.
+     */
+    if (WIFEXITED(wait_status)) {
+      /* child terminated via exit() */
+
+#ifdef __DEBUG__
+      cerr << "child pid " << pid << " exited with status " << wait_status << endl;
+#endif
+
+      break;
+    }
+
   }
 
 }
