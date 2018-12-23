@@ -4,14 +4,50 @@
 #include "pg_backup_ctl.hxx"
 
 /* PostgreSQL API includes */
+extern "C" {
 #include <postgres_fe.h>
-#include <access/xlog_internal.h>
-
-/* Required for MAXPGPATH */
-#include <pg_config_manual.h>
-
 /* Required for MAXXLOGFNAMELEN */
 #include <access/xlog_internal.h>
+/* Required for MAXPGPATH */
+#include <pg_config_manual.h>
+}
+
+/*
+ * PostgreSQL >= 12 comes with an overriden, own implementation
+ * of strerror() and friends, which clashes in the definitions of
+ * boost::interprocess::fill_system_message( int system_error, std::string &str)
+ *
+ * See /usr/include/boost/interprocess/errors.hpp
+ * for details (path to errors.hpp may vary).
+ *
+ * Since boost does here all things on it's own (e.g. encapsulate Windows
+ * error message behavior), we revoke all that definitions.
+ */
+
+#ifdef strerror
+#undef strerror
+#endif
+#ifdef strerror_r
+#undef strerror_r
+#endif
+#ifdef vsnprintf
+#undef vsnprintf
+#endif
+#ifdef snprintf
+#undef snprintf
+#endif
+#ifdef sprintf
+#undef sprintf
+#endif
+#ifdef vfprintf
+#undef vfprintf
+#endif
+#ifdef fprintf
+#undef fprintf
+#endif
+#ifdef printf
+#undef printf
+#endif
 
 #include <boost/date_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
