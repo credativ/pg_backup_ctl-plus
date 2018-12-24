@@ -889,7 +889,6 @@ namespace credativ {
                           with_profile,
                           executable,
                           retention_rule_with_label,
-                          retention_datetime_spec,
                           regexp_expression;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
@@ -897,6 +896,7 @@ namespace credativ {
                           variable_name,
                           variable_value,
                           variable_value_string;
+      qi::rule<Iterator, std::string(), ascii::space_type> retention_datetime_spec;
 
     };
 

@@ -200,9 +200,16 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
 
         case RETENTION_KEEP_NUM:
         case RETENTION_DROP_NUM:
+          throw CCatalogIssue("retention policy not implemented yet");
+          break;
         case RETENTION_KEEP_BY_DATETIME:
         case RETENTION_DROP_BY_DATETIME:
-          throw CCatalogIssue("retention policy not implemented yet");
+          {
+            shared_ptr<Retention> retentionPtr = make_shared<DateTimeRetention>(ruleDescr->value,
+                                                                                archiveDescr,
+                                                                                catalog);
+            break;
+          }
         default:
 	  {
 	    ostringstream oss;
@@ -346,13 +353,24 @@ DateTimeRetention::DateTimeRetention(std::shared_ptr<RetentionRuleDescr> descr)
 
 }
 
-DateTimeRetention::DateTimeRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+DateTimeRetention::DateTimeRetention(std::string datetime_expr,
+                                     std::shared_ptr<CatalogDescr> archiveDescr,
                                      std::shared_ptr<BackupCatalog> catalog)
   : Retention(archiveDescr, catalog) {
 
 }
 
 DateTimeRetention::~DateTimeRetention() {}
+
+void DateTimeRetention::init() {}
+
+void DateTimeRetention::init(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {}
+
+unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {}
+
+std::string DateTimeRetention::asString() {}
+
+void DateTimeRetention::setRetentionRuleType(const RetentionRuleId ruleType) {}
 
 /* *****************************************************************************
  * LabelRetention implementation

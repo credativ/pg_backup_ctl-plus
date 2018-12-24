@@ -257,12 +257,39 @@ namespace credativ {
   public:
 
     DateTimeRetention();
-    DateTimeRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+    DateTimeRetention(std::string datetime_expr,
+                      std::shared_ptr<CatalogDescr> archiveDescr,
                       std::shared_ptr<BackupCatalog> catalog);
     DateTimeRetention(std::shared_ptr<RetentionRuleDescr> rule);
 
     virtual ~DateTimeRetention();
 
+    /**
+     * Initialize a DateTimeRetention instance with a given
+     * cleanup descriptor.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+
+    /**
+     * Initialize internal state of DateTimeRetention rule.
+     */
+    virtual void init();
+
+    /* Applies a retention policy on the given list of
+     * basebackups. Returns the number of basebackups
+     * which got the retention policy applied.
+     */
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+
+    /**
+     * asString() returns the Retention Rule string representation.
+     */
+    virtual std::string asString();
+
+    /**
+     * Set the retention rule type id.
+     */
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType);
   };
 
   /**
