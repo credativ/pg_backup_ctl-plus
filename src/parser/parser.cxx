@@ -522,19 +522,32 @@ namespace credativ {
 
         retention_rule_older_datetime =
           no_case[ lexeme[ lit("OLDER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
-                                            >> -(retention_datetime_spec
-                                                 [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_DROP_BY_DATETIME, ::_1)]);
+                                            >> ( retention_datetime_spec
+                                                 /* boost::bind() cannot bind an overloaded method easily, so
+                                                  * just create a policy with an empty rule. Use retentionRuleCompose()
+                                                  * later to compile the correct rule. */
+                                                 [ boost::bind(&CatalogDescr::makeRetentionDescr,
+                                                               &cmd, RETENTION_DROP_BY_DATETIME, string("")) ] );
 
         retention_rule_newer_datetime =
-          no_case[ lexeme[ lit("NEWER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
-                                            >> -(retention_datetime_spec
-                                                 [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd, RETENTION_KEEP_BY_DATETIME, ::_1)]);
+          no_case[ lexeme[ lit("NEWER") ] ] >> no_case[ lexeme[ lit("THAN") ] ];
+                                            // >> -(retention_datetime_spec
+                                            //      [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd,
+                                            //                    RETENTION_KEEP_BY_DATETIME)]);
 
         retention_datetime_spec =
-          -(+(char_("0-9")) >> no_case[ lexeme[ lit("YEARS") ] ])
-          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("MONTHS") ] ])
-          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("DAYS") ] ])
-          ^ (+(char_("0-9")) >> no_case[ lexeme[ lit("HOURS") ] ]);
+          -(retention_datetime_years
+            [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, string("years"))] )
+          ^ (retention_datetime_months)
+          ^ (retention_datetime_days)
+          ^ (retention_datetime_hours)
+          ^ (retention_datetime_minutes);
+
+        retention_datetime_years = +(char_("0-9")) >> no_case[ lexeme[ lit("YEARS") ] ];
+        retention_datetime_months = +(char_("0-9")) >> no_case[ lexeme[ lit("MONTHS") ] ];
+        retention_datetime_days = +(char_("0-9")) >> no_case[ lexeme[ lit("DAYS") ] ];
+        retention_datetime_hours = +(char_("0-9")) >> no_case[ lexeme[ lit("HOURS") ] ];
+        retention_datetime_minutes = +(char_("0-9")) >> no_case[ lexeme[ lit("MINUTES") ] ];
 
         regexp_expression =
           +char_("+-_A-Za-z0-9.[{}()\\*+?|^$");
@@ -799,7 +812,7 @@ namespace credativ {
         retention_drop_action.name("DROP");
         retention_rule_older_datetime.name("OLDER THAN");
         retention_rule_older_datetime.name("NEWER THAN");
-        retention_datetime_spec.name("[nnn YEARS] [nnn MONTHS] [nnn DAYS] [nnn HOURS]");
+        retention_datetime_spec.name("[nnn YEARS] [nn MONTHS] [nnn DAYS] [nn HOURS] [nn MINUTES]");
         identifier.name("object identifier");
         executable.name("executable name");
         hostname.name("ip or hostname");
@@ -871,6 +884,7 @@ namespace credativ {
                           retention_drop_action,
                           retention_rule_older_datetime,
                           retention_rule_newer_datetime,
+                          retention_datetime_spec,
                           force_systemid_update;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
@@ -896,7 +910,11 @@ namespace credativ {
                           variable_name,
                           variable_value,
                           variable_value_string;
-      qi::rule<Iterator, std::string(), ascii::space_type> retention_datetime_spec;
+      qi::rule<Iterator, std::string(), ascii::space_type> retention_datetime_years,
+                          retention_datetime_months,
+                          retention_datetime_days,
+                          retention_datetime_hours,
+                          retention_datetime_minutes;
 
     };
 

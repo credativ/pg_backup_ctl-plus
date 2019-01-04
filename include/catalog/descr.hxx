@@ -4,6 +4,8 @@
 #include <common.hxx>
 #include <rtconfig.hxx>
 #include <unordered_set>
+#include <queue>
+#include <boost/tokenizer.hpp>
 
 namespace credativ {
 
@@ -110,6 +112,68 @@ namespace credativ {
 
   } RetentionRuleId;
 
+  /**
+   *
+   */
+  typedef boost::tokenizer<boost::char_separator<char>> RetentionIntervalTokenizer;
+
+  /**
+   * A representation of a retention policy interval expression.
+   *
+   * A RETENTION_KEEP_BY_DATETIME and RETENTION_DROP_BY_DATETIME
+   * retention rule allows to operate with a interval expression in the
+   * form of
+   *
+   * nnn years|nnn months|nnn days|nn hours|nn minutes
+   *
+   * This is transformed into an internal queue, which allows to pop()
+   * and push() certain operands from this expression. For example
+   * backup catalog operation need to translate them into catalog
+   * specific datetime expressions. In the current format, the operands
+   * are SQLite3 compatible and are directly used by BackupCatalog
+   * and its retention policy methods.
+   */
+  class RetentionIntervalDescr {
+
+  public:
+
+    std::queue<std::string> opr_list;
+    std::string opr_value;
+
+    RetentionIntervalDescr operator+(RetentionIntervalDescr &source);
+    RetentionIntervalDescr operator+(std::string &operand);
+
+    RetentionIntervalDescr operator-(RetentionIntervalDescr &source);
+    RetentionIntervalDescr operator-(std::string &operand);
+
+    void push_add(std::string operand);
+    void push_sub(std::string operand);
+
+    /* Returns a string representing the interval expression */
+    std::string compile();
+
+    /* Returns the first operand in the queue. The operand
+     * will be removed */
+    std::string pop();
+
+    /*
+     * Gets a while string representation for a interval
+     * expression, extract its individual tokens and assigns
+     * it to the internal queue.
+     *
+     * The format is required to be
+     *
+     * nnn years|nnn months|nnn days|nn hours|nn minutes
+     */
+    void push(std::string value);
+
+    /**
+     * Returns a tokenizer suitable to parse
+     * a retention interval expression.
+     */
+    static RetentionIntervalTokenizer tokenizer(std::string value);
+
+  };
 
   /*
    * Represents a physical replication slot.
@@ -490,6 +554,12 @@ namespace credativ {
      */
     std::shared_ptr<RetentionDescr> retention = nullptr;
 
+    /**
+     * A retention interval expression instance used during parsing a
+     * pg_backup_ctl++ retention command (e.g. CREATE RETENTION POLICY).
+     */
+    std::shared_ptr<RetentionIntervalDescr> interval = nullptr;
+
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
     virtual ~CatalogDescr();
@@ -569,6 +639,9 @@ namespace credativ {
      */
     std::string getCommandTagAsStr();
 
+    void addRetentionIntervalExpr(std::string const& expr_value,
+                                  std::string const& intv_mod);
+
     /**
      * Initialize a PinDescr attached to a catalog
      * descr.
@@ -596,11 +669,28 @@ namespace credativ {
                             std::string const& value);
 
     /**
+     * Create a new internal retention policy
+     * descriptor without a rule. Thus, a retention policy
+     * created this way needs a further call to attachRetentionRule(),
+     * otherwise it won't be usable in any way (e.g. when trying
+     * to save them into the catalog et al.).
+     */
+    void makeRetentionDescr(RetentionRuleId const &ruleid);
+
+    /**
+     * Detaches the internal retention policy from
+     * a catalog descriptor. Please note that the internal
+     * shared pointer is just set to NULL, so external references
+     * might hold the instance still valid.
+     */
+    void detachRetentionDescr();
+
+    /**
      * Assigns the specified shared_ptr handle to the
      * internal retention descriptor. Must be a valid initialized
      * pointer, otherwise this will throw.
      */
-    void makeRetentionDescr(std::shared_ptr<RetentionDescr> retention);
+    void makeRetentionDescr(std::shared_ptr<RetentionDescr> const &retention);
 
     /**
      * Returns an shared_ptr to the internal retention policy

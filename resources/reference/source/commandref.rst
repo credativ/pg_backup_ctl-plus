@@ -80,7 +80,7 @@ Syntax::
            { <number of basebackups>
              | WITH LABEL <regular expression> }
        | { KEEP NEWER THAN
-           | DROP OLDER THAN } [ <nn> YEARS ] [ <nn> MONTHS ] [ <nn> DAYS ] [ <nn> HOURS ]
+           | DROP OLDER THAN } [ <nn> YEARS ] [ <nn> MONTHS ] [ <nn> DAYS ] [ <nn> HOURS ] [ <nn> MINUTES ]
      }
 
 The ``CREATE RETENTION POLICY`` command creates a retention policy

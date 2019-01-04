@@ -249,6 +249,140 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 }
 
+RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string &operand) {
+
+  RetentionIntervalDescr new_descr;
+
+  new_descr.opr_list = this->opr_list;
+
+  /* If operand is empty, do nothing */
+  if (operand != "") {
+
+    new_descr.opr_value = operand;
+    new_descr.opr_list.push("+" + operand);
+
+  } else {
+
+    new_descr.opr_value = "";
+
+  }
+
+  return new_descr;
+
+}
+
+RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr& source) {
+
+  RetentionIntervalDescr new_descr;
+
+  /*
+   * Operand ist coming from RHS, LHS will define the
+   * current operands queue.
+   */
+  new_descr.opr_list = this->opr_list;
+
+  /* We need to push the operand value to the queue, if specified */
+  if (source.opr_value != "") {
+
+    new_descr.opr_value = source.opr_value;
+    new_descr.opr_list.push("+" + source.opr_value);
+
+  }
+
+  return new_descr;
+
+}
+
+RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr &source) {
+
+  RetentionIntervalDescr new_descr;
+
+  /*
+   * Operand is coming from RHS, LHS will define
+   * the current operands queue.
+   */
+  new_descr.opr_list = this->opr_list;
+
+  /* We need to push the operand value to the queue, if specified */
+  if (source.opr_value != "") {
+
+    new_descr.opr_value = source.opr_value;
+    new_descr.opr_list.push("-" + source.opr_value);
+
+  }
+
+  return new_descr;
+}
+
+RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string &operand) {
+
+  RetentionIntervalDescr new_descr;
+
+  new_descr.opr_list = this->opr_list;
+
+  /* If operand is empty, do nothing */
+  if (operand != "") {
+
+    new_descr.opr_value = operand;
+    new_descr.opr_list.push("-" + operand);
+
+  } else {
+
+    new_descr.opr_value = "";
+
+  }
+
+  return new_descr;
+
+}
+
+void RetentionIntervalDescr::push_add(std::string operand) {
+
+  this->opr_list.push("+" + operand);
+
+}
+
+void RetentionIntervalDescr::push_sub(std::string operand) {
+
+  this->opr_list.push("-" + operand);
+
+}
+
+std::string RetentionIntervalDescr::compile() {
+
+  std::string result = "";
+
+  while(! this->opr_list.empty()) {
+
+    std::string operand = this->opr_list.front();
+    this->opr_list.pop();
+
+    if (! this->opr_list.empty())
+      result += ", ";
+
+    result += operand;
+
+  }
+
+  return result;
+
+}
+
+std::string RetentionIntervalDescr::pop() {
+
+  std::string result = "";
+
+  if (! this->opr_list.empty()) {
+
+    result = this->opr_list.front();
+    this->opr_list.pop();
+
+  }
+
+  return result;
+
+}
+
 CatalogDescr::~CatalogDescr() {}
 
 CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
@@ -362,7 +496,7 @@ shared_ptr<RetentionDescr> CatalogDescr::getRetentionPolicyP() {
 
 }
 
-void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> retention) {
+void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> const &retention) {
 
   if (retention == nullptr)
     throw CArchiveIssue("cannot assign uninitialized retention policy to catalog descriptor");
@@ -371,6 +505,29 @@ void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> retention) {
     throw CArchiveIssue("cannot assign empty retention policy to catalog descriptor");
 
   this->retention = retention;
+
+}
+
+void CatalogDescr::detachRetentionDescr() {
+
+  this->retention = nullptr;
+
+}
+
+void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid) {
+
+ shared_ptr<RetentionRuleDescr> rule = nullptr;
+
+ /*
+  * If not yet initialized, create a new retention
+  * policy descriptor.
+  */
+ if (this->retention == nullptr) {
+   this->retention = make_shared<RetentionDescr> ();
+
+   /* copy over the catalog descriptor identifier */
+   this->retention->name = this->archive_name;
+ }
 
 }
 
@@ -401,6 +558,53 @@ void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
 
   retention->rules.push_back(rule);
 
+}
+
+void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
+                                            std::string const& intv_mod) {
+
+  std::shared_ptr<RetentionRuleDescr> rule = nullptr;
+  RetentionIntervalDescr interval;
+
+  /*
+   * We must always operate on the last rule in the retention
+   * rule list, since that's the current one.
+   *
+   * Check if we really have a RETENTION_DROP_BY_DATETIME or
+   * RETENTION_KEEP_BY_DATETIME policy there.
+   */
+
+  if (this->retention == nullptr)
+    throw CCatalogIssue("could not add interval expression to uninitialized retention policy");
+
+  rule = this->retention->rules.back();
+
+  if (rule == nullptr)
+    throw CCatalogIssue("unexpected uninitialized retention rule in catalog descriptor");
+
+  if ( (rule->type == RETENTION_DROP_BY_DATETIME)
+       || (rule->type == RETENTION_KEEP_BY_DATETIME) ) {
+
+  } else {
+    throw CCatalogIssue("interval expression requires DATETIME retention policy");
+  }
+
+  /*
+   * Parse current value of the RetentionRuleDescr, if present, so that the interval
+   * descriptor has an updated list of operands.
+   */
+  
+}
+
+RetentionIntervalTokenizer RetentionIntervalDescr::tokenizer(std::string value) {
+
+  return RetentionIntervalTokenizer(value, boost::char_separator<char>("|"));
+
+}
+
+void RetentionIntervalDescr::push(std::string value) {
+
+  
 }
 
 void CatalogDescr::makePinDescr(PinOperationType const& operation) {
