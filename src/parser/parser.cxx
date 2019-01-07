@@ -524,24 +524,31 @@ namespace credativ {
           no_case[ lexeme[ lit("OLDER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
                                             >> ( retention_datetime_spec
                                                  /* boost::bind() cannot bind an overloaded method easily, so
-                                                  * just create a policy with an empty rule. Use retentionRuleCompose()
+                                                  * just create a policy with an empty rule. Use addRetentionIntervalExpr()
                                                   * later to compile the correct rule. */
                                                  [ boost::bind(&CatalogDescr::makeRetentionDescr,
                                                                &cmd, RETENTION_DROP_BY_DATETIME, string("")) ] );
 
         retention_rule_newer_datetime =
-          no_case[ lexeme[ lit("NEWER") ] ] >> no_case[ lexeme[ lit("THAN") ] ];
-                                            // >> -(retention_datetime_spec
-                                            //      [ boost::bind(&CatalogDescr::makeRetentionDescr, &cmd,
-                                            //                    RETENTION_KEEP_BY_DATETIME)]);
+          no_case[ lexeme[ lit("NEWER") ] ] >> no_case[ lexeme[ lit("THAN") ] ]
+                                            >> -( retention_datetime_spec
+                                                  /* boost::bind() cannot bind an overloaded method easily, so
+                                                   * just create a policy with an empty rule. Use addRetentionIntervalExpr()
+                                                   * later to compile the correct rule. */
+                                                  [ boost::bind(&CatalogDescr::makeRetentionDescr,
+                                                                &cmd, RETENTION_KEEP_BY_DATETIME, string("")) ] );
 
         retention_datetime_spec =
           -(retention_datetime_years
-            [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, string("years"))] )
-          ^ (retention_datetime_months)
-          ^ (retention_datetime_days)
-          ^ (retention_datetime_hours)
-          ^ (retention_datetime_minutes);
+            [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, "years", '+') ])
+          ^ (retention_datetime_months
+             [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, "months", '+') ])
+          ^ (retention_datetime_days
+             [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, "days", '+') ])
+          ^ (retention_datetime_hours
+             [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, "hours", '+') ])
+          ^ (retention_datetime_minutes
+             [ boost::bind(&CatalogDescr::addRetentionIntervalExpr, &cmd, ::_1, "minutes", '+') ]);
 
         retention_datetime_years = +(char_("0-9")) >> no_case[ lexeme[ lit("YEARS") ] ];
         retention_datetime_months = +(char_("0-9")) >> no_case[ lexeme[ lit("MONTHS") ] ];

@@ -134,7 +134,48 @@ completion_word retention_regex_compl[] = { { "<regular expression>", COMPL_IDEN
 completion_word retention_with_compl[] = { { "LABEL", COMPL_KEYWORD, retention_regex_compl },
                                            { "", COMPL_EOL, NULL } };
 
+completion_word retention_minutes_compl[] = { { "MINUTES", COMPL_KEYWORD, NULL },
+                                              { "", COMPL_EOL, NULL } };
+
+completion_word retention_nn_minutes_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_minutes_compl },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word retention_hours_compl[] = { { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
+                                            { "MINUTES", COMPL_KEYWORD, NULL },
+                                            { "", COMPL_EOL, NULL } };
+
+completion_word retention_nn_hours_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_hours_compl },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word retention_days_compl[] = { { "DAYS", COMPL_KEYWORD, retention_nn_hours_compl },
+                                           { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
+                                           { "MINUTES", COMPL_KEYWORD, NULL },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word retention_nn_days_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_days_compl },
+                                              { "", COMPL_EOL, NULL } };
+
+completion_word retention_months_compl[] = { { "MONTHS", COMPL_KEYWORD, retention_nn_days_compl },
+                                             { "", COMPL_EOL, NULL } };
+
+completion_word retention_nn_months_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_months_compl },
+                                                { "", COMPL_EOL, NULL } };
+
+completion_word retention_year_compl[] = { { "YEARS", COMPL_KEYWORD, retention_nn_months_compl },
+                                           { "DAYS", COMPL_KEYWORD, retention_nn_hours_compl },
+                                           { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
+                                           { "MONTHS", COMPL_KEYWORD, retention_nn_days_compl },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word retention_nn_year_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_year_compl },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word retention_than_compl[] = { { "THAN", COMPL_KEYWORD, retention_nn_year_compl },
+                                           { "", COMPL_EOL, NULL } };
+
 completion_word retention_rule_compl[] = { { "WITH", COMPL_KEYWORD, retention_with_compl },
+                                           { "OLDER", COMPL_KEYWORD, retention_than_compl },
+                                           { "NEWER", COMPL_KEYWORD, retention_than_compl },
                                            { "+<number of basebackups>", COMPL_IDENTIFIER, NULL },
                                            { "", COMPL_EOL, NULL } };
 

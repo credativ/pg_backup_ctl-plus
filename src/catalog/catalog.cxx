@@ -249,7 +249,36 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 }
 
-RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string &operand) {
+RetentionIntervalTokenizer RetentionIntervalDescr::tokenizer(std::string value) {
+
+  return RetentionIntervalTokenizer(value, boost::char_separator<char>("|"));
+
+}
+
+void RetentionIntervalDescr::push(std::string value) {
+
+  /*
+   * Tokenize the input expression, if present
+   */
+  if (value.length() > 0) {
+
+    RetentionIntervalTokenizer intvTokenizer = RetentionIntervalDescr::tokenizer(value);
+
+    for (auto &tok : intvTokenizer) {
+
+#ifdef __DEBUG__
+      cerr << "DEBUG: interval token: " << tok << endl;
+#endif
+
+      this->opr_list.push(tok);
+
+    }
+
+  }
+
+}
+
+RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string operand) {
 
   RetentionIntervalDescr new_descr;
 
@@ -271,7 +300,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string &operand) {
 
 }
 
-RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr& source) {
+RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr source) {
 
   RetentionIntervalDescr new_descr;
 
@@ -293,7 +322,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr&
 
 }
 
-RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr &source) {
+RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr source) {
 
   RetentionIntervalDescr new_descr;
 
@@ -314,7 +343,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr 
   return new_descr;
 }
 
-RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string &operand) {
+RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string operand) {
 
   RetentionIntervalDescr new_descr;
 
@@ -358,7 +387,7 @@ std::string RetentionIntervalDescr::compile() {
     this->opr_list.pop();
 
     if (! this->opr_list.empty())
-      result += ", ";
+      result += "|";
 
     result += operand;
 
@@ -380,6 +409,19 @@ std::string RetentionIntervalDescr::pop() {
   }
 
   return result;
+
+}
+
+RetentionIntervalDescr::RetentionIntervalDescr() {
+
+  /* default constructor */
+
+}
+
+RetentionIntervalDescr::RetentionIntervalDescr(std::string expression) {
+
+  this->push(expression);
+  this->opr_value = this->opr_list.back();
 
 }
 
@@ -561,7 +603,8 @@ void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
 }
 
 void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
-                                            std::string const& intv_mod) {
+                                            std::string const& intv_mod,
+                                            char const& operation) {
 
   std::shared_ptr<RetentionRuleDescr> rule = nullptr;
   RetentionIntervalDescr interval;
@@ -574,13 +617,21 @@ void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
    * RETENTION_KEEP_BY_DATETIME policy there.
    */
 
-  if (this->retention == nullptr)
+  cerr << "expr_value: " << expr_value << " intv_mod: " << intv_mod << endl;
+
+  if (this->retention == nullptr) {
+
+    /* No policy attached to this catalog descriptor yet, create one,
+     * representing the operation mode of this interval expression */
+
     throw CCatalogIssue("could not add interval expression to uninitialized retention policy");
+  }
 
   rule = this->retention->rules.back();
 
-  if (rule == nullptr)
+  if (rule == nullptr) {
     throw CCatalogIssue("unexpected uninitialized retention rule in catalog descriptor");
+  }
 
   if ( (rule->type == RETENTION_DROP_BY_DATETIME)
        || (rule->type == RETENTION_KEEP_BY_DATETIME) ) {
@@ -592,20 +643,27 @@ void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
   /*
    * Parse current value of the RetentionRuleDescr, if present, so that the interval
    * descriptor has an updated list of operands.
+   *
+   * XXX: This is not optimal, since we to parse and recompile the value expression
+   *      for each assignment.
+   *
    */
-  
+  if (rule->value.length() > 0) {
+
+    interval.push(rule->value);
+
+  }
+
+  if (operation == '+') {
+    interval.push_add(expr_value + " " + intv_mod);
+  } else if (operation == '-') {
+    interval.push_sub(expr_value + " " + intv_mod);
+  }
+
+  rule->value = interval.compile();
+
 }
 
-RetentionIntervalTokenizer RetentionIntervalDescr::tokenizer(std::string value) {
-
-  return RetentionIntervalTokenizer(value, boost::char_separator<char>("|"));
-
-}
-
-void RetentionIntervalDescr::push(std::string value) {
-
-  
-}
 
 void CatalogDescr::makePinDescr(PinOperationType const& operation) {
 

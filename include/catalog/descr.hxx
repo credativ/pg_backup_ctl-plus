@@ -113,7 +113,8 @@ namespace credativ {
   } RetentionRuleId;
 
   /**
-   *
+   * A tokenizer instance, suitable to return RetentionInterval tokens
+   * from its string representation.
    */
   typedef boost::tokenizer<boost::char_separator<char>> RetentionIntervalTokenizer;
 
@@ -137,14 +138,23 @@ namespace credativ {
 
   public:
 
+    RetentionIntervalDescr();
+
+    /**
+     * Initializes the list of operands of a RetentionIntervalDescr
+     * with the oprands from the given expression. opr_value will
+     * point to the last found operand in expression.
+     */
+    RetentionIntervalDescr(std::string expression);
+
     std::queue<std::string> opr_list;
     std::string opr_value;
 
-    RetentionIntervalDescr operator+(RetentionIntervalDescr &source);
-    RetentionIntervalDescr operator+(std::string &operand);
+    RetentionIntervalDescr operator+(RetentionIntervalDescr source);
+    RetentionIntervalDescr operator+(std::string operand);
 
-    RetentionIntervalDescr operator-(RetentionIntervalDescr &source);
-    RetentionIntervalDescr operator-(std::string &operand);
+    RetentionIntervalDescr operator-(RetentionIntervalDescr source);
+    RetentionIntervalDescr operator-(std::string operand);
 
     void push_add(std::string operand);
     void push_sub(std::string operand);
@@ -640,7 +650,8 @@ namespace credativ {
     std::string getCommandTagAsStr();
 
     void addRetentionIntervalExpr(std::string const& expr_value,
-                                  std::string const& intv_mod);
+                                  std::string const& intv_mod,
+                                  char const& operation);
 
     /**
      * Initialize a PinDescr attached to a catalog
