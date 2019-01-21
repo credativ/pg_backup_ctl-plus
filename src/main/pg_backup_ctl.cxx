@@ -234,6 +234,9 @@ std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
   } catch(CParserIssue &pe) {
     cerr << "parser error: " << pe.what() << endl;
     throw pe;
+  } catch(CCatalogIssue &ce) {
+    cerr << "parser error: " << ce.what() << endl;
+    throw ce;
   } catch(std::exception &e) {
 
     throw e;

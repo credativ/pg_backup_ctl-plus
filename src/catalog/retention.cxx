@@ -119,9 +119,14 @@ shared_ptr<Retention> Retention::get(shared_ptr<RetentionRuleDescr> ruleDescr) {
   case RETENTION_KEEP_NUM:
   case RETENTION_DROP_NUM:
 
-  case RETENTION_KEEP_BY_DATETIME:
-  case RETENTION_DROP_BY_DATETIME:
-    throw CCatalogIssue("retention policy not implemented yet");
+  case RETENTION_KEEP_NEWER_BY_DATETIME:
+  case RETENTION_DROP_NEWER_BY_DATETIME:
+  case RETENTION_KEEP_OLDER_BY_DATETIME:
+  case RETENTION_DROP_OLDER_BY_DATETIME:
+    {
+      result = make_shared<DateTimeRetention>(ruleDescr);
+      break;
+    }
 
   default:
     {
@@ -202,8 +207,11 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
         case RETENTION_DROP_NUM:
           throw CCatalogIssue("retention policy not implemented yet");
           break;
-        case RETENTION_KEEP_BY_DATETIME:
-        case RETENTION_DROP_BY_DATETIME:
+
+        case RETENTION_KEEP_NEWER_BY_DATETIME:
+        case RETENTION_DROP_NEWER_BY_DATETIME:
+        case RETENTION_KEEP_OLDER_BY_DATETIME:
+        case RETENTION_DROP_OLDER_BY_DATETIME:
           {
             shared_ptr<Retention> retentionPtr = make_shared<DateTimeRetention>(ruleDescr->value,
                                                                                 archiveDescr,
@@ -348,8 +356,28 @@ void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
 
 DateTimeRetention::DateTimeRetention() {}
 
+DateTimeRetention::DateTimeRetention(DateTimeRetention &src) {
+
+  catalog = src.getBackupCatalog();
+  archiveDescr = src.getArchiveCatalogDescr();
+
+  this->setIntervalExpr(src.getInterval());
+
+}
+
 DateTimeRetention::DateTimeRetention(std::shared_ptr<RetentionRuleDescr> descr)
   : Retention(descr) {
+
+  if ( (descr->type != RETENTION_KEEP_NEWER_BY_DATETIME)
+       && (descr->type != RETENTION_KEEP_OLDER_BY_DATETIME)
+       && (descr->type != RETENTION_DROP_OLDER_BY_DATETIME)
+       && (descr->type != RETENTION_DROP_NEWER_BY_DATETIME) ) {
+
+    throw ("datetime retention rule can only be created with { KEEP | DROP } { NEWER | OLDER } THAN");
+
+  }
+
+  this->setIntervalExpr(descr->value);
 
 }
 
@@ -358,19 +386,88 @@ DateTimeRetention::DateTimeRetention(std::string datetime_expr,
                                      std::shared_ptr<BackupCatalog> catalog)
   : Retention(archiveDescr, catalog) {
 
+  this->setIntervalExpr(datetime_expr);
+
 }
 
 DateTimeRetention::~DateTimeRetention() {}
+
+void DateTimeRetention::setIntervalExpr(std::string value) {
+
+  cerr << "interval expr " << value << endl;
+  interval.push(value);
+
+}
 
 void DateTimeRetention::init() {}
 
 void DateTimeRetention::init(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {}
 
-unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {}
+unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {
 
-std::string DateTimeRetention::asString() {}
 
-void DateTimeRetention::setRetentionRuleType(const RetentionRuleId ruleType) {}
+}
+
+std::string DateTimeRetention::asString() {
+
+  ostringstream result;
+
+  if (this->ruleType == RETENTION_KEEP_NEWER_BY_DATETIME) {
+    result << "KEEP NEWER THAN " << this->interval.compile();
+  }
+
+  if (this->ruleType == RETENTION_KEEP_OLDER_BY_DATETIME) {
+    result << "KEEP OLDER THAN " << this->interval.compile();
+  }
+
+  if (this->ruleType == RETENTION_DROP_NEWER_BY_DATETIME) {
+    result << "DROP NEWER THAN " << this->interval.compile();
+  }
+
+  if (this->ruleType == RETENTION_DROP_OLDER_BY_DATETIME) {
+    result << "DROP OLDER THAN " << this->interval.compile();
+  }
+
+  return result.str();
+}
+
+std::string DateTimeRetention::getInterval() {
+
+  return this->interval.compile();
+
+}
+
+void DateTimeRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
+
+  /*
+   * Allowed value here are:
+   *
+   * RETENTION_KEEP_NEWER_BY_DATETIME
+   * RETENTION_DROP_NEWER_BY_DATETIME
+   * RETENTION_DROP_OLDER_BY_DATETIME
+   * RETENTION_KEEP_OLDER_BY DATETIME
+   *
+   * Others will throw
+   */
+  switch(ruleType) {
+  case RETENTION_KEEP_NEWER_BY_DATETIME:
+  case RETENTION_KEEP_OLDER_BY_DATETIME:
+  case RETENTION_DROP_NEWER_BY_DATETIME:
+  case RETENTION_DROP_OLDER_BY_DATETIME:
+    this->ruleType = ruleType;
+    break;
+  default:
+    {
+      ostringstream oss;
+
+      oss << "label retention policy is incompatible with rule type id " << ruleType;
+      throw CCatalogIssue(oss.str());
+    }
+
+    break;
+  }
+
+}
 
 /* *****************************************************************************
  * LabelRetention implementation
@@ -741,6 +838,7 @@ void LabelRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
       throw CCatalogIssue(oss.str());
     }
 
+    break;
   }
 }
 

@@ -254,9 +254,18 @@ namespace credativ {
    * on a timestamp definition to the catalog.
    */
   class DateTimeRetention : public Retention {
+  private:
+
+    /* Assigned retention interval expression */
+    RetentionIntervalDescr interval;
+
+    /* Set interval expression */
+    void setIntervalExpr(std::string value);
+
   public:
 
     DateTimeRetention();
+    DateTimeRetention(DateTimeRetention &src);
     DateTimeRetention(std::string datetime_expr,
                       std::shared_ptr<CatalogDescr> archiveDescr,
                       std::shared_ptr<BackupCatalog> catalog);
@@ -283,8 +292,18 @@ namespace credativ {
 
     /**
      * asString() returns the Retention Rule string representation.
+     *
+     * NOTE: This is the preferred method to get the syntactic represention
+     *       from that catalog as a string. If you want to have the plain
+     *       interval expression as a string, use getInterval() instead.
      */
     virtual std::string asString();
+
+    /**
+     * Returns the interval expression of a retention policy rule
+     * as a string.
+     */
+    virtual std::string getInterval();
 
     /**
      * Set the retention rule type id.

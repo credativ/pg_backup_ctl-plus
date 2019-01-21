@@ -1,6 +1,7 @@
 #include <sstream>
 /* required for string case insensitive comparison */
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <catalog.hxx>
 #include <BackupCatalog.hxx>
@@ -249,12 +250,6 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 }
 
-RetentionIntervalTokenizer RetentionIntervalDescr::tokenizer(std::string value) {
-
-  return RetentionIntervalTokenizer(value, boost::char_separator<char>("|"));
-
-}
-
 void RetentionIntervalDescr::push(std::string value) {
 
   /*
@@ -262,17 +257,13 @@ void RetentionIntervalDescr::push(std::string value) {
    */
   if (value.length() > 0) {
 
-    RetentionIntervalTokenizer intvTokenizer = RetentionIntervalDescr::tokenizer(value);
-
-    for (auto &tok : intvTokenizer) {
+    boost::split(this->opr_list, value, boost::is_any_of("|"));
 
 #ifdef __DEBUG__
-      cerr << "DEBUG: interval token: " << tok << endl;
-#endif
-
-      this->opr_list.push(tok);
-
+    for (auto &tok : this->opr_list) {
+      cerr << "DEBUG: interval operand: " << tok << endl;
     }
+#endif
 
   }
 
@@ -288,7 +279,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string operand) {
   if (operand != "") {
 
     new_descr.opr_value = operand;
-    new_descr.opr_list.push("+" + operand);
+    new_descr.opr_list.push_back("+" + operand);
 
   } else {
 
@@ -314,7 +305,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr 
   if (source.opr_value != "") {
 
     new_descr.opr_value = source.opr_value;
-    new_descr.opr_list.push("+" + source.opr_value);
+    new_descr.opr_list.push_back("+" + source.opr_value);
 
   }
 
@@ -336,7 +327,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr 
   if (source.opr_value != "") {
 
     new_descr.opr_value = source.opr_value;
-    new_descr.opr_list.push("-" + source.opr_value);
+    new_descr.opr_list.push_back("-" + source.opr_value);
 
   }
 
@@ -353,7 +344,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string operand) {
   if (operand != "") {
 
     new_descr.opr_value = operand;
-    new_descr.opr_list.push("-" + operand);
+    new_descr.opr_list.push_back("-" + operand);
 
   } else {
 
@@ -367,13 +358,21 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string operand) {
 
 void RetentionIntervalDescr::push_add(std::string operand) {
 
-  this->opr_list.push("+" + operand);
+#ifdef __DEBUG__
+  cerr << "push interval operand " << operand << endl;
+#endif
+
+  this->opr_list.push_back("+" + operand);
 
 }
 
 void RetentionIntervalDescr::push_sub(std::string operand) {
 
-  this->opr_list.push("-" + operand);
+#ifdef __DEBUG__
+  cerr << "push interval operand " << operand << endl;
+#endif
+
+  this->opr_list.push_back("-" + operand);
 
 }
 
@@ -381,30 +380,16 @@ std::string RetentionIntervalDescr::compile() {
 
   std::string result = "";
 
-  while(! this->opr_list.empty()) {
+  for (auto const &operand : this->opr_list) {
 
-    std::string operand = this->opr_list.front();
-    this->opr_list.pop();
-
-    if (! this->opr_list.empty())
+    if (result.length() > 0)
       result += "|";
 
     result += operand;
 
-  }
-
-  return result;
-
-}
-
-std::string RetentionIntervalDescr::pop() {
-
-  std::string result = "";
-
-  if (! this->opr_list.empty()) {
-
-    result = this->opr_list.front();
-    this->opr_list.pop();
+#ifdef __DEBUG__
+    cerr << "DEBUG: opr list " << result << endl;
+#endif
 
   }
 
@@ -538,6 +523,87 @@ shared_ptr<RetentionDescr> CatalogDescr::getRetentionPolicyP() {
 
 }
 
+void CatalogDescr::makeRuleFromParserState(string const &value) {
+
+  shared_ptr<RetentionRuleDescr> rule = nullptr;
+  RetentionRuleId ruleId = RETENTION_NO_RULE;
+
+  /*
+   * Analyse the current parser state. According to
+   * the flags there, build the rule descriptor.
+   *
+   * We don't accept parser state with RETENTION_NO_ACTION,
+   * since we don't know what to do in this case.
+   */
+
+  switch(this->rps.action) {
+
+  case RETENTION_ACTION_DROP:
+
+    switch(this->rps.modifier) {
+
+    case RETENTION_MODIFIER_NEWER_DATETIME:
+      ruleId = RETENTION_DROP_NEWER_BY_DATETIME;
+      break;
+    case RETENTION_MODIFIER_OLDER_DATETIME:
+      ruleId = RETENTION_DROP_OLDER_BY_DATETIME;
+      break;
+    case RETENTION_MODIFIER_LABEL:
+      ruleId = RETENTION_DROP_WITH_LABEL;
+      break;
+
+    default:
+      throw CCatalogIssue("unexpected retention parser modifier");
+    }
+
+    break;
+
+  case RETENTION_ACTION_KEEP:
+
+    switch(this->rps.modifier) {
+
+    case RETENTION_MODIFIER_NEWER_DATETIME:
+      ruleId = RETENTION_KEEP_NEWER_BY_DATETIME;
+      break;
+    case RETENTION_MODIFIER_OLDER_DATETIME:
+      ruleId = RETENTION_KEEP_OLDER_BY_DATETIME;
+      break;
+    case RETENTION_MODIFIER_LABEL:
+      ruleId = RETENTION_KEEP_WITH_LABEL;
+      break;
+
+    default:
+      throw CCatalogIssue("unexpected retention parser modifier");
+
+    }
+
+    break;
+
+  default:
+    throw CCatalogIssue("unexpected retention parser state");
+  };
+
+  this->makeRetentionDescr(ruleId);
+  rule = make_shared<RetentionRuleDescr>();
+  rule->type = ruleId;
+  rule->value = value;
+
+  this->retention->rules.push_back(rule);
+
+}
+
+void CatalogDescr::setRetentionActionModifier(RetentionParsedModifier const &modifier) {
+
+  this->rps.modifier = modifier;
+
+}
+
+void CatalogDescr::setRetentionAction(RetentionParsedAction const &action) {
+
+  this->rps.action = action;
+
+}
+
 void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> const &retention) {
 
   if (retention == nullptr)
@@ -558,8 +624,6 @@ void CatalogDescr::detachRetentionDescr() {
 
 void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid) {
 
- shared_ptr<RetentionRuleDescr> rule = nullptr;
-
  /*
   * If not yet initialized, create a new retention
   * policy descriptor.
@@ -573,27 +637,14 @@ void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid) {
 
 }
 
-void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
-                                      string const &value) {
+void CatalogDescr::makeRetentionRule(RetentionRuleId const &ruleid,
+                                     string const &value) {
 
-  shared_ptr<RetentionRuleDescr> rule = nullptr;
+  std::shared_ptr<RetentionRuleDescr> rule = nullptr;
 
-  /*
-   * If not yet initialized, create a new retention
-   * policy descriptor.
-   */
-  if (this->retention == nullptr) {
-    this->retention = make_shared<RetentionDescr> ();
+  /* We require an instantiated retention policy descriptor */
+  this->makeRetentionDescr(ruleid);
 
-    /* copy over the catalog descriptor identifier */
-    this->retention->name = this->archive_name;
-  }
-
-  /*
-   * Build a rule around "value". It's up to the retention
-   * policy and the specified retention rule action to interpret the
-   * correct meaning of the parsed string.
-   */
   rule = make_shared<RetentionRuleDescr>();
   rule->type = ruleid;
   rule->value = value;
@@ -602,50 +653,134 @@ void CatalogDescr::makeRetentionDescr(RetentionRuleId const &ruleid,
 
 }
 
-void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
-                                            std::string const& intv_mod,
-                                            char const& operation) {
+void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_value,
+                                                        std::string const& intv_mod) {
 
+  char operation = '\0';
+  RetentionRuleId ruleid = RETENTION_NO_RULE;
   std::shared_ptr<RetentionRuleDescr> rule = nullptr;
   RetentionIntervalDescr interval;
+
+  /*
+   * We need a valid parser state to build the retention interval
+   * policy from.
+   */
+  if (this->rps.action == RETENTION_NO_ACTION) {
+    throw CCatalogIssue("cannot build retention interval rule from invalid parser state");
+  }
 
   /*
    * We must always operate on the last rule in the retention
    * rule list, since that's the current one.
    *
-   * Check if we really have a RETENTION_DROP_BY_DATETIME or
-   * RETENTION_KEEP_BY_DATETIME policy there.
+   * Check if the retention action modifier is set to
+   * RETENTION_MODIFIER_OLDER_DATETIME or RETENTION_MODIFIER_NEWER_DATETIME.
    */
+  if ( (this->rps.modifier != RETENTION_MODIFIER_NEWER_DATETIME)
+       && (this->rps.modifier != RETENTION_MODIFIER_OLDER_DATETIME) ) {
+
+    throw CCatalogIssue("unexpected retention action modifier in parser state");
+
+  }
 
   cerr << "expr_value: " << expr_value << " intv_mod: " << intv_mod << endl;
 
   if (this->retention == nullptr) {
 
-    /* No policy attached to this catalog descriptor yet, create one,
-     * representing the operation mode of this interval expression */
 
-    throw CCatalogIssue("could not add interval expression to uninitialized retention policy");
+    this->retention = make_shared<RetentionDescr>();
+    this->retention->name = this->archive_name;
+
   }
 
-  rule = this->retention->rules.back();
+  /*
+   * No policy attached to this catalog descriptor yet, create one,
+   * representing the operation mode of this interval expression.
+   *
+   */
+
+  switch(this->rps.action) {
+
+  case RETENTION_ACTION_DROP:
+    {
+      switch(this->rps.modifier) {
+      case RETENTION_MODIFIER_OLDER_DATETIME:
+        operation = '-';
+        ruleid = RETENTION_DROP_OLDER_BY_DATETIME;
+        break;
+      case RETENTION_MODIFIER_NEWER_DATETIME:
+        operation = '+';
+        ruleid = RETENTION_DROP_NEWER_BY_DATETIME;
+        break;
+      default:
+        throw CCatalogIssue("unexpected retention action modifier in parser state");
+      }
+      break;
+    }
+
+  case RETENTION_ACTION_KEEP:
+    {
+
+      switch(this->rps.modifier) {
+      case RETENTION_MODIFIER_OLDER_DATETIME:
+        operation = '-';
+        ruleid = RETENTION_KEEP_OLDER_BY_DATETIME;
+        break;
+      case RETENTION_MODIFIER_NEWER_DATETIME:
+        operation = '+';
+        ruleid = RETENTION_KEEP_NEWER_BY_DATETIME;
+        break;
+      default:
+        throw CCatalogIssue("unexpected retention action modifier in parser state");
+      }
+      break;
+    }
+
+  default:
+    throw CCatalogIssue("unexpected retention action in parser state");
+  } /* switch */
+
+  if (!this->retention->rules.empty()) {
+
+    rule = this->retention->rules.back();
+
+  } else {
+
+    rule = make_shared<RetentionRuleDescr>();
+    rule->type = ruleid;
+    rule->value = "";
+    this->retention->rules.push_back(rule);
+
+  }
 
   if (rule == nullptr) {
     throw CCatalogIssue("unexpected uninitialized retention rule in catalog descriptor");
   }
 
-  if ( (rule->type == RETENTION_DROP_BY_DATETIME)
-       || (rule->type == RETENTION_KEEP_BY_DATETIME) ) {
+  /* sanity check */
+  switch(rule->type) {
 
-  } else {
+  case RETENTION_KEEP_NEWER_BY_DATETIME:
+  case RETENTION_KEEP_OLDER_BY_DATETIME:
+  case RETENTION_DROP_NEWER_BY_DATETIME:
+  case RETENTION_DROP_OLDER_BY_DATETIME:
+    break;
+  default:
     throw CCatalogIssue("interval expression requires DATETIME retention policy");
+
   }
+
+#ifdef __DEBUG__
+  cerr << "DEBUG: retention interval expression already parsed: "
+       << rule->value << endl;
+#endif
 
   /*
    * Parse current value of the RetentionRuleDescr, if present, so that the interval
    * descriptor has an updated list of operands.
    *
-   * XXX: This is not optimal, since we to parse and recompile the value expression
-   *      for each assignment.
+   * XXX: This is not optimal, since we need to parse and recompile the
+   *      expression for each assignment.
    *
    */
   if (rule->value.length() > 0) {
@@ -661,6 +796,10 @@ void CatalogDescr::addRetentionIntervalExpr(std::string const& expr_value,
   }
 
   rule->value = interval.compile();
+
+#ifdef __DEBUG__
+  cerr << "DEBUG: compiled interval expr: " << rule->value << endl;
+#endif
 
 }
 

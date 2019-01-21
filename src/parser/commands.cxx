@@ -2822,6 +2822,7 @@ void ListRetentionPoliciesCommand::execute(bool flag) {
     }
 
     this->catalog->commitTransaction();
+    have_tx = false;
 
     /*
      * Print out details.

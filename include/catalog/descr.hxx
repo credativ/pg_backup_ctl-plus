@@ -88,14 +88,54 @@ namespace credativ {
 
   } ReplicationSlotStatus;
 
-  /*
+  /**
+   * Retention Parser States.
+   *
+   * When parsing various retention policy commands, we need
+   * to remember the states during parsing the commands to
+   * build the final RetentionRuleId.
+   *
+   * The following are specific retention types used during
+   * parser states. They don't describe a materialized retention
+   * policy with its rule(s), but describe wether a DROP or KEEP
+   * action was specified in e.g. the CREATE RETENTION POLICY
+   * command and more.
+   *
+   * They don't have any representation in the backup catalog and
+   * must not be used there!
+   */
+  typedef enum {
+
+    RETENTION_NO_ACTION,
+    RETENTION_ACTION_DROP,
+    RETENTION_ACTION_KEEP,
+
+  } RetentionParsedAction;
+
+  typedef enum {
+
+    RETENTION_NO_MODIFIER,
+    RETENTION_MODIFIER_NEWER_DATETIME,
+    RETENTION_MODIFIER_OLDER_DATETIME,
+    RETENTION_MODIFIER_LABEL,
+
+  } RetentionParsedModifier;
+
+  typedef struct {
+
+    RetentionParsedAction action = RETENTION_NO_ACTION;
+    RetentionParsedModifier modifier = RETENTION_NO_MODIFIER;
+
+  } RetentionParserState;
+
+  /**
    * A retention rule id classifies the
    * various supported retention rules and their
    * actions.
    */
   typedef enum {
 
-    RETENTION_NO_RULE = 100, /* unknown/undefined rule type */
+    RETENTION_NO_RULE = 0, /* unknown/undefined rule type */
 
     RETENTION_KEEP_WITH_LABEL = 200,
     RETENTION_DROP_WITH_LABEL = 201,
@@ -103,20 +143,16 @@ namespace credativ {
     RETENTION_KEEP_NUM = 300,
     RETENTION_DROP_NUM = 301,
 
-    RETENTION_KEEP_BY_DATETIME = 400,
-    RETENTION_DROP_BY_DATETIME = 401,
+    RETENTION_KEEP_NEWER_BY_DATETIME = 400,
+    RETENTION_KEEP_OLDER_BY_DATETIME = 401,
+    RETENTION_DROP_NEWER_BY_DATETIME = 402,
+    RETENTION_DROP_OLDER_BY_DATETIME = 403,
 
     /* PIN/UNPIN retention action */
     RETENTION_PIN = 500,
     RETENTION_UNPIN = 600
 
   } RetentionRuleId;
-
-  /**
-   * A tokenizer instance, suitable to return RetentionInterval tokens
-   * from its string representation.
-   */
-  typedef boost::tokenizer<boost::char_separator<char>> RetentionIntervalTokenizer;
 
   /**
    * A representation of a retention policy interval expression.
@@ -127,8 +163,8 @@ namespace credativ {
    *
    * nnn years|nnn months|nnn days|nn hours|nn minutes
    *
-   * This is transformed into an internal queue, which allows to pop()
-   * and push() certain operands from this expression. For example
+   * This is transformed into an internal list, which allows to store
+   * specific operands from this expression. For example
    * backup catalog operation need to translate them into catalog
    * specific datetime expressions. In the current format, the operands
    * are SQLite3 compatible and are directly used by BackupCatalog
@@ -147,7 +183,7 @@ namespace credativ {
      */
     RetentionIntervalDescr(std::string expression);
 
-    std::queue<std::string> opr_list;
+    std::vector<std::string> opr_list;
     std::string opr_value;
 
     RetentionIntervalDescr operator+(RetentionIntervalDescr source);
@@ -162,10 +198,6 @@ namespace credativ {
     /* Returns a string representing the interval expression */
     std::string compile();
 
-    /* Returns the first operand in the queue. The operand
-     * will be removed */
-    std::string pop();
-
     /*
      * Gets a while string representation for a interval
      * expression, extract its individual tokens and assigns
@@ -176,12 +208,6 @@ namespace credativ {
      * nnn years|nnn months|nnn days|nn hours|nn minutes
      */
     void push(std::string value);
-
-    /**
-     * Returns a tokenizer suitable to parse
-     * a retention interval expression.
-     */
-    static RetentionIntervalTokenizer tokenizer(std::string value);
 
   };
 
@@ -592,6 +618,11 @@ namespace credativ {
     bool        var_val_bool;
 
     /**
+     * Used to parse retention policy commands.
+     */
+    RetentionParserState rps;
+
+    /**
      * Option flag, indicating a SYSTEMID catalog update.
      */
     bool force_systemid_update = false;
@@ -649,9 +680,8 @@ namespace credativ {
      */
     std::string getCommandTagAsStr();
 
-    void addRetentionIntervalExpr(std::string const& expr_value,
-                                  std::string const& intv_mod,
-                                  char const& operation);
+    void retentionIntervalExprFromParserState(std::string const& expr_value,
+                                              std::string const& intv_mod);
 
     /**
      * Initialize a PinDescr attached to a catalog
@@ -669,24 +699,54 @@ namespace credativ {
     void makePinDescr(PinOperationType const& operation);
 
     /**
-     * Creates a retention descriptor attached
-     * to a catalog descriptor instance. The retention rule
-     * is created along with the retention descriptor and added to
-     * its rule list. If a retention descriptor already exists for
-     * a catalog descriptor, just the new retention rule will be added
-     * to this existing instance.
+     * Sets the current retention action parser state.
      */
-    void makeRetentionDescr(RetentionRuleId const &ruleid,
-                            std::string const& value);
+    void setRetentionAction(RetentionParsedAction const &action);
+
+    /**
+     * Sets the current retention action modifier parser state.
+     */
+    void setRetentionActionModifier(RetentionParsedModifier const &modifier);
+
+    /**
+     * Creates a retention policy rule, attached
+     * to a catalog retention descriptor instance.
+     * It's required that the caller has instantiated a
+     * retention policy with makeRetentionDescr() before.
+     */
+    void makeRetentionRule(std::string const& value);
 
     /**
      * Create a new internal retention policy
-     * descriptor without a rule. Thus, a retention policy
-     * created this way needs a further call to attachRetentionRule(),
-     * otherwise it won't be usable in any way (e.g. when trying
-     * to save them into the catalog et al.).
+     * descriptor, without a rule. If a retention
+     * policy descriptor already exists, this is effectively
+     * a noop. Use detachRetentionDescr() then before, if you
+     * want to have a new clean retention descriptor (or
+     * clean the instance manually).
      */
     void makeRetentionDescr(RetentionRuleId const &ruleid);
+
+    /**
+     * Create a new internal retention policy
+     * descriptor, with a rule value attached. If a retention
+     * policy descriptor already exists, this is effectively
+     * a noop. The rule is attached to the end of the rule list
+     * of the current retention policy descriptor.
+     */
+    void makeRetentionRule(RetentionRuleId const &ruleid,
+                           std::string const &value);
+    /**
+     * Makes a retention rule based on the current
+     * parser states in this->rps.
+     *
+     * value is explicitely *NOT* checked for an empty
+     * string.
+     *
+     * If there's no retention policy descriptor created yet,
+     * it will be instantiated. The rule is added at the
+     * end of the rule list attached to the current descriptor.
+     */
+    void makeRuleFromParserState(std::string const &value);
 
     /**
      * Detaches the internal retention policy from
