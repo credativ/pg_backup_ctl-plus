@@ -252,18 +252,36 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 void RetentionIntervalDescr::push(std::string value) {
 
+  std::vector<string> tokenized;
+
   /*
    * Tokenize the input expression, if present
    */
   if (value.length() > 0) {
 
-    boost::split(this->opr_list, value, boost::is_any_of("|"));
+    boost::split(tokenized, value, boost::is_any_of("|"));
 
-#ifdef __DEBUG__
-    for (auto &tok : this->opr_list) {
-      cerr << "DEBUG: interval operand: " << tok << endl;
+    for (auto &tok : tokenized) {
+
+      RetentionIntervalOperand new_opr;
+
+      if (tok.at(0) == '+') {
+
+        new_opr.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
+        new_opr.token    = tok.substr(1, tok.length() - 1);
+
+      } else if (tok.at(0) == '-') {
+
+        new_opr.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
+        new_opr.token    = tok.substr(1, tok.length() - 1);
+
+      } else {
+        CCatalogIssue("unexpected modifier string in operand");
+      }
+
+      this->opr_list.push_back(new_opr);
+
     }
-#endif
 
   }
 
@@ -272,14 +290,18 @@ void RetentionIntervalDescr::push(std::string value) {
 RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string operand) {
 
   RetentionIntervalDescr new_descr;
+  RetentionIntervalOperand new_opr;
 
   new_descr.opr_list = this->opr_list;
 
   /* If operand is empty, do nothing */
   if (operand != "") {
 
+    new_opr.token = operand;
+    new_opr.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
+
     new_descr.opr_value = operand;
-    new_descr.opr_list.push_back("+" + operand);
+    new_descr.opr_list.push_back(new_opr);
 
   } else {
 
@@ -294,6 +316,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(std::string operand) {
 RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr source) {
 
   RetentionIntervalDescr new_descr;
+  RetentionIntervalOperand new_opr;
 
   /*
    * Operand ist coming from RHS, LHS will define the
@@ -304,8 +327,11 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr 
   /* We need to push the operand value to the queue, if specified */
   if (source.opr_value != "") {
 
+    new_opr.token = source.opr_value;
+    new_opr.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
+
     new_descr.opr_value = source.opr_value;
-    new_descr.opr_list.push_back("+" + source.opr_value);
+    new_descr.opr_list.push_back(new_opr);
 
   }
 
@@ -316,6 +342,7 @@ RetentionIntervalDescr RetentionIntervalDescr::operator+(RetentionIntervalDescr 
 RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr source) {
 
   RetentionIntervalDescr new_descr;
+  RetentionIntervalOperand new_opr;
 
   /*
    * Operand is coming from RHS, LHS will define
@@ -326,8 +353,11 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr 
   /* We need to push the operand value to the queue, if specified */
   if (source.opr_value != "") {
 
+    new_opr.token = source.opr_value;
+    new_opr.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
+
     new_descr.opr_value = source.opr_value;
-    new_descr.opr_list.push_back("-" + source.opr_value);
+    new_descr.opr_list.push_back(new_opr);
 
   }
 
@@ -337,14 +367,18 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(RetentionIntervalDescr 
 RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string operand) {
 
   RetentionIntervalDescr new_descr;
+  RetentionIntervalOperand new_opr;
 
   new_descr.opr_list = this->opr_list;
 
   /* If operand is empty, do nothing */
   if (operand != "") {
 
+    new_opr.token = operand;
+    new_opr.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
+
     new_descr.opr_value = operand;
-    new_descr.opr_list.push_back("-" + operand);
+    new_descr.opr_list.push_back(new_opr);
 
   } else {
 
@@ -358,21 +392,49 @@ RetentionIntervalDescr RetentionIntervalDescr::operator-(std::string operand) {
 
 void RetentionIntervalDescr::push_add(std::string operand) {
 
+  RetentionIntervalOperand opr;
+
 #ifdef __DEBUG__
   cerr << "push interval operand " << operand << endl;
 #endif
 
-  this->opr_list.push_back("+" + operand);
+  opr.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
+  opr.token    = operand;
+  this->opr_list.push_back(opr);
 
 }
 
 void RetentionIntervalDescr::push_sub(std::string operand) {
 
+  RetentionIntervalOperand opr;
+
 #ifdef __DEBUG__
   cerr << "push interval operand " << operand << endl;
 #endif
 
-  this->opr_list.push_back("-" + operand);
+  opr.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
+  opr.token    = operand,
+  this->opr_list.push_back(opr);
+
+}
+
+std::string RetentionIntervalDescr::getOperandsAsString() {
+
+  std::string result = "";
+
+  for (std::vector<RetentionIntervalOperand>::size_type i = 0;
+       i != this->opr_list.size(); i++) {
+
+    RetentionIntervalOperand operand = this->opr_list[i];
+
+    result += operand.token;
+
+    if (i < (this->opr_list.size() - 1))
+      result += " ";
+
+  }
+
+  return result;
 
 }
 
@@ -385,7 +447,22 @@ std::string RetentionIntervalDescr::compile() {
     if (result.length() > 0)
       result += "|";
 
-    result += operand;
+    switch(operand.modifier) {
+
+    case RETENTION_MODIFIER_NEWER_DATETIME:
+      result += "+";
+      break;
+
+    case RETENTION_MODIFIER_OLDER_DATETIME:
+      result += "-";
+      break;
+
+    default:
+      throw CCatalogIssue("unexpected operator action in retention interval operand");
+
+    }
+
+    result += operand.token;
 
 #ifdef __DEBUG__
     cerr << "DEBUG: opr list " << result << endl;
@@ -406,7 +483,7 @@ RetentionIntervalDescr::RetentionIntervalDescr() {
 RetentionIntervalDescr::RetentionIntervalDescr(std::string expression) {
 
   this->push(expression);
-  this->opr_value = this->opr_list.back();
+  this->opr_value = this->opr_list.back().token;
 
 }
 
@@ -660,7 +737,7 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
   RetentionRuleId ruleid = RETENTION_NO_RULE;
   std::shared_ptr<RetentionRuleDescr> rule = nullptr;
   RetentionIntervalDescr interval;
-
+  RetentionIntervalOperand operand;
   /*
    * We need a valid parser state to build the retention interval
    * policy from.
@@ -682,8 +759,6 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
     throw CCatalogIssue("unexpected retention action modifier in parser state");
 
   }
-
-  cerr << "expr_value: " << expr_value << " intv_mod: " << intv_mod << endl;
 
   if (this->retention == nullptr) {
 
@@ -789,10 +864,17 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
 
   }
 
+  /* Assign expression */
+  operand.token    = expr_value + " " + intv_mod;
+
+  /* Make sure we set the correct operator from current
+   * parser state */
   if (operation == '+') {
-    interval.push_add(expr_value + " " + intv_mod);
+    operand.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
+    interval.opr_list.push_back(operand);
   } else if (operation == '-') {
-    interval.push_sub(expr_value + " " + intv_mod);
+    operand.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
+    interval.opr_list.push_back(operand);
   }
 
   rule->value = interval.compile();

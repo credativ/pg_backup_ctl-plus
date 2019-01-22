@@ -413,19 +413,19 @@ std::string DateTimeRetention::asString() {
   ostringstream result;
 
   if (this->ruleType == RETENTION_KEEP_NEWER_BY_DATETIME) {
-    result << "KEEP NEWER THAN " << this->interval.compile();
+    result << "KEEP NEWER THAN " << this->interval.getOperandsAsString();
   }
 
   if (this->ruleType == RETENTION_KEEP_OLDER_BY_DATETIME) {
-    result << "KEEP OLDER THAN " << this->interval.compile();
+    result << "KEEP OLDER THAN " << this->interval.getOperandsAsString();
   }
 
   if (this->ruleType == RETENTION_DROP_NEWER_BY_DATETIME) {
-    result << "DROP NEWER THAN " << this->interval.compile();
+    result << "DROP NEWER THAN " << this->interval.getOperandsAsString();
   }
 
   if (this->ruleType == RETENTION_DROP_OLDER_BY_DATETIME) {
-    result << "DROP OLDER THAN " << this->interval.compile();
+    result << "DROP OLDER THAN " << this->interval.getOperandsAsString();
   }
 
   return result.str();

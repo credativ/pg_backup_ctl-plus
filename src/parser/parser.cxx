@@ -525,7 +525,7 @@ namespace credativ {
         retention_rule_older_datetime =
           no_case[ lexeme[ lit("OLDER") ] ] >> ( no_case[ lexeme[ lit("THAN") ] ]
                                                  /* boost::bind() cannot bind an overloaded method easily, so
-                                                  * just create a policy with an empty rule. Use addRetentionIntervalExpr()
+                                                  * just create a policy with an empty rule. Use retentionIntervalExprFromParserState()
                                                   * later to compile the correct rule. */
                                                  [ boost::bind(&CatalogDescr::setRetentionActionModifier,
                                                                &cmd, RETENTION_MODIFIER_OLDER_DATETIME) ] )

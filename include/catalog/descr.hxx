@@ -154,6 +154,13 @@ namespace credativ {
 
   } RetentionRuleId;
 
+  struct RetentionIntervalOperand {
+
+    RetentionParsedModifier modifier = RETENTION_NO_MODIFIER;
+    std::string token;
+
+  };
+
   /**
    * A representation of a retention policy interval expression.
    *
@@ -183,7 +190,7 @@ namespace credativ {
      */
     RetentionIntervalDescr(std::string expression);
 
-    std::vector<std::string> opr_list;
+    std::vector<RetentionIntervalOperand> opr_list;
     std::string opr_value;
 
     RetentionIntervalDescr operator+(RetentionIntervalDescr source);
@@ -195,10 +202,17 @@ namespace credativ {
     void push_add(std::string operand);
     void push_sub(std::string operand);
 
-    /* Returns a string representing the interval expression */
+    /**
+     * Returns a string representing the interval expression.
+     *
+     * compile() returns the string in its catalog representation, which
+     * can the be reparsed into a RetentionIntervalOperand later. If
+     * you just want to have the plain operand as a string (without
+     * modifiers et al), use getOperandsAsString() instead.
+     */
     std::string compile();
 
-    /*
+    /**
      * Gets a while string representation for a interval
      * expression, extract its individual tokens and assigns
      * it to the internal queue.
@@ -208,6 +222,12 @@ namespace credativ {
      * nnn years|nnn months|nnn days|nn hours|nn minutes
      */
     void push(std::string value);
+
+    /**
+     * Returns the plain operand string. Suitable for displaying
+     * interval values.
+     */
+    std::string getOperandsAsString();
 
   };
 
