@@ -34,6 +34,8 @@ bool ConditionalSignalHandler::ref(volatile bool *bvalue) {
 
 bool ConditionalSignalHandler::check() {
 
+  bool flag = false;
+
   /*
    * Having a NULL pointer here causes
    * chech() to always return FALSE.
@@ -41,7 +43,13 @@ bool ConditionalSignalHandler::check() {
   if (this->ref_bvalue == nullptr)
     return false;
 
-  return *(this->ref_bvalue);
+  /*
+   * Reset flag.
+   */
+  flag = *(this->ref_bvalue);
+  *(this->ref_bvalue) = false;
+
+  return flag;
 
 }
 
