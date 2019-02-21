@@ -27,6 +27,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->check_connection = source.check_connection;
   this->force_systemid_update = source.force_systemid_update;
   this->forceXLOGPosRestart = source.forceXLOGPosRestart;
+  this->verbose_output = source.verbose_output;
 
   /*
    * Connection properties
@@ -97,6 +98,7 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   this->var_val_str = source.var_val_str;
   this->var_val_int = source.var_val_int;
   this->var_val_bool = source.var_val_bool;
+  this->basebackup_id = source.basebackup_id;
 
 }
 
@@ -124,6 +126,129 @@ void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
   }
 
   this->intHandler = handler;
+}
+
+DropBasebackupCatalogCommand::DropBasebackupCatalogCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+DropBasebackupCatalogCommand::DropBasebackupCatalogCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+DropBasebackupCatalogCommand::~DropBasebackupCatalogCommand() {}
+
+void DropBasebackupCatalogCommand::execute(bool flag) {
+
+  std::shared_ptr<CatalogDescr> archiveDescr = nullptr;
+  std::shared_ptr<BaseBackupDescr> bbDescr = nullptr;
+  bool has_tx = false;
+
+  /*
+   * Catalog required.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute DROP BASEBACKUP command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  try {
+
+    this->catalog->startTransaction();
+    has_tx = true;
+
+    /*
+     * Check wether the basebackup or archive exists. We can
+     * do this within one API call to our BackupCatalog, but we want
+     * to have specific describing error messages for what's missing.
+     *
+     * Thus, check archive and basebackup separately.
+     *
+     */
+    cout << "checking for archive " << this->archive_name << endl;
+    archiveDescr = this->catalog->existsByName(this->archive_name);
+
+    if (archiveDescr->id < 0) {
+      std::ostringstream oss;
+
+      oss << "archive \"" << this->archive_name << "\" does not exist";
+      throw CArchiveIssue(oss.str());
+    }
+
+    /*
+     * Check wether the basebackup exists.
+     */
+    cout << "checking for basebackup ID \"" << this->basebackup_id << "\"" << endl;
+
+    bbDescr = this->catalog->getBaseBackup(this->basebackup_id, archiveDescr->id);
+
+    if (bbDescr->id < 0) {
+      std::ostringstream oss;
+
+      oss << "basebackup with ID \"" << this->basebackup_id << "\" does not exist";
+      throw CArchiveIssue(oss.str());
+    }
+
+    /*
+     * Check if the basebackup is pinned. If yes, throw and print
+     * a corresponding error.
+     */
+    if (bbDescr->pinned) {
+      std::ostringstream oss;
+
+      oss << "basebackup with ID \"" << bbDescr->id << "\" is pinned";
+      throw CArchiveIssue(oss.str());
+    }
+
+    /*
+     * Referenced archive and basebackup exist, unlink the physical
+     * files associated with the current basebackup descriptor.
+     *
+     * We still do this within a catalog transaction, since in case of a failure
+     * we still have the reference in the catalog present.
+     *
+     * Iff BackupDirectory::unlink_path() reports an CArchiveIssue here, this
+     * means that the specified basebackup path does not exist. In this case we ignore
+     * this issue and proceed, but print a WARNING indicating that there was an
+     * orphaned catalog entry.
+     */
+    try {
+
+      BackupDirectory::unlink_path(path(bbDescr->fsentry));
+
+    } catch(CArchiveIssue &ai) {
+
+      /* unlink_path() reports CArchiveIssue in case path doesn not exist */
+      cout << "WARNING: "
+           << "basebackup path \""
+           << bbDescr->fsentry
+           << "\" does not exist, dropping catalog entry anyways"
+           << endl;
+
+    }
+
+    this->catalog->deleteBaseBackup(bbDescr->id);
+
+    /* And we're done */
+    this->catalog->commitTransaction();
+
+  } catch (CPGBackupCtlFailure &ci) {
+
+    if (has_tx) {
+      this->catalog->rollbackTransaction();
+      has_tx = false;
+      throw ci;
+    }
+  }
+
 }
 
 ResetVariableCatalogCommand::ResetVariableCatalogCommand(shared_ptr<CatalogDescr> descr) {
@@ -1747,49 +1872,13 @@ ListBackupListCommand::ListBackupListCommand(shared_ptr<BackupCatalog> catalog) 
 
 }
 
-void ListBackupListCommand::execute(bool flag) {
-
-  /*
-   * Die hard in case no catalog available.
-   */
-  if (this->catalog == nullptr)
-    throw CArchiveIssue("could not execute catalog command: no catalog");
-
-  if (!this->catalog->available())
-    this->catalog->open_rw();
-
-  /*
-   * Check if the requested archive identifier is known
-   * to the backup catalog.
-   */
-  shared_ptr<CatalogDescr> temp_descr = this->catalog->existsByName(this->archive_name);
-
-  if (temp_descr->id < 0) {
-    this->catalog->close();
-    throw CArchiveIssue("archive \"" + this->archive_name + "\" does not exist");
-  }
-
-  /*
-   * NOTE: Use the temp_descr for catalog lookups now, since this is the only
-   *       one having a full fletched catalog descriptor content.
-   *
-   *       The local command object instance just carries the parser
-   *       information.
-   */
-
-  /*
-   * Get a vector with all basebackups listed.
-   *
-   * This also includes all tablespaces and additional information
-   * we need to give a detailed overview about the stored backups.
-   */
-  vector<shared_ptr<BaseBackupDescr>> backupList
-    = this->catalog->getBackupList(temp_descr->archive_name);
+void ListBackupListCommand::print_verbose(std::shared_ptr<CatalogDescr> catalog_descr,
+                                          std::vector<std::shared_ptr<BaseBackupDescr>> &backupList) {
 
   /*
    * Format the output.
    */
-  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + temp_descr->archive_name,
+  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + catalog_descr->archive_name,
                                        boost::format("%-20s\t%-60s") % "Property" % "Value",
                                        80);
 
@@ -1801,7 +1890,7 @@ void ListBackupListCommand::execute(bool flag) {
      * Directory handle for basebackup directory on disk.
      */
     StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
-                                           temp_descr->directory);
+                                           catalog_descr->directory);
 
     /*
      * Details for the backup profile used by the current basebackup.
@@ -1886,26 +1975,152 @@ void ListBackupListCommand::execute(bool flag) {
         % CPGBackupCtlBase::stdout_red("Backup status (ON-DISK):", true)
         % CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
 
+      cout << boost::format("%-25s\t%-40s")
+        % "Total local backup size:"
+        % "NOT AVAILABLE" << endl;
+
+
     } else {
+
+      cout << boost::format("%-25s\t%-40s")
+        % "Backup duration" % basebackup->duration << endl;
 
       cout << boost::format("%-25s\t%-40s")
         % CPGBackupCtlBase::stdout_green("Backup status (ON-DISK):", true)
         % CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
 
-    }
-
-    if (bbstatus == BASEBACKUP_OK) {
       cout << boost::format("%-25s\t%-40s")
         % "Total local backup size:"
         % CPGBackupCtlBase::prettySize(directory.size()) << endl;
-    } else {
-      cout << boost::format("%-25s\t%-40s")
-        % "Total local backup size:"
-        % "NOT AVAILABLE" << endl;
+
     }
 
-
     cout << CPGBackupCtlBase::makeLine(80) << endl;
+    cout << endl;
+
+  }
+
+}
+
+void ListBackupListCommand::print(std::shared_ptr<CatalogDescr> catalog_descr,
+                                  std::vector<std::shared_ptr<BaseBackupDescr>> &backupList) {
+
+  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + catalog_descr->archive_name,
+                                       boost::format("%-5s\t%-35s\t%-40s") % "ID" % "Backup" % "Size",
+                                       80);
+
+  for (auto &basebackup : backupList) {
+
+    /*
+     * Verify state of the current basebackup.
+     */
+    BaseBackupVerificationCode bbstatus
+      = StreamingBaseBackupDirectory::verify(basebackup);
+    std::string status = "";
+
+    /*
+     * Directory handle for basebackup directory on disk.
+     */
+    StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
+                                           catalog_descr->directory);
+
+    /*
+     * Transform basebackup status into its string representation.
+     */
+    if (bbstatus != BASEBACKUP_OK) {
+
+      status = CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true);
+
+    } else {
+
+      status = CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true);
+
+    }
+
+    /* Print compact list of basebackups */
+
+    cout << boost::format("%-5s\t%-35s\t%-40s")
+      % basebackup->id
+      % basebackup->fsentry
+      % CPGBackupCtlBase::prettySize(directory.size())
+         << endl;
+
+    cout << "- Details" << endl;
+
+    /* Duration */
+    cout << boost::format("\t%-20s\t%-60s")
+      % "Duration" % basebackup->duration
+         << endl;
+
+    /* Datetime basebackup started */
+    cout << boost::format("\t%-20s\t%-60s")
+      % "Started"
+      % basebackup->started
+         << endl;
+
+    cout << boost::format("\t%-20s\t%-60s")
+      % "Stopped"
+      % basebackup->stopped
+         << endl;
+
+    cout << boost::format("\t%-20s\t%-60s")
+      %" Status"
+      % status
+         << endl;
+
+    cout << CPGBackupCtlBase::makeLine(80);
+    cout << endl;
+
+  }
+
+}
+
+void ListBackupListCommand::execute(bool flag) {
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr)
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+
+  if (!this->catalog->available())
+    this->catalog->open_rw();
+
+  /*
+   * Check if the requested archive identifier is known
+   * to the backup catalog.
+   */
+  shared_ptr<CatalogDescr> temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+    this->catalog->close();
+    throw CArchiveIssue("archive \"" + this->archive_name + "\" does not exist");
+  }
+
+  /*
+   * NOTE: Use the temp_descr for catalog lookups now, since this is the only
+   *       one having a full fletched catalog descriptor content.
+   *
+   *       The local command object instance just carries the parser
+   *       information.
+   */
+
+  /*
+   * Get a vector with all basebackups listed.
+   *
+   * This also includes all tablespaces and additional information
+   * we need to give a detailed overview about the stored backups.
+   */
+  vector<shared_ptr<BaseBackupDescr>> backupList
+    = this->catalog->getBackupList(temp_descr->archive_name);
+
+  /* Print list, check if VERBOSE was requested */
+  if (this->verbose_output) {
+    this->print_verbose(temp_descr,
+                        backupList);
+  } else {
+    this->print(temp_descr,
+                backupList);
 
   }
 

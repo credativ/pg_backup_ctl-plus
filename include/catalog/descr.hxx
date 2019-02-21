@@ -64,7 +64,8 @@ namespace credativ {
     SHOW_VARIABLES,
     SHOW_VARIABLE,
     SET_VARIABLE,
-    RESET_VARIABLE
+    RESET_VARIABLE,
+    DROP_BASEBACKUP
   } CatalogTag;
 
   /*
@@ -108,7 +109,7 @@ namespace credativ {
 
     RETENTION_NO_ACTION,
     RETENTION_ACTION_DROP,
-    RETENTION_ACTION_KEEP,
+    RETENTION_ACTION_KEEP
 
   } RetentionParsedAction;
 
@@ -118,6 +119,8 @@ namespace credativ {
     RETENTION_MODIFIER_NEWER_DATETIME,
     RETENTION_MODIFIER_OLDER_DATETIME,
     RETENTION_MODIFIER_LABEL,
+    RETENTION_MODIFIER_NUM,
+    RETENTION_MODIFIER_CLEANUP
 
   } RetentionParsedModifier;
 
@@ -150,7 +153,9 @@ namespace credativ {
 
     /* PIN/UNPIN retention action */
     RETENTION_PIN = 500,
-    RETENTION_UNPIN = 600
+    RETENTION_UNPIN = 600,
+
+    RETENTION_CLEANUP = 700
 
   } RetentionRuleId;
 
@@ -159,6 +164,7 @@ namespace credativ {
     RetentionParsedModifier modifier = RETENTION_NO_MODIFIER;
     std::string token;
 
+    virtual std::string str();
   };
 
   /**
@@ -213,9 +219,20 @@ namespace credativ {
     std::string compile();
 
     /**
-     * Gets a while string representation for a interval
+     * sqlite3_datetime() formats an interval instance encoded
+     * into a call to datetime(), suitable
+     * to be passed directly to SQLite3.
+     *
+     * NOTE: the returned datetime() function call doesn't
+     * not encode the final operand values, the caller need to bind
+     * them separately!
+     */
+    virtual std::string sqlite3_datetime();
+
+    /**
+     * Gets a string representation for a interval
      * expression, extract its individual tokens and assigns
-     * it to the internal queue.
+     * it to the internal operator list.
      *
      * The format is required to be
      *
@@ -638,6 +655,12 @@ namespace credativ {
     bool        var_val_bool;
 
     /**
+     * Used during parsing certain commands.
+     */
+    int basebackup_id = -1;
+    bool verbose_output = false;
+
+    /**
      * Used to parse retention policy commands.
      */
     RetentionParserState rps;
@@ -689,6 +712,17 @@ namespace credativ {
      * Static class methods.
      */
     static std::string commandTagName(CatalogTag tag);
+
+    /**
+     * Toggle print verbose mode issued to a CatalogDescr
+     * object from the parser.
+     */
+    void setPrintVerbose(bool const& verbose);
+
+    /**
+     * Set the basebackup id during parse analysis.
+     */
+    void setBasebackupID(std::string const& bbid);
 
     /**
      * Set the FORCE_SYSTEMID_OPTION option.
@@ -775,13 +809,6 @@ namespace credativ {
      * might hold the instance still valid.
      */
     void detachRetentionDescr();
-
-    /**
-     * Assigns the specified shared_ptr handle to the
-     * internal retention descriptor. Must be a valid initialized
-     * pointer, otherwise this will throw.
-     */
-    void makeRetentionDescr(std::shared_ptr<RetentionDescr> const &retention);
 
     /**
      * Returns an shared_ptr to the internal retention policy
@@ -918,17 +945,29 @@ namespace credativ {
     unsigned long long wal_segment_size = 0;
     int used_profile = -1;
 
-    /*
+    /**
      * Static const specifiers for status flags.
      */
     static constexpr const char *BASEBACKUP_STATUS_IN_PROGRESS = "in progress";
     static constexpr const char *BASEBACKUP_STATUS_ABORTED = "aborted";
     static constexpr const char *BASEBACKUP_STATUS_READY   = "ready";
 
-    /*
+    /**
      * Runtime settings without catalog representation.
      */
     bool elected_for_deletion = false;
+
+    /************* computed columns by SQL *************/
+
+    /**
+     * Set to TRUE in case this basebackup
+     * exceeds a retention policy (see
+     * BackupCatalog::getBackupList() and friends for details).
+     */
+    bool exceeds_retention_rule = false;
+
+    /** Duration of the basebackup*/
+    std::string duration = "N/A";
 
     /* List of tablespaces descriptors in backup */
     std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;

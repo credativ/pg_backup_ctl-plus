@@ -627,6 +627,19 @@ namespace credativ {
     getBackupList(std::string archive_name);
 
     /**
+     * Returns a list of all basebackups.
+     *
+     * In addition to the other overloaded getBackupList() method,
+     * this is called with a RetentionIntervalDescr descriptor, flagging
+     * each BaseBackupDescr wether it exceeds the requested retention
+     * interval.
+     */
+    virtual std::vector<std::shared_ptr<BaseBackupDescr>>
+    getBackupListRetentionDateTime(std::string archive_name,
+                                   RetentionIntervalDescr intervalDescr,
+                                   RetentionRuleId retention_mode);
+
+    /**
      * Returns a specific basebackup in the catalog for an archive,
      * identified by the BaseBackupRetrieveMode mode.
      *

@@ -170,7 +170,10 @@ namespace credativ {
                                          | cmd_drop_connection
 
                                          /* DROP RETENTION POLICY */
-                                         | cmd_drop_retention )
+                                         | cmd_drop_retention
+
+                                         /* DROP BASEBACKUP */
+                                         | cmd_drop_basebackup )
                             )
 
                          /*
@@ -442,7 +445,9 @@ namespace credativ {
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_LIST) ]
           >> no_case[ lexeme[ lit("IN") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
           >> identifier
-          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          >> -(no_case[ lexeme[ lit("VERBOSE") ] ])
+          [ boost::bind(&CatalogDescr::setPrintVerbose, &cmd, true) ];
 
         /*
          * LIST BACKUP CATALOG [<backup>] ...
@@ -498,22 +503,46 @@ namespace credativ {
           >> identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
           >> ( retention_keep_action
-               | retention_drop_action );
+               | retention_drop_action
+               | retention_cleanup_basebackups
+               /*
+                * CREATE RETENTION POLICY ... CLEANUP is a DROP action
+                *
+                * NOTE: Even though the parser set a specific value here, the cleanup
+                *       retention policy implementation doesn't depend on it. But the
+                *       catalog representation requires a valid string value here, so
+                *       use "cleanup" as a placeholder here.
+                */
+               [ boost::bind(&CatalogDescr::makeRetentionRule, &cmd, RETENTION_CLEANUP, string("cleanup")) ] );
 
         retention_keep_action =
           no_case[ lexeme[ lit("KEEP") ] ]
           [ boost::bind(&CatalogDescr::setRetentionAction, &cmd, RETENTION_ACTION_KEEP) ]
-          >> ( retention_rule_with_label
-               [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ]
+          >> ( ( retention_rule_with_label
+                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
                |
                retention_rule_newer_datetime
+               |
+               ( retention_rule_num_basebackups
+                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_NUM) ] )
                );
 
         retention_drop_action =
           no_case[ lexeme[ lit("DROP") ] ]
           [ boost::bind(&CatalogDescr::setRetentionAction, &cmd, RETENTION_ACTION_DROP) ]
-          >> ( retention_rule_with_label
-               | retention_rule_older_datetime );
+          >> ( ( retention_rule_with_label
+                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
+               |
+               retention_rule_older_datetime
+               |
+               retention_rule_num_basebackups
+               );
+
+        retention_cleanup_basebackups = no_case[lexeme[ lit("CLEANUP") ]];
+
+        retention_rule_num_basebackups = lexeme[ lit("+") ] >> number_ID
+          [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_NUM) ]
+          [ boost::bind(&CatalogDescr::makeRuleFromParserState, &cmd, ::_1) ];
 
         retention_rule_with_label =
           no_case[ lexeme[ lit("WITH") ] ]
@@ -618,6 +647,17 @@ namespace credativ {
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]]
           >> no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
+
+        /*
+         * DROP BASEBACKUP <ID> FROM ARCHIVE <identifier>
+         */
+        cmd_drop_basebackup = no_case[ lexeme[ lit("BASEBACKUP") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_BASEBACKUP) ]
+          >> number_ID
+          [ boost::bind(&CatalogDescr::setBasebackupID, &cmd, ::_1) ]
+          >> no_case[ lexeme[ lit("FROM") ] ] >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+          >> identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * DROP RETENTION POLICY <identifier>
@@ -822,6 +862,8 @@ namespace credativ {
         retention_rule_older_datetime.name("OLDER THAN");
         retention_rule_older_datetime.name("NEWER THAN");
         retention_datetime_spec.name("[nnn YEARS] [nn MONTHS] [nnn DAYS] [nn HOURS] [nn MINUTES]");
+        retention_rule_num_basebackups.name("nnn");
+        retention_cleanup_basebackups.name("CLEANUP");
         identifier.name("object identifier");
         executable.name("executable name");
         hostname.name("ip or hostname");
@@ -847,6 +889,7 @@ namespace credativ {
         force_systemid_update.name("FORCE_SYSTEMID_UPDATE");
         variable_name.name("<variable name>");
         variable_value.name("<variable value>");
+        cmd_drop_basebackup.name("BASEBACKUP");
       }
 
       /*
@@ -876,6 +919,7 @@ namespace credativ {
                           cmd_list_backup_list,
                           cmd_drop_backup_profile,
                           cmd_drop_retention,
+                          cmd_drop_basebackup,
                           cmd_alter_backup_profile,
                           cmd_create_connection,
                           cmd_create_retention,
@@ -894,6 +938,7 @@ namespace credativ {
                           retention_rule_older_datetime,
                           retention_rule_newer_datetime,
                           retention_datetime_spec,
+                          retention_cleanup_basebackups,
                           force_systemid_update;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
@@ -912,6 +957,7 @@ namespace credativ {
                           with_profile,
                           executable,
                           retention_rule_with_label,
+                          retention_rule_num_basebackups,
                           regexp_expression;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
@@ -1202,6 +1248,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case RESET_VARIABLE:
     result = make_shared<ResetVariableCatalogCommand>(this->catalogDescr);
+    break;
+
+  case DROP_BASEBACKUP:
+    result = make_shared<DropBasebackupCatalogCommand>(this->catalogDescr);
     break;
 
   default:

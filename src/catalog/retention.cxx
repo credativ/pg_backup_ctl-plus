@@ -114,10 +114,12 @@ shared_ptr<Retention> Retention::get(shared_ptr<RetentionRuleDescr> ruleDescr) {
       break;
     }
 
-
-    /* fall through, since the following are not implemented yet */
   case RETENTION_KEEP_NUM:
   case RETENTION_DROP_NUM:
+    {
+      result = make_shared<CountRetention>(ruleDescr);
+      break;
+    }
 
   case RETENTION_KEEP_NEWER_BY_DATETIME:
   case RETENTION_DROP_NEWER_BY_DATETIME:
@@ -125,6 +127,12 @@ shared_ptr<Retention> Retention::get(shared_ptr<RetentionRuleDescr> ruleDescr) {
   case RETENTION_DROP_OLDER_BY_DATETIME:
     {
       result = make_shared<DateTimeRetention>(ruleDescr);
+      break;
+    }
+
+  case RETENTION_CLEANUP:
+    {
+      result = make_shared<CleanupRetention>(ruleDescr);
       break;
     }
 
@@ -181,6 +189,8 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
      */
     for (auto ruleDescr : retentionDescr->rules) {
 
+      std::shared_ptr<Retention> retentionPtr = nullptr;
+
       /* make sure, ruleDescr is valid */
       if ((ruleDescr != nullptr) && (ruleDescr->id >= 0)
           && (ruleDescr->type != RETENTION_NO_RULE)) {
@@ -190,32 +200,43 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
         case RETENTION_KEEP_WITH_LABEL:
         case RETENTION_DROP_WITH_LABEL:
           {
-            shared_ptr<Retention> retentionPtr = make_shared<LabelRetention>(ruleDescr->value,
-                                                                             archiveDescr,
-                                                                             catalog);
+            retentionPtr = make_shared<LabelRetention>(ruleDescr->value,
+                                                       archiveDescr,
+                                                       catalog);
             retentionPtr->setRetentionRuleType(ruleDescr->type);
-
-            /*
-             * Stick the rule into our result vector.
-             */
-            result.push_back(retentionPtr);
-
             break;
           }
 
         case RETENTION_KEEP_NUM:
         case RETENTION_DROP_NUM:
-          throw CCatalogIssue("retention policy not implemented yet");
-          break;
+          {
+            retentionPtr = make_shared<CountRetention>(CPGBackupCtlBase::strToInt(ruleDescr->value),
+                                                       archiveDescr,
+                                                       catalog);
+            retentionPtr->setRetentionRuleType(ruleDescr->type);
+
+            break;
+          }
 
         case RETENTION_KEEP_NEWER_BY_DATETIME:
         case RETENTION_DROP_NEWER_BY_DATETIME:
         case RETENTION_KEEP_OLDER_BY_DATETIME:
         case RETENTION_DROP_OLDER_BY_DATETIME:
           {
-            shared_ptr<Retention> retentionPtr = make_shared<DateTimeRetention>(ruleDescr->value,
-                                                                                archiveDescr,
-                                                                                catalog);
+            retentionPtr = make_shared<DateTimeRetention>(ruleDescr->value,
+                                                          archiveDescr,
+                                                          catalog);
+            retentionPtr->setRetentionRuleType(ruleDescr->type);
+
+            break;
+          }
+
+        case RETENTION_CLEANUP:
+          {
+            retentionPtr = make_shared<CleanupRetention>(archiveDescr,
+                                                         catalog);
+            retentionPtr->setRetentionRuleType(ruleDescr->type);
+
             break;
           }
         default:
@@ -230,6 +251,13 @@ std::vector<std::shared_ptr<Retention>> Retention::get(string retention_name,
 
         } /* switch..case */
       }
+
+      /*
+       * Stick the rule into our result vector.
+       */
+      if (retentionPtr != nullptr)
+        result.push_back(retentionPtr);
+
     }
   }
 
@@ -347,6 +375,585 @@ void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
 #endif
 
   target.push_back(bbdescr);
+
+}
+
+/* *****************************************************************************
+ * CountRetention implementation
+ * ****************************************************************************/
+
+CountRetention::CountRetention() {}
+
+CountRetention::CountRetention(CountRetention &src) {
+
+  catalog = src.getBackupCatalog();
+  archiveDescr = src.getArchiveCatalogDescr();
+
+
+}
+
+CountRetention::CountRetention(unsigned int count,
+                               std::shared_ptr<CatalogDescr> archiveDescr,
+                               std::shared_ptr<BackupCatalog> catalog)
+  : Retention(archiveDescr, catalog) {
+
+  this->count = count;
+
+}
+
+CountRetention::CountRetention(std::shared_ptr<RetentionRuleDescr> rule)
+  : Retention(rule) {
+
+  /*
+   * We accept a RETENTION_KEEP_NUM or RETENTION_DROP_NUM
+   * only
+   */
+  if (rule->type != RETENTION_KEEP_NUM
+      && rule->type != RETENTION_DROP_NUM) {
+    throw CCatalogIssue("invalid rule type for count retention policy");
+  }
+
+  this->setValue(CPGBackupCtlBase::strToInt(rule->value));
+
+}
+
+CountRetention::~CountRetention() {}
+
+void CountRetention::reset() {
+
+  Retention::reset();
+  this->count = -1;
+
+}
+
+void CountRetention::setValue(int count) {
+
+  if (count < 0) {
+    ostringstream oss;
+
+    oss << "invalid value \"" << count << "\" for retention count";
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  this->count = count;
+
+}
+
+string CountRetention::asString() {
+
+  ostringstream encode;
+
+  encode << "+" << this->count;
+  return encode.str();
+
+}
+
+void CountRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
+
+  switch(ruleType) {
+  case RETENTION_KEEP_NUM:
+  case RETENTION_DROP_NUM:
+    this->ruleType = ruleType;
+    break;
+  default:
+    {
+      ostringstream oss;
+
+      oss  << "count retention policy is incompatible with type id " << ruleType;
+      throw CCatalogIssue(oss.str());
+    }
+
+    break;
+  }
+
+}
+
+unsigned int CountRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {
+
+  unsigned int result = 0;
+
+  /*
+   * List must be a valid vector. Zero counted
+   * lists are a no-op.
+   */
+  if (list.size() == 0) {
+    return result;
+  }
+
+  /*
+   * There's no sense in traversing the basebackup list
+   * iff there are less basebackups present than the count
+   * retention wants to have. So save the work and abort
+   * at this point;
+   */
+  if (list.size() < (unsigned int)this->count)
+    return result;
+
+  /*
+   * We need a valid cleanup descriptor. If not already
+   * present, throw.
+   */
+  if (this->cleanupDescr == nullptr) {
+    throw CArchiveIssue("cannot apply retention rule without initialization: call init() before");
+  }
+
+  /*
+   * Loop through the list, but stop as soon as we reached the retention count.
+   *
+   * Since we support KEEPing or DROPing <count> basebackups, we need
+   * to be careful how we interpret <count>:
+   *
+   * In case of RETENTION_KEEP_NUM, we count backwards from the newest basebackup
+   * ignoring any live basebackups until we've reached <count>. All basebackups
+   * older than the first <count> basebackups are cleaned up then.
+   *
+   * In case of RETENTION_DROP_NUM, we count from the oldest basebackups *forward*,
+   * and stop as soon we've reached <count>. All basebackups encountered up to
+   * <count> basebackups are removed then.
+   *
+   * NOTE: Pinned basebackups don't count! We skip "in progress" backups as well as
+   *       aborted. Only valid basebackups are considered.
+   */
+  if (this->ruleType == RETENTION_KEEP_NUM)
+
+    result = this->keep_num(list);
+
+  else if (this->ruleType == RETENTION_DROP_NUM)
+
+    result = this->drop_num(list);
+
+  else {
+
+    std::ostringstream oss;
+
+    oss << "unsupported retention policy rule type: \"" << this->ruleType << "\"";
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  return result;
+
+}
+
+unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDescr>> &list) {
+
+  unsigned int currindex = 0;
+  std::vector<std::shared_ptr<BaseBackupDescr>>::reverse_iterator it;
+
+  /*
+   * Start at the end of the list, move <count> basebackups
+   * upwards until we've reached the requested threshold.
+   *
+   * This way the caller has a chance to check wether the retention
+   * could be successfully applied.
+   *
+   * Since we traverse the list from the oldest to the newest
+   * basebackup, we examine the XLOG cleanup offset just
+   * once, when we reached the end of the retention count.
+   * Otherwise XLogCleanupOffsetKeep() won't work, since it only
+   * allows us to adjust the cleanup offset backwards.
+   *
+   * NOTE: The caller should make sure that the number
+   *       of basebackups in the candidates list satisfies
+   *       the requested retention count.
+   */
+
+  for (it = list.rbegin(); it != list.rend(); ++it) {
+
+    std::shared_ptr<BaseBackupDescr> bbdescr = *it;
+    XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
+
+    /*
+     * Check if this basebackup descriptor is valid.
+     * Ignore pinned, aborted or basebackups "in-progress".
+     */
+    if (bbdescr->pinned) {
+      continue;
+    }
+
+    if ( (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)
+         || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED) ) {
+      continue;
+    }
+
+    /*
+     * Move the basebackups into deletion list.
+     */
+    this->move(this->cleanupDescr->basebackups,
+               list,
+               bbdescr,
+               currindex);
+
+    /* Increase count */
+    currindex++;
+
+    /*
+     * Since count is signed, we need to make sure we compare
+     * the right range of values. I think this is safe here, since
+     * an overflow isn't likely to occur within this workflow
+     */
+    if (currindex >= (unsigned int)this->count) {
+
+      /*
+       * Identify the XLogRecPtr where the cleanup thresholds starts.
+       */
+      cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                              bbdescr->wal_segment_size);
+
+      Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                       cleanup_recptr,
+                                       bbdescr->timeline,
+                                       bbdescr->wal_segment_size);
+
+      break;
+
+    }
+
+  }
+
+  return currindex;
+
+}
+
+unsigned int CountRetention::keep_num(std::vector<std::shared_ptr<BaseBackupDescr>> &list) {
+
+  unsigned int bbcounted = 0;
+  unsigned int currindex = 0;
+  std::vector<std::shared_ptr<BaseBackupDescr>>::iterator it;
+
+  /*
+   * Start at the top of the list, traversing each basebackup
+   * down to the oldest. We stop as soon as we reached <count>
+   * basebackups to keep. We can't just elect a start from the
+   * given retention count, since there might be basebackups to skip
+   * (e.g. backups in  progress).
+   *
+   * If the list ends *before* we can satisfy the retention policy,
+   * we abort.
+   * This way the caller has a chance to check wether the retention
+   * could be successfully applied.
+   */
+  for (it = list.begin(); it != list.end(); ++it) {
+
+    std::shared_ptr<BaseBackupDescr> bbdescr = *it;
+    XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
+
+    /*
+     * Fall through until we reach requested retention count.
+     * All following basebackups need to be dropped then.
+     *
+     * We skip pinned and basebackups with state "in progress".
+     * Aborted basebackups aren't considered either.
+     */
+    if ( (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)
+         || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED)
+         || (bbdescr->pinned) ) {
+
+      /*
+       * Identify the XLogRecPtr where the cleanup thresholds starts.
+       *
+       * We must move them backwards to the previous segment before
+       * the current basebackups started, otherwise we are going
+       * to remove them.
+       */
+      cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                              bbdescr->wal_segment_size);
+
+      Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                       cleanup_recptr,
+                                       bbdescr->timeline,
+                                       bbdescr->wal_segment_size);
+
+      /* And next iteration, since this basebackups needs to be kept. */
+      continue;
+    }
+
+    /* Increase counter and check wether we have reached desired
+     * retention count. If still not there, keep the basebackup in any case. */
+    bbcounted++;
+
+    if (bbcounted <= (unsigned int) this->count) {
+
+      /*
+       * Identify the XLogRecPtr where the cleanup thresholds starts.
+       *
+       * We must move them backwards to the previous segment before
+       * the current basebackups started, otherwise we are going
+       * to remove them.
+       */
+      cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                              bbdescr->wal_segment_size);
+
+      Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                       cleanup_recptr,
+                                       bbdescr->timeline,
+                                       bbdescr->wal_segment_size);
+
+      continue;
+    }
+
+    /*
+     * This is a match, so mark the basebackup to be deleted. We set the
+     * cleanup XLogRecPtr threshold to the end of this basebackup.
+     *
+     * The XLogRecPtr cleanup threshold should already be positioned
+     * the last XLOG segment we have to keep, so just move
+     * the basebackup descriptor into the deletion list.
+     *
+     * NOTE: We must not reuse bbcounted here, the move list
+     *       (aka list of deletion candidates) uses its own
+     *       index here, starting at zero.
+     */
+
+    this->move(this->cleanupDescr->basebackups,
+               list,
+               bbdescr,
+               currindex);
+    currindex++;
+
+  }
+
+  return bbcounted;
+
+}
+
+void CountRetention::init() {
+
+  /*
+   * Initialize the cleanup descriptor. Currently we just support
+   * deleting by a starting XLogRecPtr and removing all subsequent (older)
+   * WAL files from the archive.
+   */
+  this->cleanupDescr                  = make_shared<BackupCleanupDescr>();
+  this->cleanupDescr->mode            = WAL_CLEANUP_OFFSET;
+  this->cleanupDescr->basebackupMode  = BASEBACKUP_DELETE;
+
+}
+
+void CountRetention::init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr) {
+
+  /*
+   * We don't expect an initialized cleanupDescr here, this usually
+   * means we were called previously already. Throw here, since
+   * we can't guarantee reasonable results out from here in this case.
+   */
+  if (this->cleanupDescr != nullptr)
+    throw CArchiveIssue("cannot apply retention module repeatedly, "
+                        "call Retention::reset() before");
+
+  this->cleanupDescr = prevCleanupDescr;
+
+}
+
+/* *****************************************************************************
+ * CleanupRetention implementation
+ * ****************************************************************************/
+
+CleanupRetention::CleanupRetention() {}
+
+CleanupRetention::CleanupRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+                                   std::shared_ptr<BackupCatalog> catalog)
+  : Retention(archiveDescr, catalog) {
+
+  this->ruleType = RETENTION_CLEANUP;
+
+}
+
+CleanupRetention::CleanupRetention(std::shared_ptr<RetentionRuleDescr> rule)
+  : Retention(rule) {
+
+  /*
+   * Take care for correct rule types. We only accept
+   * cleanup Policies here.
+   */
+  if ( rule->type != RETENTION_CLEANUP ) {
+    throw CCatalogIssue("cleanup retention can only be instantiated with a CLEANUP policy");
+  }
+
+  this->ruleType = rule->type;
+
+  /*
+   * Currently, value of a RETENTION_CLEANUP policy is just a dummy
+   * (e.g. always set to "cleanup"). But we might need to change that
+   * some day, so copy over the specific value from the given
+   * rule descriptor in any case.
+   */
+  this->cleanup_value = rule->value;
+
+}
+
+CleanupRetention::CleanupRetention(CleanupRetention &src) {
+
+  catalog = src.getBackupCatalog();
+  archiveDescr = src.getArchiveCatalogDescr();
+
+}
+
+void CleanupRetention::setRetentionRuleType(const RetentionRuleId ruleType) {
+
+  if (ruleType != RETENTION_CLEANUP)
+    throw CCatalogIssue("cleanup retention policy handles RETENTION_CLEANUP rules only");
+
+  this->ruleType = ruleType;
+
+}
+
+unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {
+
+  unsigned int currindex = 0;
+  unsigned int result = 0;
+
+  /*
+   * List must be a valid vector. If it is empty,
+   * this is effectively a no-op.
+   */
+  if (list.size() == 0) {
+    return 0;
+  }
+
+  /*
+   * Also, we need a valid cleanup descriptor, which
+   * at least requires to have called init() before...
+   */
+
+  if (this->cleanupDescr == nullptr) {
+    throw CArchiveIssue("cannot apply retention rule without initialization: call init() before");
+  }
+
+  /*
+   * Loop through the list of basebackups which need
+   * to be cleaned up.
+   *
+   * "Cleaning" up here means, we look out for basebackups which are in
+   * either one of the following states:
+   *
+   * aborted : The basebackups streaming process was interrupted and finished
+   *           before succeeding to stream all necessary files.
+   *
+   * invalid: the basebackups doesn't have alle required WALs available and
+   *          don't include all required WALs (WAL=EXCLUDED).
+   *
+   */
+  for (auto &bbdescr : list) {
+
+    /*
+     * XLogRecPtr stores the current XLOG cleanup threshold.
+     */
+    XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
+
+    /*
+     * Check if the basebackup is pinned. If true, we are forced
+     * to keep it, even if it is aborted. But if the latter is the case,
+     * print a warning.
+     */
+    if (bbdescr->pinned) {
+
+      cout << "NOTICE: ignoring PINNED basebackup " << bbdescr->fsentry << endl;
+
+    }
+
+    /* check if the basebackup was aborted */
+    if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED) {
+
+      /*
+       * Schedule this basebackup for removal, but only if
+       * it's not pinned. In case of the latter, print a warning
+       * but keep the basebackup
+       */
+      if (bbdescr->pinned) {
+
+        cout << "WARNING: ABORTED basebackup " << bbdescr->fsentry << " is pinned but WAL will be removed" << endl;
+
+        /*
+         * Since an ABORTED basebackup doesn't have a trustable xlogposend location,
+         * we move the cleanup_xlogrecptr to the starting position of its XLOG stream.
+         *
+         * This will render the basebackup really useless, but pinned is pinned....
+         */
+        cleanup_recptr = PGStream::decodeXLOGPos(bbdescr->xlogpos);
+        Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                         cleanup_recptr,
+                                         bbdescr->timeline,
+                                         bbdescr->wal_segment_size);
+
+      } else {
+
+        /* Schedule basebackup for removal. */
+        this->move(this->cleanupDescr->basebackups,
+                   list,
+                   bbdescr,
+                   currindex);
+
+        result++;
+
+      }
+
+    }
+
+    if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) {
+
+      /*
+       * Okay, this is hard, we need to know wether any other
+       * streaming worker is currently responsible for this
+       * basebackup. Since we can't reliable do this here, we print
+       * a WARNING and skip this basebackup for now.
+       *
+       * The current workaround is to give the user a HINT that
+       * he's required to check this basebackup manually, or, if
+       * necessary, need to drop it.
+       *
+       * Also, a basebackup IN PROGRESS doesn't have a xlogposend XLogRecPtr
+       * which can be trusted. Since we cannot make sure that this is a
+       * orphaned basebackup atm, we will abort the retention policy.
+       *
+       * It's too dangerous to proceed, since there's the possibility
+       * to remove XLOG files that belongs to an unfinished basebackup.
+       */
+      throw CRetentionFailureHint("abort cleanup retention, since a basebackup is still in progress",
+                                  "if this basebackup is broken somehow, you'll need to cleanup it manually");
+
+    }
+
+    currindex++;
+
+  }
+
+  return result;
+
+}
+
+std::string CleanupRetention::asString() {
+
+  return std::string("CLEANUP");
+
+}
+
+void CleanupRetention::init() {
+
+  /*
+   * Initialize the cleanup descriptor. Currently we just support
+   * deleting by a starting XLogRecPtr and removing all subsequent (older)
+   * WAL files from the archive.
+   */
+  this->cleanupDescr                  = make_shared<BackupCleanupDescr>();
+  this->cleanupDescr->mode            = WAL_CLEANUP_OFFSET;
+  this->cleanupDescr->basebackupMode  = BASEBACKUP_DELETE;
+
+}
+
+void CleanupRetention::init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr) {
+
+  /*
+   * We don't expect an initialized cleanupDescr here, this usually
+   * means we were called previously already. Throw here, since
+   * we can't guarantee reasonable results out from here in this case.
+   */
+  if (this->cleanupDescr != nullptr)
+    throw CArchiveIssue("cannot apply retention module repeatedly, "
+                        "call Retention::reset() before");
+
+  this->cleanupDescr = prevCleanupDescr;
 
 }
 
@@ -488,7 +1095,7 @@ LabelRetention::LabelRetention(std::shared_ptr<RetentionRuleDescr> descr)
 
   if ( (descr->type != RETENTION_KEEP_WITH_LABEL)
        && (descr->type != RETENTION_DROP_WITH_LABEL) )
-    throw ("label retention rule can only be created with KEEP or DROP WITH LABEL");
+    throw CCatalogIssue("label retention rule can only be created with KEEP or DROP WITH LABEL");
 
   this->setRegularExpr(descr->value);
 

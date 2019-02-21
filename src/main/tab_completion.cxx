@@ -74,7 +74,10 @@ completion_word create_archive_params_completion[] = { { "PARAMS", COMPL_KEYWORD
 completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_archive_params_completion },
                                                       { "", COMPL_EOL, NULL } /* marks end of list */ };
 
-completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+completion_word list_archive_verbose_compl[] = { { "VERBOSE", COMPL_KEYWORD, NULL },
+                                               { "", COMPL_EOL, NULL } };
+
+completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, list_archive_verbose_compl },
                                                     { "", COMPL_EOL, NULL } };
 
 completion_word list_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
@@ -280,9 +283,29 @@ completion_word drop_profile_ident_completion[] = { { "<identifier>", COMPL_IDEN
 completion_word drop_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, drop_profile_ident_completion },
                                               { "", COMPL_EOL, NULL } };
 
+completion_word drop_basebackup_ident_compl[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word drop_basebackup_archive_compl[] = { { "ARCHIVE", COMPL_KEYWORD, drop_basebackup_ident_compl },
+                                                    { "", COMPL_EOL, NULL } };
+
+completion_word drop_basebackup_from_compl[] = { { "FROM", COMPL_KEYWORD, drop_basebackup_archive_compl },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word drop_basebackup_completion[] = { { "<ID>", COMPL_IDENTIFIER, drop_basebackup_from_compl },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word drop_retention_ident_compl[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word drop_retention_policy_compl[] = { { "POLICY", COMPL_KEYWORD, drop_retention_ident_compl },
+                                                  { "", COMPL_EOL, NULL } };
+
 completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
                                       { "STREAMING", COMPL_KEYWORD, drop_connection_completion },
                                       { "BACKUP", COMPL_KEYWORD, drop_profile_completion },
+                                      { "BASEBACKUP", COMPL_KEYWORD, drop_basebackup_completion },
+                                      { "RETENTION", COMPL_KEYWORD, drop_retention_policy_compl },
                                       { "", COMPL_EOL, NULL } };
 
 completion_word alter_archive_set_completion[] = { { "SET", COMPL_KEYWORD, param_start_completion },

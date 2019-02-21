@@ -57,6 +57,16 @@
 #define SQL_BACKUP_USED_PROFILE_ATTNO 13
 
 /*
+ * Computed columns with no corresponding
+ * materialized attribute. These are additional
+ * attributes fetched by catalog queries into
+ * a BaseBackupDescr. They must not be counted
+ * below in SQL_BACKUP_NCOLS!
+ */
+#define SQL_BACKUP_COMPUTED_DURATION 14
+#define SQL_BACKUP_COMPUTED_RETENTION_DATETIME 15
+
+/*
  * Keep that in sync with above number of cols
  */
 #define SQL_BACKUP_NCOLS 14

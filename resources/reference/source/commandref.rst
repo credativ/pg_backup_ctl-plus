@@ -81,6 +81,7 @@ Syntax::
              | WITH LABEL <regular expression> }
        | { KEEP NEWER THAN
            | DROP OLDER THAN } [ <nn> YEARS ] [ <nn> MONTHS ] [ <nn> DAYS ] [ <nn> HOURS ] [ <nn> MINUTES ]
+       | CLEANUP
      }
 
 The ``CREATE RETENTION POLICY`` command creates a retention policy

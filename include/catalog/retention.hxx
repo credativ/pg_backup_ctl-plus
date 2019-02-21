@@ -7,6 +7,18 @@
 namespace credativ {
 
   /**
+   * Retention exception with a HINT.
+   */
+  class CRetentionFailureHint : public CCatalogIssue {
+  public:
+    std::string hint = "";
+    CRetentionFailureHint(const char *errstr) throw() : CCatalogIssue(errstr) {};
+    CRetentionFailureHint(std::string errstr) throw() : CCatalogIssue(errstr) {};
+    CRetentionFailureHint(std::string errstr, std::string hint) throw() :
+      CCatalogIssue(errstr) { this->hint = hint; }
+  };
+
+  /**
    * Retention is the base class for retention
    * rules.
    */
@@ -280,11 +292,12 @@ namespace credativ {
     virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
 
     /**
-     * Initialize internal state of DateTimeRetention rule.
+     * Initialize internal state of DateTimeRetention policy.
      */
     virtual void init();
 
-    /* Applies a retention policy on the given list of
+    /*
+     * Applies a retention policy on the given list of
      * basebackups. Returns the number of basebackups
      * which got the retention policy applied.
      */
@@ -309,6 +322,147 @@ namespace credativ {
      * Set the retention rule type id.
      */
     virtual void setRetentionRuleType(const RetentionRuleId ruleType);
+  };
+
+  /**
+   * CountRetention policy class.
+   *
+   * CountRetention implements a retention policy where
+   * just a number of basebackups starting from the newest to
+   * oldest are selected either to keep or to drop.
+   */
+  class CountRetention : public Retention {
+  private:
+
+    /*
+     * Retention count.
+     *
+     * The default count of -1 indicates that
+     * a retention wasn't properly set.
+     */
+    int count = -1;
+
+    /**
+     * keep_num()
+     *
+     * Applies the RETENTION_KEEP_NUM policy to the list
+     * of basebackups.
+     */
+    virtual unsigned int keep_num(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+    /**
+     * drop_num()
+     *
+     * Applies the RETENTION_DROP_NUM policy to the list
+     * of basebackups.
+     */
+    virtual unsigned int drop_num(std::vector<std::shared_ptr<BaseBackupDescr>> &list);
+
+  public:
+
+    CountRetention();
+    CountRetention(CountRetention &src);
+    CountRetention(unsigned int count,
+                   std::shared_ptr <CatalogDescr> archiveDescr,
+                   std::shared_ptr <BackupCatalog> catalog);
+    CountRetention(std::shared_ptr <RetentionRuleDescr> rule);
+
+    virtual ~CountRetention();
+
+    /**
+     * Initialize a CountRetention policy class with a given
+     * cleanup descriptor.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr);
+
+    /**
+     * Initialize internal state of CountRetention policy.
+     */
+    virtual void init();
+
+    /**
+     * Applies a retention policy on the given list of
+     * basebackups. Returns the number of basebackups
+     * which got the retention policy applied.
+     */
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+
+    /**
+     * Returns the string representation of a CountRetention policy value.
+     */
+    virtual std::string asString();
+
+    /**
+     * Set the retention rule type.
+     */
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType);
+
+    /**
+     * Set the retention count.
+     */
+    virtual void setValue(int count);
+
+    /**
+     * Reset internal state.
+     *
+     * This is an overloaded version of Retention::reset(), which
+     * additionally sets the count property back to its default.
+     */
+    virtual void reset();
+
+  };
+
+  /**
+   * CleanupRetention policy class.
+   *
+   * A CleanupRetention policy instance cleans the list
+   * of failed basebackups.
+   */
+  class CleanupRetention : public Retention {
+  private:
+
+    /*
+     * Cleanup rule value, currently always set to "cleanup"
+     */
+    std::string cleanup_value = "cleanup";
+
+  public:
+
+    CleanupRetention();
+    CleanupRetention(CleanupRetention &src);
+    CleanupRetention(std::shared_ptr<CatalogDescr> archiveDescr,
+                     std::shared_ptr<BackupCatalog> catalog);
+    CleanupRetention(std::shared_ptr<RetentionRuleDescr> rule);
+
+    /**
+     * Set the retention rule type. This is effectively allows
+     * RETENTION_CLEANUP rules only, since a CleanupRetention
+     * policy implements exactly *one* policy: cleanup.. ;)
+     */
+    virtual void setRetentionRuleType(const RetentionRuleId ruleType);
+
+    /**
+     * Applies a retention policy on the given list of
+     * basebackups. Returns the number of basebackups
+     * which got the retention policy applied.
+     */
+    virtual unsigned int apply(std::vector<std::shared_ptr<BaseBackupDescr>> list);
+
+    /**
+     * Returns the string representation of this rule.
+     */
+    virtual std::string asString();
+
+    /**
+     * Initialize a CountRetention policy class with a given
+     * cleanup descriptor.
+     */
+    virtual void init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr);
+
+    /**
+     * Initialize internal state of CountRetention policy.
+     */
+    virtual void init();
   };
 
   /**

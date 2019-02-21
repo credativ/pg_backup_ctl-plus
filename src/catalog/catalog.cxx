@@ -52,7 +52,11 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "status",
     "systemid",
     "wal_segment_size",
-    "used_profile"
+    "used_profile",
+
+    /* the following are computed columns with no materialized representation */
+    "strftime('%H hours %M minutes %S seconds', julianday(stopped, 'utc') - julianday(started, 'utc'), '12:00') AS duration ",
+
   };
 
 std::vector<std::string> BackupCatalog::streamCatalogCols =
@@ -250,6 +254,29 @@ UnpinDescr::UnpinDescr(PinOperationType operation) {
 
 }
 
+std::string RetentionIntervalDescr::sqlite3_datetime() {
+
+  std::ostringstream result;
+
+  if (this->opr_list.size() == 0)
+    return string("");
+
+  result << "datetime(stopped,";
+
+  for (std::vector<RetentionIntervalOperand>::size_type i = 0;
+       i != this->opr_list.size(); i++) {
+
+    result << "?" << (i + 1);
+
+    if (i < this->opr_list.size() - 1)
+      result << ", ";
+
+  }
+
+  return result.str();
+
+}
+
 void RetentionIntervalDescr::push(std::string value) {
 
   std::vector<string> tokenized;
@@ -438,6 +465,29 @@ std::string RetentionIntervalDescr::getOperandsAsString() {
 
 }
 
+std::string RetentionIntervalOperand::str() {
+
+  std::string result = "";
+
+  switch(this->modifier) {
+
+  case RETENTION_MODIFIER_NEWER_DATETIME:
+    result += "+";
+    break;
+
+  case RETENTION_MODIFIER_OLDER_DATETIME:
+    result += "-";
+    break;
+
+  default:
+    /* Other modifiers don't need special treatment here */
+    break;
+  }
+
+  return result += this->token;
+
+}
+
 std::string RetentionIntervalDescr::compile() {
 
   std::string result = "";
@@ -507,6 +557,8 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->coninfo->pgdatabase = source.coninfo->pgdatabase;
   this->coninfo->dsn = source.coninfo->dsn;
   this->coninfo->type = source.coninfo->type;
+  this->basebackup_id = source.basebackup_id;
+  this->verbose_output = source.verbose_output;
 
   /* job control */
   this->detach = source.detach;
@@ -563,6 +615,10 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->var_val_bool = source.var_val_bool;
 
   return *this;
+}
+
+void CatalogDescr::setPrintVerbose(bool const& verbose) {
+  this->verbose_output = verbose;
 }
 
 void CatalogDescr::setVariableName(string const& name) {
@@ -629,6 +685,14 @@ void CatalogDescr::makeRuleFromParserState(string const &value) {
       ruleId = RETENTION_DROP_WITH_LABEL;
       break;
 
+    case RETENTION_MODIFIER_NUM:
+      ruleId = RETENTION_DROP_NUM;
+      break;
+
+    case RETENTION_MODIFIER_CLEANUP:
+      ruleId = RETENTION_CLEANUP;
+      break;
+
     default:
       throw CCatalogIssue("unexpected retention parser modifier");
     }
@@ -648,6 +712,13 @@ void CatalogDescr::makeRuleFromParserState(string const &value) {
     case RETENTION_MODIFIER_LABEL:
       ruleId = RETENTION_KEEP_WITH_LABEL;
       break;
+
+    case RETENTION_MODIFIER_NUM:
+      ruleId = RETENTION_KEEP_NUM;
+      break;
+
+    case RETENTION_MODIFIER_CLEANUP:
+      throw CCatalogIssue("a CLEANUP retention modifier cannot be attached to a KEEP action");
 
     default:
       throw CCatalogIssue("unexpected retention parser modifier");
@@ -671,6 +742,7 @@ void CatalogDescr::makeRuleFromParserState(string const &value) {
 
 void CatalogDescr::setRetentionActionModifier(RetentionParsedModifier const &modifier) {
 
+  cout << "modifier set" << endl;
   this->rps.modifier = modifier;
 
 }
@@ -678,18 +750,6 @@ void CatalogDescr::setRetentionActionModifier(RetentionParsedModifier const &mod
 void CatalogDescr::setRetentionAction(RetentionParsedAction const &action) {
 
   this->rps.action = action;
-
-}
-
-void CatalogDescr::makeRetentionDescr(shared_ptr<RetentionDescr> const &retention) {
-
-  if (retention == nullptr)
-    throw CArchiveIssue("cannot assign uninitialized retention policy to catalog descriptor");
-
-  if (retention->id < 0)
-    throw CArchiveIssue("cannot assign empty retention policy to catalog descriptor");
-
-  this->retention = retention;
 
 }
 
@@ -993,6 +1053,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "DROP RETENTION POLICY";
   case APPLY_RETENTION_POLICY:
     return "APPLY RETENTION POLICY";
+  case DROP_BASEBACKUP:
+    return "DROP BASEBACKUP";
 
   default:
     return "UNKNOWN";
@@ -1089,6 +1151,13 @@ void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
     }
 
   }
+
+}
+
+void CatalogDescr::setBasebackupID(std::string const &bbid) {
+
+  cerr << "DEBUG: setting basebackup id " << bbid << endl;
+  this->basebackup_id = CPGBackupCtlBase::strToInt(bbid);
 
 }
 
@@ -1585,6 +1654,22 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::fetchBackupIntoDescr(sqlite3_stm
 
     case SQL_BACKUP_USED_PROFILE_ATTNO:
       descr->used_profile = sqlite3_column_int(stmt, current_stmt_col);
+      break;
+
+    case SQL_BACKUP_COMPUTED_RETENTION_DATETIME:
+
+      /* this column tag identifies a computed value, be aware for nullable expressions */
+      if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+        descr->exceeds_retention_rule = sqlite3_column_int(stmt, current_stmt_col);
+
+      break;
+
+    case SQL_BACKUP_COMPUTED_DURATION:
+
+      /* this column tag identifies a computed value, be aware for nullable expressions */
+      if (sqlite3_column_type(stmt, current_stmt_col) != SQLITE_NULL)
+        descr->duration = (char *) sqlite3_column_text(stmt, current_stmt_col);
+
       break;
 
     default:
@@ -2418,6 +2503,9 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
     throw CCatalogIssue("catalog database not opened");
   }
 
+  /* mark descriptor empty */
+  basebackup->id = -1;
+
   /*
    * Generate list of columns to retrieve...
    */
@@ -2506,6 +2594,16 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
     sqlite3_finalize(stmt);
     throw CCatalogIssue(oss.str());
 
+  }
+
+  /*
+   * If no rows returned, there's effectively
+   * nothing more to do here (no basebackup by
+   * the specified ID found).
+   */
+  if (rc == SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return basebackup;
   }
 
   /*
@@ -2687,6 +2785,264 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
   return result;
 }
 
+/*
+ * Currenty this repeats most of the logic of its
+ * overload pendant, but i'm too lazy to refactor
+ * the code atm.
+ *
+ * retention_mode is only allowed to operate on
+ * either RETENTION_KEEP_NEWER_BY_DATETIME,
+ * RETENTION_DROP_NEWER_BY_DATETIME, RETENTION_KEEP_OLDER_BY_DATETIME
+ * or RETENTION_DROP_OLDER_BY_DATETIME.
+ *
+ * This makes four operation modes, but we are only interested
+ * wether the datetime value is required to be older or newer
+ * than the selected basebackups.
+ */
+std::vector<std::shared_ptr<BaseBackupDescr>>
+BackupCatalog::getBackupListRetentionDateTime(std::string archive_name,
+                                              RetentionIntervalDescr intervalDescr,
+                                              RetentionRuleId retention_mode) {
+
+  std::ostringstream query;
+  std::vector<int> backupAttrs;
+  std::vector<int> tblspcAttrs;
+  sqlite3_stmt *stmt;
+
+  std::string backupCols;
+  std::vector<std::shared_ptr<BaseBackupDescr>> list;
+  int current_backup_id = -1;
+  int rc;
+  std::string interval_expr = "";
+  std::ostringstream retention_expr;
+
+  /*
+   * A retention interval without valid operands
+   * is considered a no-op value here.
+   */
+  if (intervalDescr.opr_list.size() == 0) {
+    throw CCatalogIssue("attempt to apply an empty retention interval to basebackup listing");
+  }
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Get the formatted datetime() expression from the
+   * interval descriptor.
+   */
+  interval_expr = intervalDescr.sqlite3_datetime();
+
+  /*
+   * Build the retention expression.
+   */
+  switch(retention_mode) {
+
+  case RETENTION_KEEP_OLDER_BY_DATETIME:
+  case RETENTION_DROP_OLDER_BY_DATETIME:
+    {
+      retention_expr << "stopped < " << interval_expr;
+      break;
+    }
+
+  case RETENTION_KEEP_NEWER_BY_DATETIME:
+  case RETENTION_DROP_NEWER_BY_DATETIME:
+    {
+      retention_expr << "stopped > " << interval_expr;
+      break;
+    }
+
+  default:
+    throw CCatalogIssue("invalid retention mode when getting backup list");
+  }
+
+  /*
+   * Generate list of columns to retrieve...
+   */
+  backupAttrs.push_back(SQL_BACKUP_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_ARCHIVE_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOSEND_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_TIMELINE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_LABEL_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
+
+  /* computed columns to fetch */
+  backupAttrs.push_back(SQL_BACKUP_COMPUTED_DURATION);
+
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
+
+  backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                               backupAttrs);
+
+  /*
+   * Get the list of backups for the specified archive.
+   */
+  query << "SELECT "
+        << backupCols
+        << ", "
+
+    /*
+     * IMPORTANT:
+     *
+     * We can't use SQLgetColumnList here(), since we want to
+     * prevent NULL
+     */
+
+        << "COALESCE(bt.backup_id, -1) AS backup_id, "
+        << "COALESCE(bt.spcoid, -1) AS spcoid, "
+        << "COALESCE(spclocation, 'no location') AS spclocation, "
+        << "COALESCE(spcsize, -1) AS spcsize, "
+        << "b.wal_segment_size AS wal_segment_size, "
+        << "b.used_profile AS backup_profile_id, "
+
+    /*
+     * Checking the datetime retention policy here is done directly
+     * via SQLite3, but we have to make sure to fetch the value
+     * manually. So watch out for its column index if you change something
+     * here.
+     */
+        << retention_expr.str()
+        << "FROM "
+        << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
+        << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?" << (intervalDescr.opr_list.size() + 1)
+        << ") ORDER BY b.started DESC;";
+
+#ifdef __DEBUG__
+  cerr << "generate SQL: " << query.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * First, bind retention datetime values. This makes
+   * up the retention expression, which looks like:
+   *
+   * datetime(stopped, ?1, ?2, ?3, ...)
+   */
+  for (std::vector<RetentionIntervalOperand>::size_type i = 0;
+       i != intervalDescr.opr_list.size(); i++) {
+
+    RetentionIntervalOperand operand = intervalDescr.opr_list[i];
+    std::string opr_value = operand.str();
+
+    sqlite3_bind_text(stmt, i, opr_value.c_str(), -1, SQLITE_STATIC);
+  }
+
+  /*
+   * ... and finally the archive_name
+   */
+  sqlite3_bind_text(stmt, intervalDescr.opr_list.size() + 1,
+                    archive_name.c_str(), -1, SQLITE_STATIC);
+
+  rc = sqlite3_step(stmt);
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+
+    ostringstream oss;
+
+    oss << "error retrieving backup list from catalog database: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * Make sure we retrieve computed columns as well. We can
+   * do this right here only, since otherwise SQLgetColumnList() would
+   * have generated a wrong SELECT target list.
+   */
+  backupAttrs.push_back(SQL_BACKUP_COMPUTED_RETENTION_DATETIME);
+  backupAttrs.push_back(SQL_BACKUP_COMPUTED_DURATION);
+
+  /*
+   * Retrieve list of backups.
+   */
+  while (rc == SQLITE_ROW) {
+
+    shared_ptr<BaseBackupDescr> bbdescr = make_shared<BaseBackupDescr>();
+    shared_ptr<BackupTablespaceDescr> tablespace = make_shared<BackupTablespaceDescr>();
+
+    /* pivot pointer */
+    shared_ptr<BaseBackupDescr> curr_descr = nullptr;
+
+    bbdescr->setAffectedAttributes(backupAttrs);
+    tablespace->setAffectedAttributes(tblspcAttrs);
+
+    this->fetchBackupIntoDescr(stmt,
+                               bbdescr,
+                               Range(0, backupAttrs.size() - 1));
+
+    /*
+     * Since we fetch tablespace and basebackup information in one
+     * query, we only push basebackup information if the last
+     * encountered backup_id differs.
+     */
+    if (current_backup_id != bbdescr->id) {
+
+      list.push_back(bbdescr);
+      current_backup_id = bbdescr->id;
+
+    }
+
+    this->fetchBackupTablespaceIntoDescr(stmt,
+                                         tablespace,
+
+                                         /*
+                                          * NOTE:
+                                          *
+                                          * The offset for tablespace columns always
+                                          * starts after the attributes from the backup
+                                          * catalog table
+                                          */
+
+                                         Range(backupAttrs.size(), backupAttrs.size() + tblspcAttrs.size() - 1));
+
+    if (tablespace->backup_id >= 0) {
+
+      /* Okay, looks like a valid tablespace entry */
+      curr_descr = list.back();
+
+      if (curr_descr == nullptr) {
+        /* oops */
+        sqlite3_finalize(stmt);
+        throw CCatalogIssue("unexpected state in base backup list in getBackupList()");
+      }
+
+      curr_descr->tablespaces.push_back(tablespace);
+
+    }
+
+    /* Now move the result forward to the next row */
+    rc = sqlite3_step(stmt);
+
+  }
+
+  sqlite3_finalize(stmt);
+  return list;
+}
+
 std::vector<std::shared_ptr<BaseBackupDescr>>
 BackupCatalog::getBackupList(std::string archive_name) {
 
@@ -2721,6 +3077,9 @@ BackupCatalog::getBackupList(std::string archive_name) {
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
+
+  /* computed columns to fetch */
+  backupAttrs.push_back(SQL_BACKUP_COMPUTED_DURATION);
 
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
   tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
@@ -3644,6 +4003,16 @@ int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbde
       sqlite3_bind_int(stmt, result,
                        bbdescr->used_profile);
       break;
+
+    case SQL_BACKUP_COMPUTED_RETENTION_DATETIME:
+      /* computed values must not be bound */
+      throw CCatalogIssue("attempt to bind expression column exceeds_retention_rule");
+      break; /* not reached */
+
+    case SQL_BACKUP_COMPUTED_DURATION:
+      /* computed values must not be bound */
+      throw CCatalogIssue("attempt to bind expression column duration");
+      break; /* not reached */
 
     default:
       {

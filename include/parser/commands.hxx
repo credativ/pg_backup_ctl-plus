@@ -53,6 +53,19 @@ namespace credativ {
 
   };
 
+  class DropBasebackupCatalogCommand : public BaseCatalogCommand {
+  public:
+
+    DropBasebackupCatalogCommand();
+    DropBasebackupCatalogCommand(std::shared_ptr<CatalogDescr> descr);
+    DropBasebackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog);
+
+    virtual ~DropBasebackupCatalogCommand();
+
+    virtual void execute(bool flag);
+
+  };
+
   class ShowVariableCatalogCommand : public BaseCatalogCommand {
   public:
     ShowVariableCatalogCommand(std::shared_ptr<CatalogDescr> descr);
@@ -225,6 +238,13 @@ namespace credativ {
   };
 
   class ListBackupListCommand : public BaseCatalogCommand {
+  private:
+
+    virtual void print(std::shared_ptr<CatalogDescr> catalog_descr,
+                       std::vector<std::shared_ptr<BaseBackupDescr>> &backupList);
+    virtual void print_verbose(std::shared_ptr<CatalogDescr> catalog_descr,
+                               std::vector<std::shared_ptr<BaseBackupDescr>> &backupList);
+
   public:
     ListBackupListCommand(std::shared_ptr<CatalogDescr> descr);
     ListBackupListCommand(std::shared_ptr<BackupCatalog> catalog);
