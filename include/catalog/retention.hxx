@@ -289,7 +289,7 @@ namespace credativ {
      * Initialize a DateTimeRetention instance with a given
      * cleanup descriptor.
      */
-    virtual void init(std::shared_ptr<BackupCleanupDescr> cleanupDescr);
+    virtual void init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr);
 
     /**
      * Initialize internal state of DateTimeRetention policy.

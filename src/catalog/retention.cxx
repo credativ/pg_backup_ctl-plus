@@ -444,6 +444,20 @@ string CountRetention::asString() {
 
   ostringstream encode;
 
+  switch(this->ruleType) {
+
+  case RETENTION_KEEP_NUM:
+    encode << "KEEP ";
+    break;
+
+  case RETENTION_DROP_NUM:
+    encode << "DROP ";
+    break;
+
+  default:
+    throw CCatalogIssue("unrecognized rule type for count retention");
+  }
+
   encode << "+" << this->count;
   return encode.str();
 
@@ -1006,12 +1020,38 @@ void DateTimeRetention::setIntervalExpr(std::string value) {
 
 }
 
-void DateTimeRetention::init() {}
+void DateTimeRetention::init() {
 
-void DateTimeRetention::init(std::shared_ptr<BackupCleanupDescr> cleanupDescr) {}
+  /*
+   * Initialize the cleanup descriptor. Currently we just
+   * support by a starting XLogRecPtr and removing all subsequent (older)
+   * WAL files from the archive.
+   */
+  this->cleanupDescr                 = make_shared<BackupCleanupDescr>();
+  this->cleanupDescr->mode           = WAL_CLEANUP_OFFSET;
+  this->cleanupDescr->basebackupMode = BASEBACKUP_DELETE;
+
+}
+
+void DateTimeRetention::init(std::shared_ptr<BackupCleanupDescr> prevCleanupDescr) {
+
+  /*
+   * We don't expect an initialized cleanupDescr here, this usually
+   * means we were called previously already. Throw here, since
+   * we can't guarantee reasonable results out from here in this case.
+   */
+  if (this->cleanupDescr != nullptr)
+    throw CArchiveIssue("cannot apply retention module repeatedly, "
+                        "call Retention::reset() before");
+
+  this->cleanupDescr = prevCleanupDescr;
+
+
+}
 
 unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {
 
+  unsigned int result = 0;
 
 }
 
