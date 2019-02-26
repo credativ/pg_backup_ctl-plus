@@ -6,6 +6,7 @@
 #include <shm.hxx>
 #include <retention.hxx>
 #include <rtconfig.hxx>
+#include <server.hxx>
 
 using namespace credativ;
 

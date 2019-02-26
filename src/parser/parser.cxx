@@ -198,6 +198,7 @@ namespace credativ {
                                                     >> -(with_profile) >> -(force_systemid_update) )
                                                   | ( cmd_start_launcher )
                                                   | ( cmd_start_streaming )
+                                                  | ( cmd_start_recovery_stream )
                                                   )
                             )
 
@@ -386,6 +387,13 @@ namespace credativ {
               >> variable_name
               [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ] );
 
+
+        cmd_start_recovery_stream = no_case[ lexeme[ lit("RECOVERY") ] ]
+          >> no_case[ lexeme[ lit("STREAM") ] ]
+          >> no_case[ lexeme[ lit("FOR") ] ]
+          >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+          >> identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * START STREAMING FOR ARCHIVE command
@@ -834,6 +842,7 @@ namespace credativ {
         cmd_start_command.name("START");
         cmd_start_launcher.name("LAUNCHER");
         cmd_start_streaming.name("STREAMING");
+        cmd_start_recovery_stream.name("START RECOVERY STREAM FOR ARCHIVE");
         cmd_stop_command.name("STOP");
         cmd_stop_streaming.name("STREAMING FOR ARCHIVE");
         cmd_show.name("SHOW");
@@ -908,6 +917,7 @@ namespace credativ {
                           cmd_start_basebackup,
                           cmd_start_launcher,
                           cmd_start_streaming,
+                          cmd_start_recovery_stream,
                           cmd_stop_streaming,
                           cmd_list_archive,
                           cmd_list_connection,
