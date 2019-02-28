@@ -552,11 +552,60 @@ unsigned int CountRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>>
 
 unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDescr>> &list) {
 
-  unsigned int currindex = 0;
+  unsigned int currindex       = 0;
+  unsigned int bbhealthy_num   = 0; /* number of valid basebackups */
   std::vector<std::shared_ptr<BaseBackupDescr>>::reverse_iterator it;
 
   /*
-   * Start at the end of the list, move <count> basebackups
+   * We must know before starting how many healthy basebackups
+   * are held in the catalog, otherwise we aren't allowed to apply
+   * the DROP retention to this archive.
+   *
+   * This means we scan the list of basebackup descriptors
+   * twice, but given that in most cases this list won't
+   * have zillions of entries that looks okay.
+   */
+  for (auto bbdescr : list) {
+
+    /*
+     * We don't distinguish between valid and invalid basebackups,
+     * pinned is pinned...
+     *
+     * XXX: This situation is unlikely anyways, since parts of the
+     *      implemention for PIN prevents pinning invalid basebackups...
+     */
+    if ( (bbdescr->status != BaseBackupDescr::BASEBACKUP_STATUS_READY)
+         || (bbdescr->pinned) ) {
+
+      continue;
+
+    } else {
+
+      bbhealthy_num++;
+
+    }
+
+  }
+
+  /*
+   * Shortcut here, if number of healthy backups is
+   * smaller than the requested retention count, exit immediately.
+   */
+  if (bbhealthy_num <= (unsigned int) this->count) {
+    ostringstream failure;
+
+    failure << "retention count violates current number of valid basebackups: "
+            << "\""
+            << bbhealthy_num
+            << "\"";
+
+    throw CRetentionFailureHint(failure.str(),
+                                "retention count must be smaller than the number of valid basebackups");
+
+  }
+
+  /*
+   * Start again at the end of the list, move <count> basebackups
    * upwards until we've reached the requested threshold.
    *
    * This way the caller has a chance to check wether the retention
@@ -589,6 +638,31 @@ unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDesc
     if ( (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)
          || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED) ) {
       continue;
+    }
+
+    /*
+     * Be paranoid:
+     *
+     * This is an additional check wether we would
+     * violate the number of valid basebackups currently
+     * in the archive by deleting the current basebackup.
+     *
+     * Check if moving the current basebackup into
+     * the deletion candidates list will exceed number
+     * of valid basebackups. If true, abort.
+     */
+    if ((currindex + 1) >= bbhealthy_num) {
+
+      ostringstream failure;
+
+      failure << "retention count violates current number of valid basebackups: "
+              << "\""
+              << bbhealthy_num
+              << "\"";
+
+      throw CRetentionFailureHint(failure.str(),
+                                  "retention count must be smaller than the number of valid basebackups");
+
     }
 
     /*
