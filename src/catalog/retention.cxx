@@ -1125,7 +1125,97 @@ void DateTimeRetention::init(std::shared_ptr<BackupCleanupDescr> prevCleanupDesc
 
 unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr>> list) {
 
-  unsigned int result = 0;
+  unsigned int currindex = 0;
+
+  /*
+   * Loop through the list of basebackups. We need to check
+   * wether the stopped timestamp exceeds the specified datetime
+   * threshold. We true, move the basebackup into the deletion candidates
+   * list, but only if it is not pinned.
+   */
+  for (auto &bbdescr : list) {
+
+    XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
+
+    /* Check wether retention policy is exceeded */
+    this->catalog->exceedsRetention(bbdescr,
+                                    this->ruleType,
+                                    this->interval);
+
+    if (bbdescr->exceeds_retention_rule) {
+
+
+      /* Check wether this basebackup is "in-progress" */
+      if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) {
+
+        cerr << "basebackup can be deleted, but is in-progress, ignoring" << endl;
+
+        cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                                bbdescr->wal_segment_size);
+        Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                         cleanup_recptr,
+                                         bbdescr->timeline,
+                                         bbdescr->wal_segment_size);
+
+      } else {
+
+        if (bbdescr->pinned) {
+
+#ifdef __DEBUG__
+          cerr << "DEBUG: basebackup is pinned, ignoring" << endl;
+#endif
+
+          cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                                  bbdescr->wal_segment_size);
+          Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                           cleanup_recptr,
+                                           bbdescr->timeline,
+                                           bbdescr->wal_segment_size);
+
+        } else {
+
+          this->move(this->cleanupDescr->basebackups,
+                     list,
+                     bbdescr,
+                     currindex);
+
+          /* Deletion offset is end xlogrecptr of this basebackup */
+          cleanup_recptr = PGStream::decodeXLOGPos(bbdescr->xlogposend);
+          Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                           cleanup_recptr,
+                                           bbdescr->timeline,
+                                           bbdescr->wal_segment_size);
+
+          currindex++;
+
+#ifdef __DEBUG__
+          cerr << "DEBUG: basebackup can be deleted, retention rule applies" << endl;
+#endif
+
+        }
+
+      }
+    } else {
+
+#ifdef __DEBUG__
+      cerr << "DEBUG: keep basebackup ID " << bbdescr->id << endl;
+#endif
+
+      /*
+       * Keep this basebackup in any ways, since it does not
+       * exceed retention
+       */
+      cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
+                                                              bbdescr->wal_segment_size);
+      Retention::XLogCleanupOffsetKeep(cleanupDescr,
+                                       cleanup_recptr,
+                                       bbdescr->timeline,
+                                       bbdescr->wal_segment_size);
+    }
+
+  }
+
+  return currindex;
 
 }
 

@@ -653,6 +653,18 @@ namespace credativ {
                                                            bool valid_only);
 
     /**
+     * Checks wether the given retention interval would be
+     * exceeded for the specified basebackup. The specified
+     * BaseBackupDescr flag (BaseBackupDescr::exceeds_retention_rule)
+     * is initialized accordingly and must already be a valid
+     * descriptor identifying a basebackup
+     * catalog entry.
+     */
+    void exceedsRetention(std::shared_ptr<BaseBackupDescr> basebackup,
+                          RetentionRuleId retention_mode,
+                          RetentionIntervalDescr interval);
+
+    /**
      * Returns a basebackup descriptor, describing the
      * specified basebackup referenced within the given archive_id
      * and by the basebackup ID.
