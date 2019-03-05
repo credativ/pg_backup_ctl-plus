@@ -261,7 +261,7 @@ std::string RetentionIntervalDescr::sqlite3_datetime() {
   if (this->opr_list.size() == 0)
     return string("");
 
-  result << "datetime(stopped,";
+  result << "datetime('now', 'localtime',";
 
   for (std::vector<RetentionIntervalOperand>::size_type i = 0;
        i != this->opr_list.size(); i++) {
@@ -273,6 +273,7 @@ std::string RetentionIntervalDescr::sqlite3_datetime() {
 
   }
 
+  result << ")";
   return result.str();
 
 }
@@ -2484,6 +2485,155 @@ void BackupCatalog::deleteBaseBackup(int basebackupId) {
 
   }
 
+  sqlite3_finalize(stmt);
+
+}
+
+void BackupCatalog::exceedsRetention(std::shared_ptr<BaseBackupDescr> basebackup,
+                                     RetentionRuleId retention_mode,
+                                     RetentionIntervalDescr interval) {
+
+  std::string interval_expr = "";
+  sqlite3_stmt *stmt        = NULL;
+  int exceeds_retention_rule = 0;
+  std::ostringstream sql;
+  std::ostringstream retention_expr;
+  int rc;
+  int intvOprCount = 0;
+
+  /* basebackup should be valid */
+  if (basebackup == nullptr) {
+    throw CCatalogIssue("cannot check datetime retention for uninitialized basebackup descriptor");
+  }
+
+  if (basebackup->id < 0) {
+    throw CCatalogIssue("cannot check datetime retention for invalid basebackup descriptor");
+  }
+
+  /*
+   * A retention interval without valid operands
+   * is considered a no-op value here.
+   */
+  if (interval.opr_list.size() == 0) {
+    throw CCatalogIssue("attempt to apply an empty retention interval to basebackup listing");
+  } else {
+
+    intvOprCount = interval.opr_list.size();
+
+  }
+
+  if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /*
+   * Get the formatted datetime() expression from the
+   * interval descriptor.
+   */
+  interval_expr = interval.sqlite3_datetime();
+
+  /*
+   * Get the formatted SQLite3 SQL expression
+   * from the interval descriptor.
+   */
+  switch(retention_mode) {
+
+  case RETENTION_KEEP_OLDER_BY_DATETIME:
+  case RETENTION_DROP_OLDER_BY_DATETIME:
+    {
+      retention_expr << "stopped < " << interval_expr;
+      break;
+    }
+
+  case RETENTION_KEEP_NEWER_BY_DATETIME:
+  case RETENTION_DROP_NEWER_BY_DATETIME:
+    {
+      retention_expr << "stopped > " << interval_expr;
+      break;
+    }
+
+  default:
+    throw CCatalogIssue("invalid retention mode when getting backup list");
+
+  }
+
+  /* Prepare SQL command */
+  sql << "SELECT "
+      << retention_expr.str()
+      << " AS exceeds_retention_rule FROM backup b WHERE archive_id = ?"
+      << intvOprCount + 1
+      << " AND id = ?"
+      << intvOprCount + 2
+      << ";";
+
+#ifdef __DEBUG__
+    cerr << "generate SQL: " << sql.str() << endl;
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          sql.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * First, bind retention datetime values. This makes
+   * up the retention expression, which looks like:
+   *
+   * datetime('now', ?1, ?2, ?3, ...)
+   */
+  for (std::vector<RetentionIntervalOperand>::size_type i = 0;
+       i != interval.opr_list.size(); i++) {
+
+    RetentionIntervalOperand operand = interval.opr_list[i];
+    std::string opr_value = operand.str();
+
+    cerr << "bind datetime operand " << opr_value << endl;
+    sqlite3_bind_text(stmt, (i + 1), opr_value.c_str(), -1, SQLITE_STATIC);
+
+  }
+
+  /* Bind predicate values to query... */
+  cerr << "bind ARCHIVE ID " << basebackup->archive_id << endl;
+  sqlite3_bind_int(stmt, intvOprCount + 1, basebackup->archive_id);
+  cerr << "bind ID " << basebackup->id << endl;
+  sqlite3_bind_int(stmt, intvOprCount + 2, basebackup->id);
+
+  /* ...and execute the query */
+  rc = sqlite3_step(stmt);
+
+  /* Only one result row expected */
+  if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+
+    ostringstream oss;
+
+    oss << "unexpected result when checking retention rule: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /* SQLite does not have a bool type, we're using integer instead */
+  exceeds_retention_rule = sqlite3_column_int(stmt, 0);
+
+#ifdef __DEBUG__
+  cerr << "exceeds_retention_rule value retrieved: " << exceeds_retention_rule << endl;
+#endif
+
+  if (exceeds_retention_rule <= 0)
+    basebackup->exceeds_retention_rule = false;
+  else
+    basebackup->exceeds_retention_rule = true;
+
+  cerr << "exceeds retention rule value: " << basebackup->exceeds_retention_rule << endl;
+
+  /* ... close result and exit */
   sqlite3_finalize(stmt);
 
 }
