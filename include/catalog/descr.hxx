@@ -90,20 +90,6 @@ namespace credativ {
   } ReplicationSlotStatus;
 
   /**
-   * Recovery Stream descriptor.
-   */
-  class RecoveryStreamDescr {
-  public:
-
-    /*
-     * Archive this descriptor is attached to, -1
-     * means not initialized yet.
-     */
-    int archive_id = -1;
-
-  };
-
-  /**
    * Retention Parser States.
    *
    * When parsing various retention policy commands, we need
