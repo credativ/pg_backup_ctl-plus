@@ -1757,9 +1757,24 @@ void ArchivePipedProcess::close() {
    */
   if (this->isOpen()) {
 
-    ::pclose(this->fpipe_handle);
+    int rc = ::pclose(this->fpipe_handle);
+
     this->fpipe_handle = NULL;
     this->opened = false;
+
+    /*
+     * XXX: We must check pclose() and its return code,
+     * since that is the exit code from the called program
+     * on the other side of our pipe.
+     */
+    if (rc < 0) {
+
+      std::ostringstream oss;
+
+      oss << "command returned with an error: " << strerror(errno);
+      throw CArchiveIssue(oss.str());
+
+    }
 
   }
 

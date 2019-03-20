@@ -1818,13 +1818,15 @@ FILE * credativ::run_pipelined_command(job_info &info) {
   cout << "DEBUG: executing " << cmd.str() << endl;
 #endif
 
-  info.fpipe_handle = popen(cmd.str().c_str(), info.po_mode.c_str());
+  info.fpipe_handle = ::popen(cmd.str().c_str(), info.po_mode.c_str());
 
   if (info.fpipe_handle == NULL) {
+
     ostringstream oss;
 
     oss << "could not execute popen(): " << strerror(errno);
     throw WorkerFailure(oss.str());
+
   }
 
   return info.fpipe_handle;
