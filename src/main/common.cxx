@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/iostreams/filtering_streambuf.hpp>
@@ -205,6 +206,41 @@ string CPGBackupCtlBase::getVersionString() {
                 + intToStr(PG_BACKUP_CTL_MAJOR)
                 + "."
                 + intToStr(PG_BACKUP_CTL_MINOR));
+}
+
+bool CPGBackupCtlBase::resolve_file_path(std::string filename) {
+
+  namespace bfs = boost::filesystem;
+
+  char *pathnames = getenv("PATH");
+  std::vector<std::string> path_list;
+
+  if (pathnames == NULL)
+    return false;
+
+  boost::split(path_list, pathnames, boost::is_any_of(":"));
+
+  for(auto &path_name : path_list) {
+
+    /*
+     * We build a boost::filesystem path object and use
+     * its exists() method to look up the absolute path
+     * of the specified file. It's likely that most of the time
+     * this will throw (since the file doesn't live in the
+     * majority of paths here ;). Thus, we just check for
+     * boost::system::errc::success, which indicates a match.
+     */
+    bfs::path lookup_file_path = bfs::path(path_name) / bfs::path(filename);
+    boost::system::error_code ec;
+
+    bfs::exists(lookup_file_path, ec);
+
+    if (ec.value() == boost::system::errc::success)
+      return true;
+
+  }
+
+  return false;
 }
 
 void CPGBackupCtlBase::writeFileReplace(std::string filePath,

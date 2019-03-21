@@ -3550,6 +3550,10 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       ArchivePipedProcess app(tar);
       char buf[4];
 
+      if (!CPGBackupCtlBase::resolve_file_path(tar.string())) {
+        throw CArchiveIssue("cannot resolve path for binary tar");
+      }
+
       app.setExecutable(tar);
       app.pushExecArgument("--version");
 
@@ -3568,6 +3572,10 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       path pbzip("pbzip2");
       ArchivePipedProcess app(pbzip);
       char buf[4];
+
+      if (!CPGBackupCtlBase::resolve_file_path(pbzip.string())) {
+        throw CArchiveIssue("cannot resolve path for binary pbzip2");
+      }
 
       app.setExecutable(pbzip);
       app.pushExecArgument("--version");
