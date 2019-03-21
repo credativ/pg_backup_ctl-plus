@@ -181,6 +181,12 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
         = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".bz2"));
       std::string filename = myfile->getFilePath();
 
+      /*
+       * Check if pbzip2 is available
+       */
+      if (!CPGBackupCtlBase::resolve_file_path("pbzip2"))
+        throw CArchiveIssue("cannot resolve path for binary pbzip2");
+
       myfile->setExecutable("pbzip2");
       myfile->pushExecArgument("-l");
       myfile->pushExecArgument("-c");
@@ -202,6 +208,12 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       std::shared_ptr<ArchivePipedProcess> myfile
         = std::make_shared<ArchivePipedProcess>(this->streaming_subdir);
       std::string directory = myfile->getFilePath();
+
+      /*
+       * Check if pbzip2 is available
+       */
+      if (!CPGBackupCtlBase::resolve_file_path("tar"))
+        throw CArchiveIssue("cannot resolve path for binary tar");
 
       myfile->setExecutable("tar");
       myfile->pushExecArgument("-C");
@@ -1749,32 +1761,26 @@ void ArchivePipedProcess::rename(path& newname) {
 void ArchivePipedProcess::close() {
 
   /*
-   * close() here means we are closing our endpoints
-   * of the communication pipe. These are in particular:
-   *
-   * READ end: pipe_out[0]
-   * WRITE end: pipe_in[1]
+   * pclose() here means we are closing our endpoints
+   * of the communication pipe.
    */
   if (this->isOpen()) {
 
-    int rc = ::pclose(this->fpipe_handle);
+    ::pclose(this->fpipe_handle);
+
+    /*
+     * XXX: Normally we should check pclose() and its return code,
+     * since that is the exit code from the called program
+     * on the other side of our pipe (e.g. via
+     * WEXITSTATUS(), WSIGNALED() and WIFEXITED()).
+     *
+     * However, in some cases we just want to read stdout
+     * under certain conditions, which would fail any error
+     * checking here. This needs some more investigation.
+     */
 
     this->fpipe_handle = NULL;
     this->opened = false;
-
-    /*
-     * XXX: We must check pclose() and its return code,
-     * since that is the exit code from the called program
-     * on the other side of our pipe.
-     */
-    if (rc < 0) {
-
-      std::ostringstream oss;
-
-      oss << "command returned with an error: " << strerror(errno);
-      throw CArchiveIssue(oss.str());
-
-    }
 
   }
 

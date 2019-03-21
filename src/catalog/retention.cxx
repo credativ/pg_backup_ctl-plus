@@ -1396,8 +1396,8 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
    */
   for(auto &bbdescr : deleteList) {
 
-    boost::smatch what;
     bool modified_xlog_cleanup_offset = false;
+    boost::smatch what;
 
     /*
      * Get the start position of the current basebackup and extract
