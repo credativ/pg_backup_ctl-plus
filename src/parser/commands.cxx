@@ -2032,19 +2032,25 @@ void ListBackupListCommand::print(std::shared_ptr<CatalogDescr> catalog_descr,
 
       status = CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true);
 
+      cout << boost::format("%-5s\t%-35s\t%-40s")
+        % basebackup->id
+        % basebackup->fsentry
+        % "N/A"
+           << endl;
+
     } else {
 
       status = CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true);
 
+      cout << boost::format("%-5s\t%-35s\t%-40s")
+        % basebackup->id
+        % basebackup->fsentry
+        % CPGBackupCtlBase::prettySize(directory.size())
+           << endl;
+
     }
 
     /* Print compact list of basebackups */
-
-    cout << boost::format("%-5s\t%-35s\t%-40s")
-      % basebackup->id
-      % basebackup->fsentry
-      % CPGBackupCtlBase::prettySize(directory.size())
-         << endl;
 
     cout << "- Details" << endl;
 
