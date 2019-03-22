@@ -77,7 +77,7 @@ Syntax::
   CREATE RETENTION POLICY <identifier>
      {
        { KEEP | DROP }
-           { <number of basebackups>
+           { +<number of basebackups>
              | WITH LABEL <regular expression> }
        | { KEEP NEWER THAN
            | DROP OLDER THAN } [ <nn> YEARS ] [ <nn> MONTHS ] [ <nn> DAYS ] [ <nn> HOURS ] [ <nn> MINUTES ]
@@ -85,7 +85,78 @@ Syntax::
      }
 
 The ``CREATE RETENTION POLICY`` command creates a retention policy
-rule which can be applied to clean up backup archives.
+rule which can be applied to clean up backup archives. A retention policy
+consists of a retention action ``KEEP`` or ``DROP`` and a rule specification which
+describes what exactly the action should be doing. The following rule types are currently
+implemented:
+
+- ``<number of basebackups>``
+
+  Defines the number of basebackups to drop or keep. A retention action
+  with <number of basebackups> works as follows:
+
+  * ``KEEP``
+
+    If ``KEEP`` is specified the retention rules scans for the specified
+    number of basebackups starting from the newest. If it reaches the number of basebackups
+    to keep, all remaining (older) basebackups are selected for deletion. If the number
+    if basebackups to keep aren't guaranteed, the retention rule will error out.
+
+    The following example will always keep two current and valid basebackups in the archive and drop all
+    other remaining:
+
+    Example::
+
+      CREATE RETENTION POLICY keeptwo KEEP +2;
+
+  * ``DROP``
+
+    If ``DROP`` is the retention action, the retention rule will scan the list
+    of current basebackups from the oldest to newest until it reaches the number
+    of basebackups to drop. If there is at least no current basebackup remaining, the
+    retention policy will do nothing.
+
+    Following example will drop the two oldest basebackup from the list, but only if
+    at least one current basebackup is available_
+
+    Example::
+
+      CREATE RETENTION POLICY droptwo DROP +2;
+
+- ``CLEANUP``
+
+  A ``CLEANUP`` rule can only specified with a ``DROP`` action and will delete
+  all broken and invalid basebackup from the archive. A basebackup is considered invalid if
+  the following conditions is met:
+
+  * The basebackup has state ``aborted``-
+
+    This usually means the basebackup was terminated without being finished successfully, either
+    through connection problems, errors on the upstream server at al.
+
+  There might be cases where a basebackup is stuck within state ``in progress``, either due to
+  a crash of the backup process or other conditions. The ``CLEANUP`` rule currently doesn't do
+  anything with those basebackups with that kind of state, but will print a hint, e.g.
+
+  Example::
+
+    "abort cleanup retention, since a basebackup is still in progress
+     if this basebackup is broken somehow, you'll need to cleanup it manually"
+
+  In this case you should investigate the current basebackup status and do a ``DROP BASEBACKUP``
+  manually.
+
+  There might also be problems accessing the filesystem structure when applying the retention policy.
+  This could happen because an NFS share is currently not properly responding due to network problems
+  or other issues. A missing physical structure on-disk will cause an error during a ``CLEANUP`` run, the
+  basebackup will not be considered invalid, though ``LIST BASEBACKUPS`` will print a corresponding
+  on-disk state. If the physical representation of the basebackups is permanently gone, you should
+  drop the basebackup from the archive manually, again with ``DROP BASEBACKUP``.
+
+- ``DROP OLDER THAN`` or ``DROP NEWER THAN``
+
+- ``KEEP OLDER THAN`` or ``KEEP NEWER THAN``
+
 
 CREATE STREAMING CONNECTION
 ===========================
