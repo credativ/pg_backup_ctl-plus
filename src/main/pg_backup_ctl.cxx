@@ -196,6 +196,27 @@ void init_RtCfg() {
    */
   RtCfg->create("walstreamer.wait_timeout", 60, 60, 0, 86400);
 
+  /*
+   * The on-error-exit bool parameter causes pg_backup_ctl++ to
+   * exit immediately if it gets an error. This most of the time is
+   * interesting when executing pg_backup_ctl++ in interactive mode.
+   */
+  RtCfg->create("interactive.on_error_exit", false, false);
+
+}
+
+/*
+ * Checks wether the on_error_variable was set and returns
+ * its value.
+ */
+bool on_error_exit() {
+
+  shared_ptr<ConfigVariable> var = RtCfg->get("interactive.on_error_exit");
+  bool forced_exit;
+
+  var->getValue(forced_exit);
+  return forced_exit;
+
 }
 
 /*
@@ -278,6 +299,13 @@ static void handle_interactive(std::string in,
 
   } catch (exception& e) {
     cerr << "command execution failure: " << e.what() << endl;
+
+    /*
+     * Check if runtime configuration variable interactive.on_error_exit
+     * was set to TRUE. If yes, re-throw this exception.
+     */
+    if (on_error_exit())
+      throw e;
   }
 
 }
@@ -698,7 +726,7 @@ int main(int argc, const char **argv) {
       }
 
       /*
-       * On EOF, readline() returns NULL, so check that which
+       * On EOF, readline() returns NULL, so check that, which
        * means we should also exit outer loop
        */
       if (cmd_str == NULL) {
