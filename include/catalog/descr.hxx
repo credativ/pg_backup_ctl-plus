@@ -7,6 +7,13 @@
 #include <queue>
 #include <boost/tokenizer.hpp>
 
+extern "C" {
+#include "access/xlogdefs.h"
+}
+
+/* special descriptors */
+#include <recoverydescr.hxx>
+
 namespace credativ {
 
   /*
@@ -53,6 +60,7 @@ namespace credativ {
     UNPIN_BASEBACKUP,
     START_LAUNCHER,
     START_STREAMING_FOR_ARCHIVE,
+    START_RECOVERY_STREAM_FOR_ARCHIVE,
     STOP_STREAMING_FOR_ARCHIVE,
     SHOW_WORKERS,
     BACKGROUND_WORKER_COMMAND,
@@ -633,6 +641,12 @@ namespace credativ {
      */
     std::shared_ptr<RetentionIntervalDescr> interval = nullptr;
 
+    /**
+     * A pointer to a RecoveryStreamDescr descriptor instantiated
+     * during parsing a START RECOVERY STREAM command.
+     */
+    std::shared_ptr<RecoveryStreamDescr> recoveryStream = nullptr;
+
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
     virtual ~CatalogDescr();
@@ -736,6 +750,32 @@ namespace credativ {
 
     void retentionIntervalExprFromParserState(std::string const& expr_value,
                                               std::string const& intv_mod);
+
+    /**
+     * makeRecoveryStreamDescr
+     *
+     * Instantiate and setup an internal recovery stream descriptor.
+     * Used within parsing the START RECOVERY STREAM command.
+     */
+    void makeRecoveryStreamDescr();
+
+    /**
+     * getRecoveryStreamDescr().
+     *
+     * Returns the internal instance of a recovery stream
+     * descriptor, if any. Could be a nullptr in case makeRecoveryStreamDescr()
+     * wasn't called before.
+     */
+    std::shared_ptr<RecoveryStreamDescr> getRecoveryStreamDescr();
+
+    /**
+     * Attach the portnumber to the internal recovery stream
+     * descriptor.
+     *
+     * NOTE: Will throw in case no recovery stream descriptor
+     *       was initialized yet (see makeRecoveryStreamDescr()).
+     */
+    void setRecoveryStreamPort(std::string const& portnumber);
 
     /**
      * Initialize a PinDescr attached to a catalog

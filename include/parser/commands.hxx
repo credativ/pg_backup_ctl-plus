@@ -427,6 +427,21 @@ namespace credativ {
   };
 
   /*
+   * Implements a START RECOVERY STREAM FOR ARCHIVE command handler.
+   */
+  class StartRecoveryArchiveCommand : public BaseCatalogCommand {
+  private:
+  public:
+
+    StartRecoveryArchiveCommand(std::shared_ptr<BackupCatalog> catalog);
+    StartRecoveryArchiveCommand(std::shared_ptr<CatalogDescr> descr);
+    StartRecoveryArchiveCommand();
+    virtual ~StartRecoveryArchiveCommand();
+
+    virtual void execute(bool flag);
+  };
+
+  /*
    * Implements a START STREAMING FOR ARCHIVE command handler.
    */
   class StartStreamingForArchiveCommand : public BaseCatalogCommand {

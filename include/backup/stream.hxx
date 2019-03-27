@@ -8,7 +8,9 @@
 #include <backupprocesses.hxx>
 
 /* PostgreSQL client API */
+extern "C" {
 #include <libpq-fe.h>
+}
 
 #define MAXXLOGFNAMELEN MAXFNAMELEN
 

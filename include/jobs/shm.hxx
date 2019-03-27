@@ -3,8 +3,6 @@
 
 #include <boost/interprocess/managed_xsi_shared_memory.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
-#include <common.hxx>
-#include <descr.hxx>
 
 namespace credativ {
 

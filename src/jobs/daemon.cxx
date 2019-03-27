@@ -1,3 +1,4 @@
+extern "C" {
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -11,15 +12,19 @@
 #include <syslog.h>
 #include <string.h>
 #include <signal.h>
-#include <istream>
+}
 
 #ifdef __DEBUG__
 #include <iostream>
 #endif
 
+#include <istream>
+
+#include <bgrndroletype.hxx>
 #include <daemon.hxx>
 #include <parser.hxx>
 #include <commands.hxx>
+#include <server.hxx>
 
 #define MSG_QUEUE_MAX_TOKEN_SZ 255
 
@@ -1451,6 +1456,11 @@ static pid_t daemonize(job_info &info) {
           cerr << "fork() failed: " << e.what() << endl;
           exit(DAEMON_FAILURE);
 
+        } catch (TCPServerFailure &tsrve) {
+
+          cerr << "could not instantiate TCP streaming server: " << tsrve.what() << endl;
+          exit(DAEMON_FAILURE);
+
         } catch (std::exception &e) {
 
           cerr << "background worker failure: " << e.what() << endl;
@@ -1738,15 +1748,23 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
 
       /*
        * In any case, detach from the shared memory but clear
-       * our slot before.
+       * our slot before, but only if this is *NOT* a BACKGROUND_WORKER_CHILD.
+       *
+       * Background: BaseCatalogCommand derived classes might fork within
+       * their execute() methods, to employ additional child processes. To
+       * make sure they don't clear the Worker SHM, they set the
+       * background job type flag to BACKGROUND_WORKER_CHILD. It's okay
+       * to just test for that flag, since others are unlikely to occur here.
        *
        * WorkerSHM::free() can throw itself if there's no valid shared
        * memory handle here. But that seems unlikely, since the
        * actions before should have failed before.
        */
-      worker_shm->lock();
-      worker_shm->free(worker_slot_index);
-      worker_shm->unlock();
+      if (_pgbckctl_job_type != BACKGROUND_WORKER_CHILD) {
+        worker_shm->lock();
+        worker_shm->free(worker_slot_index);
+        worker_shm->unlock();
+      }
 
       /* re-throw */
       throw WorkerFailure(e.what());
@@ -1754,9 +1772,15 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     }
 
     /* only reached if everything went okay */
-    worker_shm->lock();
-    worker_shm->free(worker_slot_index);
-    worker_shm->unlock();
+    if (_pgbckctl_job_type != BACKGROUND_WORKER_CHILD) {
+
+      worker_shm->lock();
+      worker_shm->free(worker_slot_index);
+      worker_shm->unlock();
+
+    }
+
+    cerr << "WORKER EXIT" << endl;
 
     /* Exit, if done */
     exit(0);

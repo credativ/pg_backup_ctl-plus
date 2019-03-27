@@ -389,11 +389,23 @@ namespace credativ {
 
 
         cmd_start_recovery_stream = no_case[ lexeme[ lit("RECOVERY") ] ]
+          [ boost::bind(&CatalogDescr::makeRecoveryStreamDescr, &cmd) ]
           >> no_case[ lexeme[ lit("STREAM") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_RECOVERY_STREAM_FOR_ARCHIVE) ]
           >> no_case[ lexeme[ lit("FOR") ] ]
           >> no_case[ lexeme[ lit("ARCHIVE") ] ]
           >> identifier
-          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          >> -(no_case[ lexeme[ lit("PORT") ] ] >> number_ID
+               [ boost::bind(&CatalogDescr::setRecoveryStreamPort, &cmd, ::_1) ])
+          >> -(stream_listen_on)
+          >> -( no_case[ lexeme[ lit("NODETACH") ] ]
+                [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
+
+        stream_listen_on = no_case[ lexeme[ lit("LISTEN_ON") ] ] >> ip_address
+          >> -(stream_listen_on);
+
+        ip_address = +char_("0-9.:");
 
         /*
          * START STREAMING FOR ARCHIVE command
@@ -899,6 +911,8 @@ namespace credativ {
         variable_name.name("<variable name>");
         variable_value.name("<variable value>");
         cmd_drop_basebackup.name("BASEBACKUP");
+        ip_address.name("<IP>");
+        stream_listen_on.name("LISTEN_ON");
       }
 
       /*
@@ -949,7 +963,8 @@ namespace credativ {
                           retention_rule_newer_datetime,
                           retention_datetime_spec,
                           retention_cleanup_basebackups,
-                          force_systemid_update;
+                          force_systemid_update,
+                          stream_listen_on;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
@@ -968,7 +983,8 @@ namespace credativ {
                           executable,
                           retention_rule_with_label,
                           retention_rule_num_basebackups,
-                          regexp_expression;
+                          regexp_expression,
+                          ip_address;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
                           number_ID,
@@ -1262,6 +1278,10 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case DROP_BASEBACKUP:
     result = make_shared<DropBasebackupCatalogCommand>(this->catalogDescr);
+    break;
+
+  case START_RECOVERY_STREAM_FOR_ARCHIVE:
+    result = make_shared<StartRecoveryArchiveCommand>(this->catalogDescr);
     break;
 
   default:

@@ -10,9 +10,6 @@
 #include <signalhandler.hxx>
 #include <xlogdefs.hxx>
 
-/* PostgreSQL client API */
-#include <libpq-fe.h>
-
 #define MAXXLOGFNAMELEN MAXFNAMELEN
 
 namespace credativ {

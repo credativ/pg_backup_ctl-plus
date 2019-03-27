@@ -4,7 +4,17 @@
 #include <common.hxx>
 
 /* PostgreSQL client API */
+extern "C" {
 #include <libpq-fe.h>
+}
+
+/* PostgreSQL API includes */
+extern "C" {
+#include <postgres_fe.h>
+#include <access/xlog_internal.h>
+/* Required for MAXPGPATH */
+#include <pg_config_manual.h>
+}
 
 namespace credativ {
 

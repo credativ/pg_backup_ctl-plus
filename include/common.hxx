@@ -3,14 +3,11 @@
 
 #include "pg_backup_ctl.hxx"
 
-/* PostgreSQL API includes */
 extern "C" {
-#include <postgres_fe.h>
-/* Required for MAXXLOGFNAMELEN */
-#include <access/xlog_internal.h>
-/* Required for MAXPGPATH */
-#include <pg_config_manual.h>
+/* required for postgresql typedefs here */
+#include "postgres_fe.h"
 }
+
 
 /*
  * PostgreSQL >= 12 comes with an overriden, own implementation

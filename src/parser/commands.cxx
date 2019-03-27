@@ -6,6 +6,7 @@
 #include <shm.hxx>
 #include <retention.hxx>
 #include <rtconfig.hxx>
+
 #include <server.hxx>
 
 using namespace credativ;
@@ -87,6 +88,15 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   /* Copy runtime configuration, if present */
   if (source.getRuntimeConfiguration() != nullptr)
     this->runtime_config = source.getRuntimeConfiguration();
+
+  /*
+   * Copy over recovery instance descriptor, if any.
+   *
+   * This is a shared pointer, so referencing it here
+   * should do it.
+   */
+  if (source.getRecoveryStreamDescr() != nullptr)
+    this->recoveryStream = source.getRecoveryStreamDescr();
 
   /*
    * In case this instance was instantiated
@@ -385,6 +395,118 @@ ShowVariableCatalogCommand::ShowVariableCatalogCommand(shared_ptr<CatalogDescr> 
 }
 
 ShowVariableCatalogCommand::~ShowVariableCatalogCommand() {}
+
+StartRecoveryArchiveCommand::StartRecoveryArchiveCommand(shared_ptr<BackupCatalog> catalog) {
+
+  this->setCommandTag(tag);
+  this->catalog = catalog;
+
+}
+
+StartRecoveryArchiveCommand::StartRecoveryArchiveCommand(shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+
+}
+
+StartRecoveryArchiveCommand::StartRecoveryArchiveCommand() {
+
+  this->tag = START_RECOVERY_STREAM_FOR_ARCHIVE;
+
+}
+
+StartRecoveryArchiveCommand::~StartRecoveryArchiveCommand() {}
+
+void StartRecoveryArchiveCommand::execute(bool flag) {
+
+  shared_ptr<CatalogDescr> temp_descr = nullptr;
+
+  /*
+   * Die hard in case no catalog available.
+   */
+  if (this->catalog == nullptr) {
+    throw CArchiveIssue("could not execute catalog command: no catalog");
+  }
+
+  if (!this->catalog->available()) {
+    this->catalog->open_rw();
+  }
+
+  /*
+   * Check if archive exists.
+   *
+   * We don't employ a transaction at this point (not required).
+   *
+   * Parser should have set this in archive_name.
+   */
+  temp_descr = this->catalog->existsByName(this->archive_name);
+
+  if (temp_descr->id < 0) {
+
+    ostringstream oss;
+    oss << "archive\""
+        << this->archive_name
+        << "\" does not exist";
+
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * Check if we are supposed to run from background.
+   */
+  if (this->detach) {
+
+    job_info jobDescr;
+
+    /*
+     * We must rebuild our command again to pass it
+     * over to the background launcher process.
+     */
+    ostringstream mycmd;
+
+    mycmd << "START RECOVERY STREAM FOR ARCHIVE "
+          << this->archive_name
+          << " PORT " << this->recoveryStream->port;
+
+    for(auto const &ipaddress : this->recoveryStream->listen_on) {
+
+      mycmd << " LISTEN_ON " << ipaddress;
+
+    }
+
+    /*
+     * Make sure background worker doesn't detach again.
+     *
+     * This is important, otherwise we would end in an infinite loop,
+     * playing ping-pong with the background launcher.
+     */
+    mycmd << " NODETACH";
+
+    /* Job descriptor needs a dummy handle */
+    jobDescr.cmdHandle = make_shared<BackgroundWorkerCommandHandle>(this->catalog);
+    establish_launcher_cmd_queue(jobDescr);
+    send_launcher_cmd(jobDescr, mycmd.str());
+
+    /* And we're done. We exit this command handler, the legwork
+     * will be done by the background launcher.
+     */
+    return;
+
+  }
+
+  /*
+   * Start the background streaming server for the specified archive.
+   */
+  StreamingServer srv(this->getRecoveryStreamDescr());
+
+  cerr << "instantiated streaming server with port "
+       << this->getRecoveryStreamDescr()->port
+       << endl;
+
+  srv.run();
+
+}
 
 void ShowVariableCatalogCommand::execute(bool flag) {
 
@@ -1557,6 +1679,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
       cmd_str << " RESTART";
     }
 
+    /* Make sure background worker won't detach again ... */
     cmd_str << " NODETACH";
 
     /* Assign a dummy catalog command handle to the job descriptor */

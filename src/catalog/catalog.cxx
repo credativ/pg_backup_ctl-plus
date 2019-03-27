@@ -605,6 +605,13 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
     this->runtime_config = source.getRuntimeConfiguration();
 
   /*
+   * Copy over recovery instance descriptor. This is a shared
+   * pointer, so referencing here should be enough.
+   */
+  if (source.getRecoveryStreamDescr() != nullptr)
+    this->recoveryStream = source.getRecoveryStreamDescr();
+
+  /*
    * In case this instance was instantiated
    * by a SET <variable> parser command, copy
    * over state variable as well
@@ -616,6 +623,35 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->var_val_bool = source.var_val_bool;
 
   return *this;
+}
+
+std::shared_ptr<RecoveryStreamDescr> CatalogDescr::getRecoveryStreamDescr() {
+
+  return this->recoveryStream;
+
+}
+
+void CatalogDescr::makeRecoveryStreamDescr() {
+
+  if (this->recoveryStream != nullptr) {
+    throw CCatalogIssue("recovery stream descriptor already initialized");
+  }
+
+  this->recoveryStream = std::make_shared<RecoveryStreamDescr>();
+}
+
+void CatalogDescr::setRecoveryStreamPort(std::string const& portnumber) {
+
+  /* If the recovery descriptor wasn't initialized yet, abort */
+  if (this->recoveryStream == nullptr)
+    throw CCatalogIssue("recovery stream descriptor not initialized yet");
+
+  /* Something between 0 and 65535 ... */
+  this->recoveryStream->port = CPGBackupCtlBase::strToInt(portnumber);
+
+  if (this->recoveryStream->port >= 65536)
+    throw CCatalogIssue("port number cannot be above 65535");
+
 }
 
 void CatalogDescr::setPrintVerbose(bool const& verbose) {
@@ -1056,6 +1092,8 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "APPLY RETENTION POLICY";
   case DROP_BASEBACKUP:
     return "DROP BASEBACKUP";
+  case START_RECOVERY_STREAM_FOR_ARCHIVE:
+    return "START RECOVERY STREAM";
 
   default:
     return "UNKNOWN";

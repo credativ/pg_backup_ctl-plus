@@ -22,17 +22,6 @@ namespace credativ {
   } LauncherStatus;
 
   /**
-   * Describes the role of a process.
-   */
-  typedef enum {
-
-    BACKGROUND_LAUNCHER,
-    BACKGROUND_WORKER,
-    NO_BACKGROUND
-
-  } BackgroundJobType;
-
-  /**
    * A descriptor area for background jobs.
    */
   typedef struct job_info {

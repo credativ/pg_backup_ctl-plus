@@ -65,7 +65,9 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/catalog")
 include_directories ("${PROJECT_SOURCE_DIR}/include/parser")
 include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 include_directories ("${PROJECT_SOURCE_DIR}/include/recovery")
+include_directories ("${PROJECT_SOURCE_DIR}/include/proto")
 add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
+add_library (pgbckctl-proto SHARED src/jobs/server.cxx)
 add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/jobs/signalhandler.cxx src/jobs/daemon.cxx src/jobs/server.cxx
   src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
@@ -74,9 +76,9 @@ add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/recovery/restore.cxx)
 
 IF(APPLE)
-   target_link_libraries (pg_backup_ctl++ pgbckctl-common)
+   target_link_libraries (pg_backup_ctl++ pgbckctl-proto pgbckctl-common)
 ELSE()
-   target_link_libraries (pg_backup_ctl++ rt pgbckctl-common)
+   target_link_libraries (pg_backup_ctl++ rt pgbckctl-proto pgbckctl-common)
 ENDIF()
 
 # Detect if the "port" command is valid on this system; if so, return full path
@@ -92,7 +94,7 @@ IF (${DETECT_MACPORTS} EQUAL 0)
     # "/opt/local" is where MacPorts lives, add `/lib` suffix and link
     link_directories("${MACPORTS_PREFIX}/lib")
     include_directories("${MACPORTS_PREFIX}/include")
-    target_link_libraries (pgbckctl-common z)
+    target_link_libraries (pgbckctl-proto pgbckctl-common z)
     MESSAGE("MacPorts libraries from ${MACPORTS_PREFIX}/lib")
 
     # iff we have macports, we need to lookup for libreadline there, which
