@@ -71,7 +71,7 @@ namespace credativ {
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
 
 #ifdef __DEBUG__
-          cerr << "child with pid exited" << endl;
+          std::cerr << "child with pid exited" << std::endl;
 #endif
 
         }
