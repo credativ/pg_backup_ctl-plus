@@ -45,6 +45,7 @@ namespace credativ {
      */
     ba::io_service *ios     = nullptr;
     ba::signal_set *sset    = nullptr;
+    ba::signal_set *sset_exit = nullptr;
     ip::tcp::acceptor *acpt = nullptr;
     ip::tcp::socket   *soc  = nullptr;
 
@@ -54,6 +55,8 @@ namespace credativ {
     void start_signal_wait() {
       this->sset->async_wait(boost::bind(&PGBackupCtlStreamingServer::handle_signal_wait,
                                          this));
+      this->sset_exit->async_wait(boost::bind(&boost::asio::io_service::stop, this->ios));
+
     }
 
     void handle_signal_wait() {
@@ -142,10 +145,15 @@ namespace credativ {
                                              this, _1, _2));
     }
 
+    /*
+     * Process incoming data message and performs a response.
+     */
     void handle_read(const boost::system::error_code& ec, std::size_t length) {
 
       if(data_[0] == pgprotocol::AuthenticationMessageType)
-        std::cerr << "PG PROTO message AUTH" << std::endl;
+        std::cerr << "PG PROTO message AUTH, length: "
+                  << length
+                  << std::endl;
 
       if  (data_[0] == 'Q')
         exit(0);
@@ -218,6 +226,7 @@ PGBackupCtlStreamingServer::PGBackupCtlStreamingServer(std::shared_ptr<RecoveryS
    * Create signal set
    */
   this->sset = new ba::signal_set(*(this->ios), SIGCHLD);
+  this->sset_exit = new ba::signal_set(*(this->ios), SIGTERM, SIGINT);
 
   /*
    * Create acceptor handle
@@ -246,6 +255,9 @@ PGBackupCtlStreamingServer::~PGBackupCtlStreamingServer() {
 
   if (this->sset != nullptr)
     delete this->sset;
+
+  if (this->sset_exit != nullptr)
+    delete this->sset_exit;
 
   if (this->ios != nullptr)
     delete this->ios;
