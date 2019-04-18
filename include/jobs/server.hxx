@@ -24,6 +24,7 @@ namespace credativ {
 
   /* Forward class declarations */
   class PGBackupCtlStreamingServer;
+  class PGProtoStreamingServer;
 
   /*
    * TCP server API exceptions

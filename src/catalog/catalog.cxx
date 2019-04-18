@@ -638,6 +638,8 @@ void CatalogDescr::makeRecoveryStreamDescr() {
   }
 
   this->recoveryStream = std::make_shared<RecoveryStreamDescr>();
+  this->recoveryStream->version = CPGBackupCtlBase::getVersionString();
+
 }
 
 void CatalogDescr::setRecoveryStreamPort(std::string const& portnumber) {

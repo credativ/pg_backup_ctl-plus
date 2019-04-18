@@ -49,6 +49,10 @@ namespace credativ {
      */
     StreamSSLContext ssl_context;
 
+    /**
+     * Server version as a string.
+     */
+    std::string version;
 
   };
 }

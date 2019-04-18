@@ -2,6 +2,7 @@
 #define __HAVE_XLOGDEFS__
 
 #include <common.hxx>
+#include <memorybuffer.hxx>
 
 /* PostgreSQL client API */
 extern "C" {

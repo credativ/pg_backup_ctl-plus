@@ -6,6 +6,7 @@
 #include <common.hxx>
 #include <descr.hxx>
 #include <backupprocesses.hxx>
+#include <memorybuffer.hxx>
 
 /* PostgreSQL client API */
 extern "C" {

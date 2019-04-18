@@ -1,10 +1,12 @@
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/array.hpp>
 #include <boost/bind.hpp>
 #include <iostream>
+#include <map>
 
 extern "C" {
 #include <sys/types.h>
@@ -14,8 +16,11 @@ extern "C" {
 }
 
 #include <bgrndroletype.hxx>
+#include <memorybuffer.hxx>
 #include <pgsql-proto.hxx>
 #include <server.hxx>
+
+#define SOCKET_P(ptr) (*((ptr)->soc))
 
 using namespace credativ;
 
@@ -37,8 +42,12 @@ namespace credativ {
   namespace ba = boost::asio;
   namespace ip = boost::asio::ip;
 
+  /*
+   * Base class for streaming server implementation.
+   */
   class PGBackupCtlStreamingServer {
   private:
+  protected:
 
     /*
      * Internal boost::asio handles.
@@ -51,6 +60,11 @@ namespace credativ {
 
     /* XXX: should be replaced by std::array */
     boost::array<char, 1024> data_;
+
+    /*
+     * Recovery handle.
+     */
+    std::shared_ptr<RecoveryStreamDescr> streamDescr = nullptr;
 
     void start_signal_wait() {
       this->sset->async_wait(boost::bind(&PGBackupCtlStreamingServer::handle_signal_wait,
@@ -84,7 +98,7 @@ namespace credativ {
     }
 
     void start_accept() {
-      this->acpt->async_accept(*(this->soc),
+      this->acpt->async_accept(SOCKET_P(this),
                                boost::bind(&PGBackupCtlStreamingServer::handle_accept,
                                            this,
                                            _1));
@@ -139,42 +153,37 @@ namespace credativ {
         }
     }
 
-    void start_read() {
+    virtual void start_read() {
+
       this->soc->async_read_some(boost::asio::buffer(data_),
                                  boost::bind(&PGBackupCtlStreamingServer::handle_read,
                                              this, _1, _2));
+
     }
 
     /*
      * Process incoming data message and performs a response.
      */
-    void handle_read(const boost::system::error_code& ec, std::size_t length) {
-
-      if(data_[0] == pgprotocol::AuthenticationMessageType)
-        std::cerr << "PG PROTO message AUTH, length: "
-                  << length
-                  << std::endl;
-
-      if  (data_[0] == 'Q')
-        exit(0);
+    virtual void handle_read(const boost::system::error_code& ec, std::size_t length) {
 
       if (!ec)
         start_write(length);
+
     }
 
-    void start_write(std::size_t length) {
-      boost::asio::async_write(*(this->soc), boost::asio::buffer(data_, length),
+    virtual void start_write(std::size_t length) {
+      boost::asio::async_write(SOCKET_P(this), boost::asio::buffer(data_, length),
                                boost::bind(&PGBackupCtlStreamingServer::handle_write, this, _1));
     }
 
-    void handle_write(const boost::system::error_code& ec) {
+    virtual void handle_write(const boost::system::error_code& ec) {
       if (!ec)
         start_read();
     }
 
-  protected:
-
   public:
+
+    PGBackupCtlStreamingServer() {}
 
     /*
      * C'tor
@@ -192,11 +201,134 @@ namespace credativ {
     virtual void run();
   };
 
+  class PGProtoStreamingServer : public PGBackupCtlStreamingServer {
+  private:
+
+    /*
+     * Internal state machine indicator.
+     */
+    PostgreSQLProtocolState state = PGPROTO_STARTUP;
+
+    /**
+     * Internal memory buffer, gets re-allocated
+     * for any new incoming message.
+     */
+    MemoryBuffer buf;
+
+    /**
+     * Guts of protocol startup.
+     */
+    void _startup();
+
+    /**
+     * Read an integer from the specified
+     * memory buffer.
+     */
+    void _read_int(MemoryBuffer &buf, int &val, off_t offset);
+
+    /**
+     * Write an integer value to the specified
+     * memory buffer.
+     */
+    void _write_int(MemoryBuffer &buf, int val, off_t offset);
+
+    /**
+     * Write the specified byte into the protocol buffer.
+     */
+    void _write_byte(MemoryBuffer &buf, char val, off_t offset);
+
+    /**
+     * Read the specified byte from the protocol buffer.
+     */
+    void _read_byte(MemoryBuffer &buf, char &val, off_t offset);
+
+    void _write_buffer(MemoryBuffer &buf, void *c, size_t length, off_t offset);
+
+    void _read_buffer(MemoryBuffer buf, void *c, size_t length, off_t offset);
+
+    /**
+     * Sets the PostgreSQL message type byte into the
+     * specified buffer.
+     */
+    void _write_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type);
+
+    /**
+     * Reads the PostgreSQL message type from
+     * the specified buffer.
+     */
+    void _read_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type);
+
+    /**
+     * Read and convert startup GUCs into a local
+     * hashmap.
+     */
+    std::map<std::string, std::string> startup_gucs;
+    void _read_startup_gucs();
+
+    /**
+     * Sends a AuthenticationOK response.
+     */
+    void _send_AuthenticationOK();
+
+    /**
+     * Sends a ReadyForQuery response to the client.
+     */
+    void _send_ReadyForQuery();
+
+    /**
+     * Sends a ParameterStatus message to the client.
+     */
+    void _send_ParameterStatus();
+
+    /**
+     *
+     */
+    void _send_BackendKey();
+
+    /**
+     * Serializes key/value pairs (server parameters)
+     * into the specified memory buffer
+     */
+    void _parameter_to_buffer(MemoryBuffer &dest,
+                              std::string key,
+                              std::string val);
+
+  protected:
+
+    /*
+     * Start reading a new protocol message.
+     */
+    virtual void start_read();
+
+    virtual void start_write(size_t length);
+
+    /**
+     * Handle an incoming message.
+     */
+    virtual void handle_read(const boost::system::error_code& ec, std::size_t length);
+
+    /**
+     * Handle an outgoing message.
+     */
+    virtual void handle_write(const boost::system::error_code &ec);
+
+  public:
+
+    PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDescr);
+    virtual ~PGProtoStreamingServer();
+
+    /*
+     * Run the io service.
+     */
+    virtual void run();
+
+  };
+
 }
 
 StreamingServer::StreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDescr) {
 
-  this->instance = std::make_shared<PGBackupCtlStreamingServer>(streamDescr);
+  this->instance = std::make_shared<PGProtoStreamingServer>(streamDescr);
 
 }
 
@@ -216,6 +348,8 @@ PGBackupCtlStreamingServer::PGBackupCtlStreamingServer(std::shared_ptr<RecoveryS
   if (streamDescr == nullptr) {
     throw TCPServerFailure("could not initialized TCP server instance: invalid stream descriptor");
   }
+
+  this->streamDescr = streamDescr;
 
   /*
    * Create io_service handler
@@ -239,9 +373,6 @@ PGBackupCtlStreamingServer::PGBackupCtlStreamingServer(std::shared_ptr<RecoveryS
    * Instantiate the socket
    */
   this->soc = new ip::tcp::socket(*(this->ios));
-
-  start_signal_wait();
-  start_accept();
 
 }
 
@@ -267,6 +398,516 @@ PGBackupCtlStreamingServer::~PGBackupCtlStreamingServer() {
 
 void PGBackupCtlStreamingServer::run() {
 
+  start_signal_wait();
+  start_accept();
+
   this->ios->run();
+
+}
+
+/* ****************************************************************************
+ * Implementation PGProtoStreamingServer
+ * (Implements PostgreSQL Streaming protocol)
+ * ****************************************************************************/
+
+PGProtoStreamingServer::PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDescr)
+  : PGBackupCtlStreamingServer(streamDescr) {}
+
+PGProtoStreamingServer::~PGProtoStreamingServer() {}
+
+#define INITIAL_STARTUP_BUFFER_SIZE 8
+
+void PGProtoStreamingServer::run() {
+
+  /* Internal startup buffer */
+  this->buf.allocate(INITIAL_STARTUP_BUFFER_SIZE);
+
+  start_signal_wait();
+  start_accept();
+
+  this->ios->run();
+
+}
+
+void PGProtoStreamingServer::_parameter_to_buffer(MemoryBuffer &dest,
+                                                  std::string key,
+                                                  std::string val) {
+
+  std::string temp_str;
+
+  /* Do nothing in case key is empty */
+  if (key.length() == 0)
+    return;
+
+  /*
+   * Allocate room for the string. We need
+   * two extra bytes for the null byte(s)!
+   */
+  dest.allocate(key.length() + val.length() + 2);
+
+  /*
+   * Write key and its null byte
+   */
+  dest.write(key.c_str(), key.length() + 1, 0);
+
+  /*
+   * Write value and its null byte
+   */
+  dest.write(val.c_str(), val.length() + 1, key.length() + 1);
+
+  /* ... and done */
+}
+
+void PGProtoStreamingServer::_read_startup_gucs() {
+
+  std::ostringstream sbuf;
+  std::string key = "";
+  std::string val = "";
+  bool is_key = true;
+  boost::asio::mutable_buffer temp_buf(this->buf.ptr(),
+                                       this->buf.getSize());
+  const char *start_byte = boost::asio::buffer_cast<const char *>(temp_buf);
+
+  for (size_t i = 1; i < (boost::asio::buffer_size(temp_buf) - 1); i++) {
+
+    const char *current_byte = (boost::asio::buffer_cast<const char *>(temp_buf)) + i;
+
+    if ((current_byte != start_byte) && *current_byte == '\0') {
+
+      /*
+       * Copy last offset up to current position without null byte into either
+       * key or value string
+       */
+      std::copy(start_byte, current_byte, std::ostream_iterator<char>(sbuf));
+
+      /*
+       * Save string as key?
+       */
+      if (is_key) {
+
+        key = sbuf.str();
+        sbuf.str("");
+        sbuf.clear();
+        val = "";
+        is_key = false;
+
+      } else {
+
+        val = sbuf.str();
+        sbuf.str("");
+        sbuf.clear();
+
+        this->startup_gucs.insert( std::pair<std::string, std::string>(key, val) );
+
+        val = "";
+        key = "";
+
+        is_key = true;
+
+      }
+
+      /* Next byte offset */
+      start_byte = (boost::asio::buffer_cast<const char *>(temp_buf)) + i;
+
+    }
+  }
+
+  for (auto it : this->startup_gucs) {
+    std::cerr << "GUC: " << it.first << "=" << it.second << std::endl;
+  }
+
+}
+
+void PGProtoStreamingServer::_write_byte(MemoryBuffer &buf, char val, off_t offset) {
+
+  buf.write(&val, sizeof(val), offset);
+
+}
+
+void PGProtoStreamingServer::_read_byte(MemoryBuffer &buf, char &val, off_t offset) {
+
+  buf.read(&val, sizeof(val), offset);
+
+}
+
+void PGProtoStreamingServer::_write_buffer(MemoryBuffer &buf, void *c, size_t length, off_t offset) {
+
+  buf.write(c, length, offset);
+
+}
+
+void PGProtoStreamingServer::_read_buffer(MemoryBuffer buf, void *c, size_t length, off_t offset) {
+
+  buf.read(c, length, offset);
+
+}
+
+void PGProtoStreamingServer::_read_int(MemoryBuffer &buf, int &val, off_t offset) {
+
+  int _t;
+
+  buf.read(&_t, sizeof(val), offset);
+  val = ntohl(_t);
+
+}
+
+void PGProtoStreamingServer::_write_int(MemoryBuffer &buf, int val, off_t offset) {
+
+  int _t = htonl(val);
+  buf.write(&_t, sizeof(val), offset);
+
+}
+
+void PGProtoStreamingServer::_read_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type) {
+
+  buf.read(&type, sizeof(pgprotocol::PGMessageType), 0);
+
+}
+
+void PGProtoStreamingServer::_write_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type) {
+
+  buf.write(&type, sizeof(pgprotocol::PGMessageType), 0);
+
+}
+
+void PGProtoStreamingServer::handle_read(const boost::system::error_code& ec, std::size_t length) {
+
+  if (ec) {
+    throw TCPServerFailure("error reading on server socket");
+  }
+
+  switch (this->state) {
+
+  case PGPROTO_STARTUP:
+    {
+      /* expected startup message */
+      this->_startup();
+
+      /*
+       * Recheck state machine.
+       *
+       * Iff _startup() has got an SSL negotiation
+       * request, we must sent our intention wether
+       * we want to use SSL or not. _startup() will have changed
+       * the state machine in this case, so recheck.
+       */
+      if ( (this->state == PGPROTO_STARTUP_SSL_OK)
+           || (this->state == PGPROTO_STARTUP_SSL_NO) ) {
+
+           start_write(buf.getSize());
+
+      } else if (this->state == PGPROTO_READ_STARTUP_GUC) {
+
+        std::cerr << "PG PROTO READ STARTUP GUC, buf size=" << this->buf.getSize() << std::endl;
+
+        /* remaining bytes contain client GUCs, so read on */
+        start_read();
+
+      } else {
+        throw TCPServerFailure("unexpected protocol state during startup");
+      }
+
+      break;
+    }
+
+  case PGPROTO_STARTUP_SSL_OK:
+  case PGPROTO_STARTUP_SSL_NO:
+    {
+      /*
+       * Handle SSL Negotiation,
+       * receive startup buffers again
+       */
+      this->_startup();
+
+      std::cerr << "PG PROTO reading remaining startup bytes" << std::endl;
+
+      /* Read remaining bytes (GUCs) */
+      start_read();
+      break;
+    }
+
+  case PGPROTO_READ_STARTUP_GUC:
+    {
+      std::cerr << "PG PROTO handle read GUCS, size " << this->buf.getSize() << std::endl;
+
+      /* Handle startup GUCs sent by client */
+      this->_read_startup_gucs();
+
+      /*
+       * We try to authenticate now and sent an authentication
+       * message back to the client. This will also set the
+       * next state to the internal protocol state machine.
+       */
+
+      std::cerr << "PG PROTO  send auth OK" << std::endl;
+
+      this->_send_AuthenticationOK();
+      start_write(buf.getSize());
+
+      break;
+    }
+
+  case PGPROTO_READY_FOR_QUERY:
+    {
+      std::cerr << "PG PROTO ready for query, waiting..." << std::endl;
+
+      this->_send_ReadyForQuery();
+
+      break;
+    }
+  default:
+    throw TCPServerFailure("unexpected internal protocol state");
+  }
+
+}
+
+void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
+
+  if (ec) {
+    throw TCPServerFailure("error on writing to server socket");
+  }
+
+  switch (this->state) {
+  case PGPROTO_STARTUP_SSL_NO:
+  case PGPROTO_STARTUP_SSL_OK:
+    {
+      /*
+       * SSL negotiation sent, read startup gucs now
+       * from client. This means we must do the startup
+       * procedure again now. Adjust the receive buffer
+       * to receive the message length and protocolVersion
+       * before going on reading. The client will then send
+       * additional bytes, with its database connection parameters.
+       *
+       * We need the message length to know how large those
+       * connection string is.
+       */
+      this->buf.allocate((size_t) 8);
+      start_read();
+      break;
+    }
+  case PGPROTO_AUTH:
+    {
+      /*
+       * Server has sent an AuthenticationMessage to our client.
+       */
+      std::cerr << "PG PROTO sent auth OK" << std::endl;
+
+      /* Sent Parameter status messages to client */
+      this->_send_ParameterStatus();
+      start_write(this->buf.getSize());
+
+      break;
+    }
+  case PGPROTO_SEND_BACKEND_KEY:
+    {
+
+      this->_send_BackendKey();
+      start_write(this->buf.getSize());
+
+      break;
+    }
+  case PGPROTO_SEND_PARAMETER_STATUS:
+    {
+
+      /* We have send parameters status messages to the client */
+      std::cerr << "PG PROTO send parameter status done" << std::endl;
+
+      /* We're ready now, send a ReadyForQuery message */
+      this->_send_ReadyForQuery();
+
+      std::cerr << "PG PROTO ready for query size=" << this->buf.getSize() << std::endl;
+      start_write(this->buf.getSize());
+
+      break;
+    }
+
+  case PGPROTO_READY_FOR_QUERY:
+    {
+      /* Write handler just completed a ReadyForQuery message */
+      std::cerr << "PG PROTO ready for query completed" << std::endl;
+
+      /* Enter read loop again */
+      start_read();
+      break;
+    }
+  default:
+
+    throw TCPServerFailure("unexpected PostgreSQL protocol state");
+  }
+
+}
+
+void PGProtoStreamingServer::_startup() {
+
+  int msglen;
+  int protocolVersion;
+
+  std::cerr << "PG PROTO startup buffer size: "
+            << this->buf.getSize()
+            << std::endl;
+
+  /*
+   * Read the message bytes. First four bytes is the startup
+   * length indicator followed by the protocol version.
+   */
+  this->_read_int(this->buf, msglen, 0);
+  this->_read_int(this->buf, protocolVersion, 4);
+
+  std::cerr << "PG PROTO len " << msglen << std::endl;
+  std::cerr << "PG PROTO ver " << PG_PROTOCOL_MAJOR(protocolVersion) << std::endl;
+
+  if (PG_PROTOCOL_MAJOR(protocolVersion) == 1234) {
+
+    pgprotocol::PGMessageType nossl = pgprotocol::NoSSLMessage;
+
+    std::cerr << "PG PROTO SSL negotiation" << std::endl;
+
+    /*
+     * Send NO SSL negotiation to client.
+     */
+    this->state = PGPROTO_STARTUP_SSL_NO;
+
+    /* No SSL currently, tell the client
+     * we are currently not handling SSL requests */
+    buf.assign(&nossl, sizeof(pgprotocol::PGMessageType));
+
+  } else if (PG_PROTOCOL_MAJOR(protocolVersion) == 3) {
+
+    std::cerr << "PG PROTO version 3, setting up connection" << std::endl;
+
+    this->buf.allocate(msglen - MESSAGE_HDR_LENGTH_SIZE);
+
+    /*
+     * We must read all remaining bytes.
+     */
+    this->state = PGPROTO_READ_STARTUP_GUC;
+
+  }
+
+}
+
+void PGProtoStreamingServer::_send_AuthenticationOK() {
+
+  pgprotocol::pg_protocol_auth authreq;
+
+  authreq.hdr.type = pgprotocol::AuthenticationMessage;
+  authreq.hdr.length = 8;
+  authreq.auth_type = 0;
+
+  this->buf.allocate(sizeof(authreq));
+  this->_write_MsgType(buf, authreq.hdr.type);
+  this->_write_int(buf, authreq.hdr.length,
+                   sizeof(pgprotocol::AuthenticationMessage));
+  this->_write_int(buf, authreq.auth_type, (off_t)5);
+
+  this->state = PGPROTO_AUTH;
+}
+
+void PGProtoStreamingServer::_send_BackendKey() {
+
+  pgprotocol::pg_protocol_backendkey keydata;
+
+  keydata.pid = ::getpid();
+  keydata.key = 1234;
+
+  this->buf.allocate(sizeof(pgprotocol::pg_protocol_backendkey));
+
+  std::cerr << "PG PROTO backend key buf size " << this->buf.getSize() << std::endl;
+
+  this->_write_MsgType(buf, keydata.hdr.type);
+  this->_write_int(buf, keydata.hdr.length,
+                   sizeof(pgprotocol::BackendKeyMessage));
+  this->_write_int(buf, keydata.pid,
+                   sizeof(pgprotocol::BackendKeyMessage)
+                   + MESSAGE_HDR_LENGTH_SIZE);
+  this->_write_int(buf, keydata.pid,
+                   sizeof(pgprotocol::BackendKeyMessage)
+                   + MESSAGE_HDR_LENGTH_SIZE
+                   + sizeof(keydata.pid));
+
+  this->state = PGPROTO_READY_FOR_QUERY;
+}
+
+void PGProtoStreamingServer::_send_ParameterStatus() {
+
+  pgprotocol::pg_protocol_param_status status;
+
+  /*
+   * Private memory buffer to build
+   * result string.
+   *
+   * NOTE:
+   *
+   * The key=value pairs are encoding with null
+   * terminated string into the buffer.
+   */
+  MemoryBuffer temp_buf;
+
+  /*
+   * Send server_version
+   */
+  this->_parameter_to_buffer(temp_buf, "server_version",
+                             this->streamDescr->version);
+
+  status.hdr.type = pgprotocol::ParameterStatusMessage;
+
+  /* Build key value pairs */
+
+  /*
+   * Send our server version.
+   */
+  status.data_ptr = temp_buf.ptr();
+  status.hdr.length = MESSAGE_HDR_LENGTH_SIZE + temp_buf.getSize();
+
+  this->buf.allocate(MESSAGE_HDR_BYTE
+                     + MESSAGE_HDR_LENGTH_SIZE
+                     + MESSAGE_DATA_LENGTH(status));
+
+  std::cerr << "PG PROTO parameter buffer data length: " << status.hdr.length << std::endl;
+
+  this->_write_MsgType(buf, status.hdr.type);
+  this->_write_int(buf, status.hdr.length, MESSAGE_LENGTH_OFFSET);
+  this->_write_buffer(buf, status.data_ptr,
+                      temp_buf.getSize(), MESSAGE_DATA_OFFSET);
+
+  this->state = PGPROTO_SEND_BACKEND_KEY;
+
+}
+
+void PGProtoStreamingServer::_send_ReadyForQuery() {
+
+  pgprotocol::pg_protocol_ready_for_query rfq;
+  MemoryBuffer buf(sizeof(pgprotocol::pg_protocol_ready_for_query));
+
+  rfq.hdr.type = pgprotocol::ReadyForQueryMessage;
+  rfq.hdr.length = 5;
+  rfq.tx_state = 'I'; /* idle in transaction */
+
+  this->buf.allocate(sizeof(pgprotocol::PGMessageType)
+                            + MESSAGE_HDR_LENGTH_SIZE
+                            + sizeof(rfq.tx_state));
+  this->_write_MsgType(buf, rfq.hdr.type);
+  this->_write_int(buf, rfq.hdr.length,
+                   MESSAGE_LENGTH_OFFSET);
+  this->_write_byte(buf, rfq.tx_state, MESSAGE_DATA_OFFSET);
+
+  this->state = PGPROTO_READY_FOR_QUERY;
+
+}
+
+void PGProtoStreamingServer::start_write(size_t length) {
+
+  this->soc->async_write_some(boost::asio::buffer(this->buf.ptr(), length),
+                              boost::bind(&PGProtoStreamingServer::handle_write,
+                                          this, _1));
+
+}
+
+void PGProtoStreamingServer::start_read() {
+
+  this->soc->async_read_some(boost::asio::buffer(this->buf.ptr(), this->buf.getSize()),
+                             boost::bind(&PGProtoStreamingServer::handle_read,
+                                         this, _1, _2));
 
 }

@@ -2,11 +2,14 @@
 #include <backup.hxx>
 #include <backupprocesses.hxx>
 #include <xlogdefs.hxx>
+#include <memorybuffer.hxx>
 
 /* Required for select() */
+extern "C" {
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+}
 
 using namespace credativ;
 
