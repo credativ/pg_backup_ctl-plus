@@ -368,6 +368,7 @@ namespace credativ {
     XLogRecPtr write_position = InvalidXLogRecPtr;
     XLogRecPtr apply_position = InvalidXLogRecPtr;
     XLogRecPtr server_position = InvalidXLogRecPtr;
+    XLogRecPtr last_reported_flush_position = InvalidXLogRecPtr;
 
     /*
      * Additional properties, those aren't necessarily

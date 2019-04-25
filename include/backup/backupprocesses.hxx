@@ -6,6 +6,7 @@
 
 /* pg_backup_ctl++ headers */
 #include <descr.hxx>
+#include <shm.hxx>
 #include <backup.hxx>
 #include <signalhandler.hxx>
 #include <xlogdefs.hxx>

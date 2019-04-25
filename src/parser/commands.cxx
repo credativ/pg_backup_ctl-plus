@@ -1,3 +1,4 @@
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/format.hpp>
 #include <commands.hxx>
 #include <daemon.hxx>
@@ -565,25 +566,29 @@ void ShowWorkersCommandHandle::execute(bool noop) {
 
   shm.attach(this->catalog->fullname(), true);
 
-  shm.lock();
-  for (unsigned int i = 0; i < shm.getMaxWorkers(); i++) {
+  /*
+   * New scope for scoped_lock...
+   */
+  {
+    boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>(*(shm.check_and_get_mutex()));
+    for (unsigned int i = 0; i < shm.getMaxWorkers(); i++) {
 
-    try {
+      try {
 
-      shm_worker_area worker = shm.read(i);
+        shm_worker_area worker = shm.read(i);
 
-      if (worker.pid > 0) {
+        if (worker.pid > 0) {
 
-        slots_used.push_back(worker);
+          slots_used.push_back(worker);
 
+        }
+
+      } catch(SHMFailure &e) {
+        /* in any case, unlock() the SHM and re-throw. */
+        throw e;
       }
 
-    } catch(SHMFailure &e) {
-      /* in any case, unlock() the SHM and re-throw. */
-      shm.unlock();
-      throw e;
     }
-
   }
 
   shm.unlock();
