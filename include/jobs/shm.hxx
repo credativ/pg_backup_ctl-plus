@@ -6,6 +6,8 @@
 
 namespace credativ {
 
+#define MAX_WORKER_INSTRUMENTATION_SLOTS 5
+
   class background_reaper;
   class background_worker_shm_reaper;
 
@@ -17,6 +19,16 @@ namespace credativ {
     SHMFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     SHMFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
+
+  /**
+   * Instrumentation item
+   */
+  typedef struct worker_instrumentation_item {
+
+    int key;
+    uint64 value;
+
+  } worker_instrumentation_item ;
 
   /**
    * Shared memory structure for launcher control data.
@@ -37,6 +49,11 @@ namespace credativ {
     CatalogTag cmdType;
     int archive_id = -1; /* -1 means no archive attached */
     boost::posix_time::ptime started;
+
+    /*
+     * Instrumentation area, currently 5 reserved slots.
+     */
+    worker_instrumentation_item instr[MAX_WORKER_INSTRUMENTATION_SLOTS];
 
   } shm_worker_area;
 
@@ -113,6 +130,16 @@ namespace credativ {
      * since intepretation differs between shared memory segment types.
      */
     virtual size_t getSize() = 0;
+
+    /**
+     * Returns a pointer to the internal mutex, which protects
+     * this shared memory area against concurrent changes.
+     *
+     * If the shared memory area wasn't initialized, then the
+     * shm mutex would be NULL, too, so make sure we die immediately.
+     * In this case, check_and_get_mutex will throw a SHMFailure() exception.
+     */
+    virtual boost::interprocess::interprocess_mutex *check_and_get_mutex();
 
   };
 

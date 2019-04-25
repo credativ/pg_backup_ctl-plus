@@ -136,9 +136,40 @@ ArchiverState WALStreamerProcess::sendStatusUpdate() {
 
   ReceiverStatusUpdateMessage rsum(this->pgconn);
 
-  rsum.setStatus(this->streamident.write_position,
-                 this->streamident.flush_position,
-                 this->streamident.apply_position);
+  #ifdef __DEBUG_XLOG__
+  std::cerr << " ... sending status update to primary "
+            << std::endl;
+  std::cerr << "     -> write position: "
+            << PGStream::encodeXLOGPos(this->streamident.write_position)
+            << std::endl;
+  std::cerr << "     -> flush position: "
+            << PGStream::encodeXLOGPos(this->streamident.flush_position)
+            << std::endl;
+  std::cerr << "     -> last reported flush position: "
+            << PGStream::encodeXLOGPos(this->streamident.last_reported_flush_position)
+            << std::endl;
+  std::cerr << "     -> apply position: "
+            << PGStream::encodeXLOGPos(this->streamident.apply_position)
+            << std::endl;
+#endif
+
+  if (this->streamident.flush_position == InvalidXLogRecPtr) {
+
+    rsum.setStatus(this->streamident.write_position,
+                   this->streamident.last_reported_flush_position,
+                   this->streamident.apply_position);
+
+  } else {
+
+    rsum.setStatus(this->streamident.write_position,
+                   this->streamident.flush_position,
+                   this->streamident.apply_position);
+
+  }
+
+  /* Always report flush position back to upstream */
+  rsum.reportFlushPosition();
+
   rsum.send();
   return this->current_state;
 
@@ -291,14 +322,13 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
        * NOTE: If no backup handler was configured,
        *       Flush is currently the same as the
        *       current write position.
+       *
+       * Our backup handler does all the necessary work
+       * to spool the transaction logs into the archive.
        */
       this->streamident.write_position = datamsg->getXLOGServerPos();
       this->streamident.updateStartSegmentWriteOffset();
 
-      /*
-       * Our backup handler does all the necessary work
-       * to spool the transaction logs into the archive.
-       */
       if (this->backupHandler != nullptr) {
 
         /*
@@ -308,14 +338,36 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
          * current WAL file. Though, we must take care for
          * a WAL segment boundary, in that case we have to switch to
          * new WAL segment file, again.
+         *
+         * We must remember the current flush position in
+         * last_reported_flush_position, since we want to continously
+         * report them back to upstream. In case no XLOG switch happened,
+         * the backuphandler write() method will set an InvalidXLogRecPtr!
          */
-        this->streamident.flush_position
+
+        this->streamident.write_position
           = this->backupHandler->write(datamsg,
+                                       this->streamident.flush_position,
                                        this->streamident.timeline);
+
+        if (this->streamident.flush_position != InvalidXLogRecPtr) {
+
+          this->streamident.last_reported_flush_position
+            = this->streamident.flush_position;
+
+        }
+
+#ifdef __DEBUG_XLOG__
+        std::cerr << "DEBUG: flush position after write(): "
+                  << PGStream::encodeXLOGPos(this->streamident.flush_position)
+                  << std::endl;
+#endif
 
       } else { /* if ... backupHandler != nullptr */
 
         this->streamident.flush_position = datamsg->getXLOGServerPos();
+        this->streamident.last_reported_flush_position
+          = this->streamident.flush_position;
 
       }
 
@@ -330,41 +382,27 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
       std::cerr << "primary feedback message" << std::endl;
 #endif
 
+      /*
+       * Upstream wants an immediate status update?
+       */
       if (pm->responseRequested()) {
-        /*
-         * Create a receiver status update message.
-         */
-        ReceiverStatusUpdateMessage *rm = new ReceiverStatusUpdateMessage(this->pgconn);
-
-        /*
-         * Set properties to report required properties to primary.
-         */
-        rm->setStatus(this->streamident.write_position,
-                      this->streamident.flush_position,
-                      this->streamident.apply_position);
-
-        /* ... and send 'em over */
-        try {
 
 #ifdef __DEBUG_XLOG__
-          std::cerr << " ... sending status update to primary " << std::endl;
+        std::cerr << "receiver status update forced" << std::endl;
 #endif
 
-          rm->send();
+        /* ...send it */
+        this->sendStatusUpdate();
 
-          /*
-           * Update timeout interval.
-           */
-          this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
-
-        } catch (XLOGMessageFailure &e) {
-          delete rm;
-          throw e;
-        }
+        /*
+         * Update timeout interval.
+         */
+        this->last_status_update = CPGBackupCtlBase::current_hires_time_point();
 
       }
 
       break;
+
     }
   default:
     {

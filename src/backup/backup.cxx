@@ -43,6 +43,7 @@ void TransactionLogBackup::create() {
 }
 
 XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
+                                       XLogRecPtr &flush_position,
                                        unsigned int timeline) {
 
   shared_ptr<TransactionLogListItem> item = nullptr;
@@ -51,6 +52,12 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
   int waloffset = 0;
   char *databuf;
   XLogRecPtr position = InvalidXLogRecPtr;
+
+  /*
+   * Default value for flush_position is
+   * InvalidXLogRecPtr, indicating no flush so far.
+   */
+  flush_position = InvalidXLogRecPtr;
 
   /*
    * If not initialized, error out.
@@ -192,7 +199,6 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
      * finalize the current XLOG segment file and stack a new one.
      */
     if (PGStream::XLOGOffset(position, this->wal_segment_size) == 0) {
-      std::string filename;
 
       this->finalizeCurrentWALFile(true);
 
@@ -206,6 +212,22 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
        */
       this->finalize();
 
+#ifdef __DEBUG_XLOG__
+      std::cerr << "DEBUG: finalize XLOG segment at offset "
+                << PGStream::encodeXLOGPos(position)
+                << std::endl;
+#endif
+
+      /*
+       * Remember flush position.
+       */
+      flush_position = position;
+
+      /*
+       * Count synced WAL file.
+       */
+      this->wal_synced++;
+
       /*
        * Flag current item handler to be empty,
        * next loop will create a new WAL log segment file.
@@ -216,11 +238,18 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
        * Reset wal offset to be a starting point again.
        */
       waloffset = 0;
+
     }
 
   }
 
   return position;
+}
+
+uint64 TransactionLogBackup::countSynced() {
+
+  return this->wal_synced;
+
 }
 
 std::string TransactionLogBackup::walfilename(unsigned int timeline,

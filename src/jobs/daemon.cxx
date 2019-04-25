@@ -427,6 +427,22 @@ shmatt_t ProcessSHM::getNumberOfAttached(int check_shmid) {
 
 }
 
+boost::interprocess::interprocess_mutex *ProcessSHM::check_and_get_mutex() {
+
+  /*
+   * Die immediately if the SHM area wasn't initialized
+   *
+   * This means here that we just check wether the mutex was initialized.
+   * If not, we will find a nullptr, thus we throw a SHMFailure exception
+   * telling the caller something went terribly wrong.
+   */
+  if (mtx == nullptr)
+    throw SHMFailure("shared memory not initialized yet, probably pg_backup_ctl++ launcher was not started yet");
+
+  return mtx;
+
+}
+
 shmatt_t ProcessSHM::getNumberOfAttached() {
 
   shmatt_t nattach = 0;

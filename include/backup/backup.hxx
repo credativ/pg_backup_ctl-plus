@@ -95,6 +95,13 @@ namespace credativ {
      */
     uint32 wal_segment_size = 0;
 
+    /**
+     * Number of WAL files synced. This effectively counts the number
+     * of WAL files synced into the transaction log archive during
+     * the lifetime of a TransactionLogBackup instance.
+     */
+    uint64 wal_synced = 0;
+
   public:
     TransactionLogBackup(const std::shared_ptr<CatalogDescr> & descr);
     virtual ~TransactionLogBackup();
@@ -147,8 +154,17 @@ namespace credativ {
      *
      * Returns the XLOG position it has written the message up to.
      * In case the write() failed, an InvalidXLogRecPtr is returned.
+     *
+     * If the transaction log backup stream needs to allocate
+     * a new XLOG segment file, the current XLOG segment file is
+     * flushed, renamed into its final backup segment filename and the
+     * flush position saved in the called-by-reference
+     * argument flush_position. If no switch has occured, flush_position
+     * is set to InvalidXLogRecPtr. This can be used to check wether
+     * a new segment was created during write().
      */
     virtual XLogRecPtr write(XLOGDataStreamMessage *message,
+                             XLogRecPtr &flush_position,
                              unsigned int timeline);
 
     virtual void sync_pending();
@@ -193,6 +209,12 @@ namespace credativ {
      * to get the correct size from there anyways.
      */
     virtual void setWalSegmentSize(uint32 wal_segment_size);
+
+    /**
+     * Returns the number of WAL synced by a TransactionLogBackup
+     * instance.
+     */
+    virtual uint64 countSynced();
   };
 
   /*
