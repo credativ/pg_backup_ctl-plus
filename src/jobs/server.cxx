@@ -811,7 +811,7 @@ void PGProtoStreamingServer::_send_BackendKey() {
   keydata.pid = ::getpid();
   keydata.key = 1234;
 
-  this->buf.allocate(sizeof(pgprotocol::pg_protocol_backendkey));
+  this->buf.allocate((size_t)13);
 
   std::cerr << "PG PROTO backend key buf size " << this->buf.getSize() << std::endl;
 

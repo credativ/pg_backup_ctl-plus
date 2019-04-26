@@ -73,7 +73,7 @@ add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
   src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
   src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx
-  src/recovery/restore.cxx src/main/memorybuffer.cxx)
+  src/recovery/restore.cxx src/main/memorybuffer.cxx src/protocol/proto-buffer.cxx)
 
 IF(APPLE)
    target_link_libraries (pg_backup_ctl++ pgbckctl-proto pgbckctl-common)
