@@ -21,7 +21,7 @@ namespace credativ {
   public:
     MemoryBuffer();
     MemoryBuffer(size_t initialsz);
-    ~MemoryBuffer();
+    virtual ~MemoryBuffer();
 
     /**
      * Allocate internal buffer. If an existing buffer exists,
