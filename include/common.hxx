@@ -1,14 +1,28 @@
 #ifndef __PGBACKUPCTL_COMMON__
 #define __PGBACKUPCTL_COMMON__
 
-#include "pg_backup_ctl.hxx"
-#include <pgbckctl_exception.hxx>
-
 extern "C" {
 /* required for postgresql typedefs here */
-#include "postgres_fe.h"
+#include <postgres_fe.h>
 }
 
+/**
+ * likely() and unlikely() are already defined
+ * in the PostgreSQL headers, colliding with the symbols
+ * provides by boost/c++ 17. Undefine them explicitely, to
+ * avoid compile problems.
+ */
+
+#ifdef likely
+#undef likely
+#endif
+
+#ifdef unlikely
+#undef unlikely
+#endif
+
+#include "pg_backup_ctl.hxx"
+#include <pgbckctl_exception.hxx>
 
 /*
  * PostgreSQL >= 12 comes with an overriden, own implementation
