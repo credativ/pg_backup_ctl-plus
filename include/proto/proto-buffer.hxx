@@ -7,7 +7,7 @@ namespace credativ {
 
   class ProtocolBuffer;
 
-  class ProtocolBuffer : protected MemoryBuffer {
+  class ProtocolBuffer : public MemoryBuffer {
 
   protected:
 
@@ -23,39 +23,39 @@ namespace credativ {
      * Write to the current cursor position. If the protocol buffer is full,
      * this will throw a CPGBackupCtlFailure.
      */
-    virtual size_t write(const void *buf, size_t bufsize);
+    virtual size_t write_buffer(const void *buf, size_t bufsize);
 
     /**
      *
      */
-    virtual size_t write(const unsigned char c);
+    virtual size_t write_byte(const unsigned char c);
 
     /**
      * Read from the current cursor position. If the position is already located
      * at the end of the buffer, this will throw a CPGBackupCtlFailure.
      */
-    virtual size_t read(void *buf, size_t readsz);
+    virtual size_t read_buffer(void *buf, size_t readsz);
 
     /**
      * Write integer value to the buffer at its current position. The value
      * is automatically converted into network byte order. If there's no
      * more room (4 byte), an CPGBackupCtlFailure is thrown.
      */
-    virtual size_t write(const int value);
+    virtual size_t write_int(const int value);
 
     /**
      * Read integer value from the buffer at its current position. If the
      * cursor is already positioned at the end of the buffer, a CPGBackupCtlFailure
      * exception is thrown.
      */
-    virtual size_t read(int &value);
+    virtual size_t read_int(int &value);
 
     /**
      * Read byte from the buffer at its current position. If the buffer
      * is already positioned at the end of the buffer, a CPGBackupCtlFailure
      * is thrown.
      */
-    virtual size_t read(unsigned char &c);
+    virtual size_t read_byte(unsigned char &c);
 
     /**
      * Move the cursor to the start position.

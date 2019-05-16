@@ -38,6 +38,7 @@ void MemoryBuffer::allocate(size_t size) {
 
   this->memory_buffer = new char[size];
   this->size = size;
+
 }
 
 size_t MemoryBuffer::write(const void *buf, size_t bufsize, size_t off) {

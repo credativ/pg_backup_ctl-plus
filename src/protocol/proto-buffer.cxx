@@ -20,7 +20,7 @@ ProtocolBuffer::ProtocolBuffer(size_t size) : MemoryBuffer(size) {
 
 ProtocolBuffer::~ProtocolBuffer() {}
 
-size_t ProtocolBuffer::write(const void *buf, size_t bufsize) {
+size_t ProtocolBuffer::write_buffer(const void *buf, size_t bufsize) {
 
   size_t bw = 0;
 
@@ -31,7 +31,7 @@ size_t ProtocolBuffer::write(const void *buf, size_t bufsize) {
 
 }
 
-size_t ProtocolBuffer::write(const int value) {
+size_t ProtocolBuffer::write_int(const int value) {
 
   size_t bw = 0;
   int wv = htonl(value);
@@ -43,7 +43,7 @@ size_t ProtocolBuffer::write(const int value) {
 
 }
 
-size_t ProtocolBuffer::write(const unsigned char c) {
+size_t ProtocolBuffer::write_byte(const unsigned char c) {
 
   size_t bw = 0;
 
@@ -54,7 +54,7 @@ size_t ProtocolBuffer::write(const unsigned char c) {
 
 }
 
-size_t ProtocolBuffer::read(int &value) {
+size_t ProtocolBuffer::read_int(int &value) {
 
   size_t br = 0;
   int rv;
@@ -67,7 +67,7 @@ size_t ProtocolBuffer::read(int &value) {
 
 }
 
-size_t ProtocolBuffer::read(void *buf, size_t readsz) {
+size_t ProtocolBuffer::read_buffer(void *buf, size_t readsz) {
 
   size_t br = 0;
 
@@ -78,7 +78,7 @@ size_t ProtocolBuffer::read(void *buf, size_t readsz) {
 
 }
 
-size_t ProtocolBuffer::read(unsigned char &c) {
+size_t ProtocolBuffer::read_byte(unsigned char &c) {
 
   size_t br = 0;
   unsigned char rv;

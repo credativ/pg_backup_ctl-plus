@@ -16,8 +16,8 @@ extern "C" {
 }
 
 #include <bgrndroletype.hxx>
-#include <memorybuffer.hxx>
 #include <pgsql-proto.hxx>
+#include <proto-buffer.hxx>
 #include <server.hxx>
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
@@ -213,50 +213,12 @@ namespace credativ {
      * Internal memory buffer, gets re-allocated
      * for any new incoming message.
      */
-    MemoryBuffer buf;
+    ProtocolBuffer buf;
 
     /**
      * Guts of protocol startup.
      */
     void _startup();
-
-    /**
-     * Read an integer from the specified
-     * memory buffer.
-     */
-    void _read_int(MemoryBuffer &buf, int &val, off_t offset);
-
-    /**
-     * Write an integer value to the specified
-     * memory buffer.
-     */
-    void _write_int(MemoryBuffer &buf, int val, off_t offset);
-
-    /**
-     * Write the specified byte into the protocol buffer.
-     */
-    void _write_byte(MemoryBuffer &buf, char val, off_t offset);
-
-    /**
-     * Read the specified byte from the protocol buffer.
-     */
-    void _read_byte(MemoryBuffer &buf, char &val, off_t offset);
-
-    void _write_buffer(MemoryBuffer &buf, void *c, size_t length, off_t offset);
-
-    void _read_buffer(MemoryBuffer buf, void *c, size_t length, off_t offset);
-
-    /**
-     * Sets the PostgreSQL message type byte into the
-     * specified buffer.
-     */
-    void _write_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type);
-
-    /**
-     * Reads the PostgreSQL message type from
-     * the specified buffer.
-     */
-    void _read_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type);
 
     /**
      * Read and convert startup GUCs into a local
@@ -518,58 +480,6 @@ void PGProtoStreamingServer::_read_startup_gucs() {
 
 }
 
-void PGProtoStreamingServer::_write_byte(MemoryBuffer &buf, char val, off_t offset) {
-
-  buf.write(&val, sizeof(val), offset);
-
-}
-
-void PGProtoStreamingServer::_read_byte(MemoryBuffer &buf, char &val, off_t offset) {
-
-  buf.read(&val, sizeof(val), offset);
-
-}
-
-void PGProtoStreamingServer::_write_buffer(MemoryBuffer &buf, void *c, size_t length, off_t offset) {
-
-  buf.write(c, length, offset);
-
-}
-
-void PGProtoStreamingServer::_read_buffer(MemoryBuffer buf, void *c, size_t length, off_t offset) {
-
-  buf.read(c, length, offset);
-
-}
-
-void PGProtoStreamingServer::_read_int(MemoryBuffer &buf, int &val, off_t offset) {
-
-  int _t;
-
-  buf.read(&_t, sizeof(val), offset);
-  val = ntohl(_t);
-
-}
-
-void PGProtoStreamingServer::_write_int(MemoryBuffer &buf, int val, off_t offset) {
-
-  int _t = htonl(val);
-  buf.write(&_t, sizeof(val), offset);
-
-}
-
-void PGProtoStreamingServer::_read_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type) {
-
-  buf.read(&type, sizeof(pgprotocol::PGMessageType), 0);
-
-}
-
-void PGProtoStreamingServer::_write_MsgType(MemoryBuffer &buf, pgprotocol::PGMessageType &type) {
-
-  buf.write(&type, sizeof(pgprotocol::PGMessageType), 0);
-
-}
-
 void PGProtoStreamingServer::handle_read(const boost::system::error_code& ec, std::size_t length) {
 
   if (ec) {
@@ -707,28 +617,24 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
 
       break;
     }
-  case PGPROTO_SEND_PARAMETER_STATUS:
-    {
-
-      /* We have send parameters status messages to the client */
-      std::cerr << "PG PROTO send parameter status done" << std::endl;
-
-      /* We're ready now, send a ReadyForQuery message */
-      this->_send_ReadyForQuery();
-
-      std::cerr << "PG PROTO ready for query size=" << this->buf.getSize() << std::endl;
-      start_write(this->buf.getSize());
-
-      break;
-    }
 
   case PGPROTO_READY_FOR_QUERY:
     {
       /* Write handler just completed a ReadyForQuery message */
       std::cerr << "PG PROTO ready for query completed" << std::endl;
 
-      /* Enter read loop again */
+      /* We're ready now, send a ReadyForQuery message */
+      this->_send_ReadyForQuery();
+      start_write(this->buf.getSize());
+
+      break;
+    }
+
+  case PGPROTO_READY_FOR_QUERY_WAIT:
+    {
+      std::cerr << "PG PROTO wait for query" << std::endl;
       start_read();
+
       break;
     }
   default:
@@ -751,8 +657,8 @@ void PGProtoStreamingServer::_startup() {
    * Read the message bytes. First four bytes is the startup
    * length indicator followed by the protocol version.
    */
-  this->_read_int(this->buf, msglen, 0);
-  this->_read_int(this->buf, protocolVersion, 4);
+  buf.read_int(msglen);
+  buf.read_int(protocolVersion);
 
   std::cerr << "PG PROTO len " << msglen << std::endl;
   std::cerr << "PG PROTO ver " << PG_PROTOCOL_MAJOR(protocolVersion) << std::endl;
@@ -795,11 +701,10 @@ void PGProtoStreamingServer::_send_AuthenticationOK() {
   authreq.hdr.length = 8;
   authreq.auth_type = 0;
 
-  this->buf.allocate(sizeof(authreq));
-  this->_write_MsgType(buf, authreq.hdr.type);
-  this->_write_int(buf, authreq.hdr.length,
-                   sizeof(pgprotocol::AuthenticationMessage));
-  this->_write_int(buf, authreq.auth_type, (off_t)5);
+  buf.allocate(MESSAGE_HDR_SIZE + sizeof(authreq.auth_type));
+  buf.write_byte(authreq.hdr.type);
+  buf.write_int(authreq.hdr.length);
+  buf.write_int(authreq.auth_type);
 
   this->state = PGPROTO_AUTH;
 }
@@ -811,22 +716,18 @@ void PGProtoStreamingServer::_send_BackendKey() {
   keydata.pid = ::getpid();
   keydata.key = 1234;
 
-  this->buf.allocate((size_t)13);
+  this->buf.allocate(MESSAGE_HDR_SIZE + sizeof(keydata.pid)
+                     + sizeof(keydata.key));
 
   std::cerr << "PG PROTO backend key buf size " << this->buf.getSize() << std::endl;
 
-  this->_write_MsgType(buf, keydata.hdr.type);
-  this->_write_int(buf, keydata.hdr.length,
-                   sizeof(pgprotocol::BackendKeyMessage));
-  this->_write_int(buf, keydata.pid,
-                   sizeof(pgprotocol::BackendKeyMessage)
-                   + MESSAGE_HDR_LENGTH_SIZE);
-  this->_write_int(buf, keydata.pid,
-                   sizeof(pgprotocol::BackendKeyMessage)
-                   + MESSAGE_HDR_LENGTH_SIZE
-                   + sizeof(keydata.pid));
+  buf.write_byte(keydata.hdr.type);
+  buf.write_int(keydata.hdr.length);
+  buf.write_int(keydata.pid);
+  buf.write_int(keydata.key);
 
   this->state = PGPROTO_READY_FOR_QUERY;
+
 }
 
 void PGProtoStreamingServer::_send_ParameterStatus() {
@@ -860,16 +761,14 @@ void PGProtoStreamingServer::_send_ParameterStatus() {
   status.data_ptr = temp_buf.ptr();
   status.hdr.length = MESSAGE_HDR_LENGTH_SIZE + temp_buf.getSize();
 
-  this->buf.allocate(MESSAGE_HDR_BYTE
-                     + MESSAGE_HDR_LENGTH_SIZE
-                     + MESSAGE_DATA_LENGTH(status));
+  buf.allocate(MESSAGE_HDR_SIZE + MESSAGE_DATA_LENGTH(status));
 
   std::cerr << "PG PROTO parameter buffer data length: " << status.hdr.length << std::endl;
 
-  this->_write_MsgType(buf, status.hdr.type);
-  this->_write_int(buf, status.hdr.length, MESSAGE_LENGTH_OFFSET);
-  this->_write_buffer(buf, status.data_ptr,
-                      temp_buf.getSize(), MESSAGE_DATA_OFFSET);
+  buf.write_byte(status.hdr.type);
+  buf.write_int(status.hdr.length);
+  buf.write_buffer(status.data_ptr,
+                   temp_buf.getSize());
 
   this->state = PGPROTO_SEND_BACKEND_KEY;
 
@@ -878,25 +777,23 @@ void PGProtoStreamingServer::_send_ParameterStatus() {
 void PGProtoStreamingServer::_send_ReadyForQuery() {
 
   pgprotocol::pg_protocol_ready_for_query rfq;
-  MemoryBuffer buf(sizeof(pgprotocol::pg_protocol_ready_for_query));
 
   rfq.hdr.type = pgprotocol::ReadyForQueryMessage;
   rfq.hdr.length = 5;
   rfq.tx_state = 'I'; /* idle in transaction */
 
-  this->buf.allocate(sizeof(pgprotocol::PGMessageType)
-                            + MESSAGE_HDR_LENGTH_SIZE
-                            + sizeof(rfq.tx_state));
-  this->_write_MsgType(buf, rfq.hdr.type);
-  this->_write_int(buf, rfq.hdr.length,
-                   MESSAGE_LENGTH_OFFSET);
-  this->_write_byte(buf, rfq.tx_state, MESSAGE_DATA_OFFSET);
+  buf.allocate(MESSAGE_HDR_SIZE + sizeof(rfq.tx_state));
+  buf.write_byte(rfq.hdr.type);
+  buf.write_int(rfq.hdr.length);
+  buf.write_byte(rfq.tx_state);
 
-  this->state = PGPROTO_READY_FOR_QUERY;
+  this->state = PGPROTO_READY_FOR_QUERY_WAIT;
 
 }
 
 void PGProtoStreamingServer::start_write(size_t length) {
+
+  std::cerr << "start_write with " << length << " bytes" << std::endl;
 
   this->soc->async_write_some(boost::asio::buffer(this->buf.ptr(), length),
                               boost::bind(&PGProtoStreamingServer::handle_write,

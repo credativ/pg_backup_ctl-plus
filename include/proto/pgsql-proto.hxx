@@ -19,8 +19,8 @@ namespace credativ {
                 PGPROTO_STARTUP_SSL_OK,
                 PGPROTO_AUTH,
                 PGPROTO_READ_STARTUP_GUC,
-                PGPROTO_SEND_PARAMETER_STATUS,
                 PGPROTO_READY_FOR_QUERY,
+                PGPROTO_READY_FOR_QUERY_WAIT,
                 PGPROTO_SEND_BACKEND_KEY
 
   } PostgreSQLProtocolState;
