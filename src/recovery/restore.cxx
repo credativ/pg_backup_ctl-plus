@@ -6,3 +6,9 @@ using namespace credativ;
 Recovery::Recovery() {}
 
 Recovery::~Recovery() {}
+
+TarRecovery::TarRecovery() {}
+
+TarRecovery::~TarRecovery() {}
+
+void TarRecovery::init() {}

@@ -1290,7 +1290,7 @@ bool BaseBackupProcess::stepTablespace(std::shared_ptr<StreamBaseBackup> backupH
   /*
    * Make the file access handle.
    */
-  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::uintToStr(descr->spcoid)
+  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::intToStr(descr->spcoid)
                                                 + ".tar");
 
   if (descr->spclocation == "")

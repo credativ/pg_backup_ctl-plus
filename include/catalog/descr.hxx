@@ -958,7 +958,7 @@ namespace credativ {
   public:
     int id = -1;
     int backup_id = -1;
-    unsigned int spcoid;
+    int spcoid;
     std::string spclocation;
     unsigned long long spcsize;
   };

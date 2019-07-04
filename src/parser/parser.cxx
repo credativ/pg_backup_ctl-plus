@@ -405,7 +405,7 @@ namespace credativ {
         stream_listen_on = no_case[ lexeme[ lit("LISTEN_ON") ] ] >> ip_address
           >> -(stream_listen_on);
 
-        ip_address = +char_("0-9.:");
+        ip_address = +char_("0-9a-zA-Z.:");
 
         /*
          * START STREAMING FOR ARCHIVE command

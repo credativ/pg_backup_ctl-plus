@@ -1,6 +1,9 @@
 #ifndef __HAVE_PGSQL_PROTO_HXX__
 #define __HAVE_PGSQL_PROTO_HXX__
 
+#include <stack>
+#include <proto-buffer.hxx>
+
 /*
  * PostgreSQL protocol v3 definitions, taken from
  *
@@ -108,6 +111,148 @@ namespace credativ {
       char *data_ptr;
 
     };
+
+    /*
+     * Error response types.
+     */
+    typedef char PGErrorResponseType;
+
+    const PGErrorResponseType PGProtoSqlState          = 'C';
+    const PGErrorResponseType PGProtoSeverity          = 'S';
+    const PGErrorResponseType PGProtoSeverityNonLocale = 'V';
+    const PGErrorResponseType PGProtoMessage           = 'M';
+
+    /**
+     * Encoded text representations
+     * for PGProtoSeverity or PGProtoSeverityNonLocale.
+     */
+    typedef enum {
+                  PG_ERR_ERROR,
+                  PG_ERR_WARNING,
+                  PG_ERR_NOTICE,
+                  PG_ERR_LOG,
+                  PG_ERR_INFO,
+                  PG_ERR_DEBUG,
+                  PG_ERR_HINT,
+                  PG_ERR_DETAIL,
+                  PG_ERR_FATAL,
+                  PG_ERR_PANIC
+    } PGErrorSeverity;
+
+    /*
+     * Error response descriptor.
+     */
+    typedef struct _pg_error_response {
+
+      char type;
+      std::string value;
+
+    } PGErrorResponseField;
+
+    /*
+     * Stacked error response descriptor suitable
+     * to be send over the wire.
+     */
+    class ProtocolErrorStack {
+    private:
+
+      /**
+       * Stack for error response fields.
+       */
+      std::stack<PGErrorResponseField> es;
+
+      /**
+       * Size of the top element in the
+       * stack. Saved to ease recalculation after
+       * pop().
+       */
+      size_t top_element_size = 0;
+
+      /**
+       * Size in bytes occupied by each
+       * instance of PGErrorResponseField in the stack.
+       *
+       * This is basically the size of each PGErrorResponseField
+       * summed up (including sizeof(type) and value.length.
+       *
+       * This doesn't count trailing null bytes for value, so
+       * be sure to add them when allocating a separate
+       * memory buffer to hold all values using
+       * ProtocolErrorStack::count().
+       */
+      size_t content_size = 0;
+
+    public:
+
+      /**
+       * Transforms the error stack into a memory buffer,
+       * suitable to be sent over the wire.
+       *
+       * Pops the elements from that stack, so after calling
+       * toBuffer() the error stack is empty.
+       *
+       * The returned buffer forms a complete ErrorResponse
+       * message on the postgresql protocol level, including
+       * message header. This means the buffer contents
+       * can be flushed to the protocol after returning immediately.
+       *
+       * The size returned in the second argument shows the
+       * size of the complete ErrorResponse message, _without_
+       * the protocol header.
+       */
+      virtual void toBuffer(ProtocolBuffer &dest,
+                            size_t &msg_size);
+
+      ProtocolErrorStack() {};
+      virtual ~ProtocolErrorStack() {};
+
+      /**
+       * Push error response to the stack.
+       */
+      virtual void push(PGErrorResponseType type,
+                        std::string value);
+
+      /**
+       * Push error response field to the stack.
+       */
+      virtual void push(PGErrorResponseField field);
+
+      /**
+       * Returns the last error response field on the stack.
+       */
+      virtual PGErrorResponseField top();
+
+      /**
+       * Pops the latest error response field from the error stack.
+       */
+      virtual void pop();
+
+      /**
+       * Returns the number of PGErrorResponseField
+       * currently pushed onto the stack.
+       */
+      virtual size_t count();
+
+      /**
+       * Returns the size of the current top level
+       * element in the stack. 0 if empty.
+       */
+      size_t getTopElementSize();
+
+      /**
+       * Returns the number of bytes currently allocated
+       * by the PGErrorResponseField elements onto the stack.
+       * 0 if empty.
+       */
+      virtual size_t getTotalElementSize();
+
+      /**
+       * Returns true in case the error stack is empty.
+       */
+      virtual bool empty();
+
+    };
+
 
   }
 

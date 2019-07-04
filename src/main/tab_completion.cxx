@@ -254,9 +254,35 @@ completion_word start_streaming_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start_
 completion_word start_streaming_for[] = { { "FOR", COMPL_KEYWORD, start_streaming_archive },
                                           { "", COMPL_EOL, NULL } };
 
+/*
+ * Forwarded declarations for LISTEN_ON <ip address> [ ... ] PORT <port number>
+ *
+ * See init_readline() for initialization.
+ */
+completion_word recovery_stream_listen_port[3];
+
+completion_word recovery_stream_port[] = { { "<port number>", COMPL_IDENTIFIER, NULL },
+                                           { "", COMPL_EOL, NULL } };
+
+completion_word recovery_stream_ip_address[] = { { "<ip address>", COMPL_IDENTIFIER, recovery_stream_listen_port },
+                                                 { "", COMPL_EOL, NULL } };
+
+completion_word recovery_stream_for_archive_ident[] = { { "<identifier>", COMPL_IDENTIFIER, recovery_stream_listen_port },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word recovery_stream_for_archive[] = { { "ARCHIVE", COMPL_KEYWORD, recovery_stream_for_archive_ident },
+                                                  { "", COMPL_EOL, NULL } };
+
+completion_word start_recovery_stream[] = { { "FOR" , COMPL_KEYWORD, recovery_stream_for_archive },
+                                            { "", COMPL_EOL, NULL } };
+
+completion_word start_recovery_compl[] = { { "STREAM" , COMPL_KEYWORD, start_recovery_stream },
+                                           { "", COMPL_EOL, NULL } };
+
 completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
                                        { "STREAMING", COMPL_KEYWORD, start_streaming_for },
                                        { "LAUNCHER", COMPL_KEYWORD, NULL },
+                                       { "RECOVERY", COMPL_KEYWORD, start_recovery_compl },
                                        { "", COMPL_EOL, NULL } };
 
 completion_word verify_archive_options[] = { { "CONNECTION", COMPL_KEYWORD, NULL },
@@ -569,6 +595,20 @@ void init_readline() {
   create_bck_prof_param_full[5] = create_bck_prof_w5;
   create_bck_prof_param_full[6] = create_bck_prof_w6;
   create_bck_prof_param_full[7] = create_bck_prof_w7;
+
+  /*
+   * And here the same for START RECOVERY STREAM FOR ARCHIVE.
+   *
+   * The LISTEN_ON and PORT options need to call the completion
+   * tokens for LISTEN_ON recursively.
+   */
+  completion_word recovery_stream_listen_port_w0 = { "LISTEN_ON", COMPL_KEYWORD, recovery_stream_ip_address };
+  completion_word recovery_stream_listen_port_w1 = { "PORT", COMPL_KEYWORD, recovery_stream_port };
+  completion_word recovery_stream_listen_port_w2 = { "", COMPL_EOL, NULL };
+
+  recovery_stream_listen_port[0] = recovery_stream_listen_port_w0;
+  recovery_stream_listen_port[1] = recovery_stream_listen_port_w1;
+  recovery_stream_listen_port[2] = recovery_stream_listen_port_w2;
 
   /* XXX: what about specific append settings?
    *

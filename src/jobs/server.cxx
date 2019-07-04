@@ -107,9 +107,11 @@ namespace credativ {
     void handle_accept(const boost::system::error_code& ec) {
       if (!ec)
         {
-          // Inform the io_service that we are about to fork. The io_service cleans
-          // up any internal resources, such as threads, that may interfere with
-          // forking.
+          /*
+           * Inform the io_service that we are about to fork. The io_service cleans
+           * up any internal resources, such as threads, that may interfere with
+           * forking.
+           */
           this->ios->notify_fork(boost::asio::io_service::fork_prepare);
 
           if (fork() == 0)
@@ -120,26 +122,32 @@ namespace credativ {
                */
               _pgbckctl_job_type = BACKGROUND_WORKER_CHILD;
 
-              // Inform the io_service that the fork is finished and that this is the
-              // child process. The io_service uses this opportunity to create any
-              // internal file descriptors that must be private to the new process.
-              this->ios->notify_fork(boost::asio::io_service::fork_child);
+              /*
+               * Inform the io_service that the fork is finished and that this is the
+               * child process. The io_service uses this opportunity to create any
+               * internal file descriptors that must be private to the new process.
+               * this->ios->notify_fork(boost::asio::io_service::fork_child);
+               */
 
-              // The child won't be accepting new connections, so we can close the
-              // acceptor. It remains open in the parent.
+              /*
+               * The child won't be accepting new connections, so we can close the
+               * acceptor. It remains open in the parent.
+               */
               this->acpt->close();
 
-              // The child process is not interested in processing the SIGCHLD signal.
+              /* The child process is not interested in processing the SIGCHLD signal. */
               this->sset->cancel();
 
               start_read();
             }
           else
             {
-              // Inform the io_service that the fork is finished (or failed) and that
-              // this is the parent process. The io_service uses this opportunity to
-              // recreate any internal resources that were cleaned up during
-              // preparation for the fork.
+              /*
+               * Inform the io_service that the fork is finished (or failed) and that
+               * this is the parent process. The io_service uses this opportunity to
+               * recreate any internal resources that were cleaned up during
+               * preparation for the fork.
+               */
               this->ios->notify_fork(boost::asio::io_service::fork_parent);
 
               this->soc->close();
@@ -216,6 +224,16 @@ namespace credativ {
     ProtocolBuffer buf;
 
     /**
+     * Clear contents of protocol error stack.
+     */
+    void clearErrorStack();
+
+    /*
+     * Protocol error stack. Flushed by _send_error().
+     */
+    pgprotocol::ProtocolErrorStack errm;
+
+    /**
      * Guts of protocol startup.
      */
     void _startup();
@@ -226,6 +244,11 @@ namespace credativ {
      */
     std::map<std::string, std::string> startup_gucs;
     void _read_startup_gucs();
+
+    /**
+     * Sends a error response to the client.
+     */
+    void _send_error();
 
     /**
      * Sends a AuthenticationOK response.
@@ -273,6 +296,14 @@ namespace credativ {
      * Handle an outgoing message.
      */
     virtual void handle_write(const boost::system::error_code &ec);
+
+    /*
+     * Stacks an error message with the given severity
+     * on the protocol stack
+     */
+    virtual void error_msg(pgprotocol::PGErrorSeverity severity,
+                           std::string msg,
+                           bool translatable = true);
 
   public:
 
@@ -771,6 +802,63 @@ void PGProtoStreamingServer::_send_ParameterStatus() {
                    temp_buf.getSize());
 
   this->state = PGPROTO_SEND_BACKEND_KEY;
+
+}
+
+void PGProtoStreamingServer::clearErrorStack() {
+
+  if (this->errm.empty())
+    return;
+
+  while (!this->errm.empty())
+    this->errm.pop();
+
+}
+
+void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
+                                       std::string msg,
+                                       bool translatable) {
+
+  pgprotocol::PGErrorResponseType errtype;
+
+  if (translatable) {
+    errtype = 'S';
+  } else {
+    errtype = 'V';
+  }
+  switch(severity) {
+
+  case pgprotocol::PG_ERR_ERROR:
+    {
+      this->errm.push(errtype, "ERROR");
+      this->errm.push('M', msg);
+
+      break;
+    }
+
+  case pgprotocol::PG_ERR_WARNING:
+    {
+      this->errm.push(errtype, "WARNING");
+      this->errm.push('M', msg);
+
+      break;
+    }
+
+  case pgprotocol::PG_ERR_NOTICE:
+    {
+      this->errm.push(errtype, "NOTICE");
+      this->errm.push('M', msg);
+
+      break;
+    }
+  default:
+    break;
+
+  }
+
+}
+
+void PGProtoStreamingServer::_send_error() {
 
 }
 
