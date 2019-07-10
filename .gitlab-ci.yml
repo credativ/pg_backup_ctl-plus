@@ -1,13 +1,15 @@
-image: "fedora:29"
+image: "fedora:30"
 
 before_script:
         - dnf -y install which gcc-c++ make cmake
+              ninja-build
               boost-devel
               boost-filesystem
               boost-system
               boost-regex
               boost-date-time
               boost-iostreams
+              boost-log
               popt-devel
               zlib-devel
               readline-devel
@@ -22,5 +24,5 @@ pg_backup_ctl-plus:
         script:
                 - mkdir build
                 - cd build
-                - CXXFLAGS="-D __DEBUG__" cmake ..
-                - make
+                - CXXFLAGS="-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__" cmake -GNinja ..
+                - ninja
