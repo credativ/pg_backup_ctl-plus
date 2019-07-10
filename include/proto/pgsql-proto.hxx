@@ -24,7 +24,8 @@ namespace credativ {
                 PGPROTO_READ_STARTUP_GUC,
                 PGPROTO_READY_FOR_QUERY,
                 PGPROTO_READY_FOR_QUERY_WAIT,
-                PGPROTO_SEND_BACKEND_KEY
+                PGPROTO_SEND_BACKEND_KEY,
+                PGPROTO_ERROR_CONDITION /* usually set back to PGPROTO_READY_FOR_QUERY_WAIT */
 
   } PostgreSQLProtocolState;
 

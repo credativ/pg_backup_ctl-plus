@@ -67,9 +67,10 @@ namespace credativ {
     std::shared_ptr<RecoveryStreamDescr> streamDescr = nullptr;
 
     void start_signal_wait() {
-      this->sset->async_wait(boost::bind(&PGBackupCtlStreamingServer::handle_signal_wait,
-                                         this));
-      this->sset_exit->async_wait(boost::bind(&boost::asio::io_service::stop, this->ios));
+
+      sset->async_wait(boost::bind(&PGBackupCtlStreamingServer::handle_signal_wait,
+                                   this));
+      sset_exit->async_wait(boost::bind(&boost::asio::io_service::stop, this->ios));
 
     }
 
@@ -112,7 +113,7 @@ namespace credativ {
            * up any internal resources, such as threads, that may interfere with
            * forking.
            */
-          this->ios->notify_fork(boost::asio::io_service::fork_prepare);
+          ios->notify_fork(boost::asio::io_service::fork_prepare);
 
           if (fork() == 0)
             {
@@ -121,6 +122,7 @@ namespace credativ {
                * this to prevent cleanup if important worker resources on exit.
                */
               _pgbckctl_job_type = BACKGROUND_WORKER_CHILD;
+              ios->notify_fork(boost::asio::io_service::fork_child);
 
               /*
                * Inform the io_service that the fork is finished and that this is the
@@ -133,10 +135,10 @@ namespace credativ {
                * The child won't be accepting new connections, so we can close the
                * acceptor. It remains open in the parent.
                */
-              this->acpt->close();
+              acpt->close();
 
               /* The child process is not interested in processing the SIGCHLD signal. */
-              this->sset->cancel();
+              sset->cancel();
 
               start_read();
             }
@@ -148,9 +150,9 @@ namespace credativ {
                * recreate any internal resources that were cleaned up during
                * preparation for the fork.
                */
-              this->ios->notify_fork(boost::asio::io_service::fork_parent);
+              ios->notify_fork(boost::asio::io_service::fork_parent);
 
-              this->soc->close();
+              soc->close();
               start_accept();
             }
         }
@@ -305,6 +307,8 @@ namespace credativ {
                            std::string msg,
                            bool translatable = true);
 
+    virtual void set_sqlstate(std::string state);
+
   public:
 
     PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDescr);
@@ -327,6 +331,7 @@ StreamingServer::StreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDesc
 
 void StreamingServer::run() {
 
+  std::cerr << "DEBUG: run StreamingServer" << std::endl;
   this->instance->run();
 
 }
@@ -391,6 +396,8 @@ PGBackupCtlStreamingServer::~PGBackupCtlStreamingServer() {
 
 void PGBackupCtlStreamingServer::run() {
 
+  std::cerr << "DEBUG: run PGBackupCtlStreamingServer" << std::endl;
+
   start_signal_wait();
   start_accept();
 
@@ -411,6 +418,8 @@ PGProtoStreamingServer::~PGProtoStreamingServer() {}
 #define INITIAL_STARTUP_BUFFER_SIZE 8
 
 void PGProtoStreamingServer::run() {
+
+  std::cerr << "DEBUG: run PGProtoStreamingServer" << std::endl;
 
   /* Internal startup buffer */
   this->buf.allocate(INITIAL_STARTUP_BUFFER_SIZE);
@@ -588,14 +597,12 @@ void PGProtoStreamingServer::handle_read(const boost::system::error_code& ec, st
       break;
     }
 
-  case PGPROTO_READY_FOR_QUERY:
+  case PGPROTO_READY_FOR_QUERY_WAIT:
     {
-      std::cerr << "PG PROTO ready for query, waiting..." << std::endl;
-
-      this->_send_ReadyForQuery();
-
+      std::cerr << "PG PROTO handle read for query WAIT" << std::endl;
       break;
     }
+
   default:
     throw TCPServerFailure("unexpected internal protocol state");
   }
@@ -651,8 +658,6 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
 
   case PGPROTO_READY_FOR_QUERY:
     {
-      /* Write handler just completed a ReadyForQuery message */
-      std::cerr << "PG PROTO ready for query completed" << std::endl;
 
       /* We're ready now, send a ReadyForQuery message */
       this->_send_ReadyForQuery();
@@ -663,9 +668,25 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
 
   case PGPROTO_READY_FOR_QUERY_WAIT:
     {
-      std::cerr << "PG PROTO wait for query" << std::endl;
-      start_read();
+      /* Write handler just completed a ReadyForQuery message */
+      std::cerr << "PG PROTO ready for query completed" << std::endl;
 
+      error_msg(pgprotocol::PG_ERR_ERROR, "not yet implemented, exiting");
+      set_sqlstate("08004");
+      _send_error();
+
+      this->start_write(buf.getSize());
+
+      ::sleep(60);
+      exit(0);
+
+      break;
+    }
+
+  case PGPROTO_ERROR_CONDITION:
+    {
+      /* Back to read for query */
+      state = PGPROTO_READY_FOR_QUERY_WAIT;
       break;
     }
   default:
@@ -851,6 +872,7 @@ void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
 
       break;
     }
+
   default:
     break;
 
@@ -858,7 +880,23 @@ void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
 
 }
 
+void PGProtoStreamingServer::set_sqlstate(std::string state) {
+
+  errm.push('C', state);
+
+}
+
 void PGProtoStreamingServer::_send_error() {
+
+  /*
+   * Slurp in error stack.
+   */
+  size_t errm_size = 0;
+  errm.toBuffer(buf,
+                errm_size);
+
+  std::cerr << "toBuffer() buffer size " << buf.getSize() << std::endl;
+  this->state = PGPROTO_ERROR_CONDITION;
 
 }
 

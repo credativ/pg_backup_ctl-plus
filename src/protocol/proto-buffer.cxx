@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <ostream>
+#include <iostream>
 #include <pgsql-proto.hxx>
 
 using namespace credativ;
@@ -11,7 +12,6 @@ using namespace credativ::pgprotocol;
 /* *****************************************************************************
  * ProtocolErrorStack Implementation
  * ****************************************************************************/
-
 
 void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
                                   size_t &msg_size) {
@@ -30,6 +30,7 @@ void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
   hdr.length = MESSAGE_HDR_LENGTH_SIZE + buf_msg_size;
 
   dest.allocate(MESSAGE_HDR_SIZE + buf_msg_size);
+
   dest.write_byte(hdr.type);
   dest.write_int(hdr.length);
 
@@ -37,14 +38,18 @@ void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
    * Pop error response fields from the stack,
    * write contents to the protocol buffer.
    */
-  while (!this->empty()) {
+  while (! empty()) {
 
     PGErrorResponseField ef = this->top();
+
+    /* Message field type */
     dest.write_byte(ef.type);
 
     /* Write message, including null byte! */
     dest.write_buffer(ef.value.c_str(), ef.value.length() + 1);
 
+    /* Remove element from the stack and proceed */
+    pop();
   }
 
 }
@@ -119,7 +124,7 @@ void ProtocolErrorStack::pop() {
 
   }
 
-  return this->es.pop();
+  this->es.pop();
 
 }
 
