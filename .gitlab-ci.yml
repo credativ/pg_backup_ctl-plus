@@ -14,6 +14,7 @@ before_script:
               zlib-devel
               readline-devel
               postgresql-devel
+              postgresql-server-devel
               sqlite-devel
               gettext
               gettext-libs
