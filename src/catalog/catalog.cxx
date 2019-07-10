@@ -6780,8 +6780,8 @@ int BackupCatalog::getCatalogMagic() {
 }
 
 void BackupCatalog::open_rw() {
+
   int rc;
-  char *errmsg;
 
   rc = sqlite3_open(this->sqliteDB.c_str(), &(this->db_handle));
   if(rc) {
@@ -6794,13 +6794,47 @@ void BackupCatalog::open_rw() {
     throw CCatalogIssue(oss.str());
   }
 
+  setPragma();
+
+  this->isOpen = (this->db_handle != NULL);
+}
+
+void BackupCatalog::open_ro() {
+
+  int rc;
+
+  rc = sqlite3_open_v2(this->sqliteDB.c_str(),
+                       &(this->db_handle),
+                       SQLITE_OPEN_READONLY,
+                       "");
+  if(rc) {
+    ostringstream oss;
+    /*
+     * Something went wrong...
+     */
+    oss << "cannot open catalog read only: " << sqlite3_errmsg(this->db_handle);
+    sqlite3_close(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  setPragma();
+
+  this->isOpen = (this->db_handle != NULL);
+
+}
+
+void BackupCatalog::setPragma() {
+
+  int rc;
+  char *errmsg;
+
   rc = sqlite3_exec(this->db_handle,
                     "PRAGMA foreign_keys=ON;",
                     NULL,
                     NULL,
                     &errmsg);
 
-  if (errmsg != NULL) {
+  if ((rc == SQLITE_ABORT) || (errmsg != NULL)) {
     ostringstream oss;
     oss << "error setting SQLite Pragma: " << errmsg;
     sqlite3_free(errmsg);
@@ -6813,7 +6847,7 @@ void BackupCatalog::open_rw() {
                     NULL,
                     &errmsg);
 
-  if (errmsg != NULL) {
+  if ((rc == SQLITE_ABORT) || (errmsg != NULL)) {
     ostringstream oss;
     oss << "error setting SQLite Pragma: " << errmsg;
     sqlite3_free(errmsg);
@@ -6835,14 +6869,13 @@ void BackupCatalog::open_rw() {
                     NULL,
                     &errmsg);
 
-  if (errmsg != NULL) {
+  if ((rc == SQLITE_ABORT) || (errmsg != NULL)) {
     ostringstream oss;
     oss << "error setting SQLite Pragma: " << errmsg;
     sqlite3_free(errmsg);
     throw CCatalogIssue(oss.str());
   }
 
-  this->isOpen = (this->db_handle != NULL);
 }
 
 void BackupCatalog::setCatalogDB(string sqliteDB) {

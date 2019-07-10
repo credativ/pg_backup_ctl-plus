@@ -57,6 +57,12 @@ namespace credativ {
      */
     virtual std::string SQLmakePlaceholderList(std::vector<int> affectedAttributes);
 
+    /**
+     * Sets a fixed list of PRAGMAs within the to-be-opened
+     * SQLite database.
+     */
+    virtual void setPragma();
+
   protected:
     std::string sqliteDB;
     std::string archiveDir;
@@ -380,27 +386,32 @@ namespace credativ {
     std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> getArchiveList(std::shared_ptr<CatalogDescr> descr,
                                                                              std::vector<int> affectedAffected);
 
-    /*
+    /**
      * Open the sqlite database for read/write.
      */
     virtual void open_rw();
+
+    /**
+     * Open the sqlite database for read only access.
+     */
+    virtual void open_ro();
 
     /*
      * Close the sqlite catalog database.
      */
     virtual void close();
 
-    /*
+    /**
      * Register the specified process handle in the catalog database.
      */
     virtual void registerProc(std::shared_ptr<CatalogProc> procInfo);
 
-    /*
+    /**
      * Unregister a process handle from the catalog database.
      */
     virtual void unregisterProc(int pid, int archive_id);
 
-    /*
+    /**
      * Update a catalog process handle in the database.
      */
     virtual void updateProc(std::shared_ptr<CatalogProc> procInfo,
