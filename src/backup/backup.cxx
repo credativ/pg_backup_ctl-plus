@@ -1,5 +1,6 @@
 #include <common.hxx>
 #include <backup.hxx>
+#include <boost/log/trivial.hpp>
 
 using namespace credativ;
 
@@ -213,9 +214,8 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
       this->finalize();
 
 #ifdef __DEBUG_XLOG__
-      std::cerr << "DEBUG: finalize XLOG segment at offset "
-                << PGStream::encodeXLOGPos(position)
-                << std::endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: finalize XLOG segment at offset "
+                               << PGStream::encodeXLOGPos(position);
 #endif
 
       /*

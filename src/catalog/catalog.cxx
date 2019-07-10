@@ -2,6 +2,7 @@
 /* required for string case insensitive comparison */
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/log/trivial.hpp>
 
 #include <catalog.hxx>
 #include <BackupCatalog.hxx>
@@ -423,7 +424,7 @@ void RetentionIntervalDescr::push_add(std::string operand) {
   RetentionIntervalOperand opr;
 
 #ifdef __DEBUG__
-  cerr << "push interval operand " << operand << endl;
+  BOOST_LOG_TRIVIAL(debug) << "push interval operand " << operand;
 #endif
 
   opr.modifier = RETENTION_MODIFIER_NEWER_DATETIME;
@@ -437,7 +438,7 @@ void RetentionIntervalDescr::push_sub(std::string operand) {
   RetentionIntervalOperand opr;
 
 #ifdef __DEBUG__
-  cerr << "push interval operand " << operand << endl;
+  BOOST_LOG_TRIVIAL(debug) << "push interval operand " << operand;
 #endif
 
   opr.modifier = RETENTION_MODIFIER_OLDER_DATETIME;
@@ -516,7 +517,7 @@ std::string RetentionIntervalDescr::compile() {
     result += operand.token;
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: opr list " << result << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: opr list " << result;
 #endif
 
   }
@@ -781,7 +782,10 @@ void CatalogDescr::makeRuleFromParserState(string const &value) {
 
 void CatalogDescr::setRetentionActionModifier(RetentionParsedModifier const &modifier) {
 
-  cout << "modifier set" << endl;
+#ifdef __DEBUG__
+  BOOST_LOG_TRIVIAL(debug)<< "modifier set";
+#endif
+
   this->rps.modifier = modifier;
 
 }
@@ -945,8 +949,8 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
   }
 
 #ifdef __DEBUG__
-  cerr << "DEBUG: retention interval expression already parsed: "
-       << rule->value << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: retention interval expression already parsed: "
+                           << rule->value;
 #endif
 
   /*
@@ -979,7 +983,7 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
   rule->value = interval.compile();
 
 #ifdef __DEBUG__
-  cerr << "DEBUG: compiled interval expr: " << rule->value << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: compiled interval expr: " << rule->value;
 #endif
 
 }
@@ -1197,7 +1201,7 @@ void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
 
 void CatalogDescr::setBasebackupID(std::string const &bbid) {
 
-  cerr << "DEBUG: setting basebackup id " << bbid << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: setting basebackup id " << bbid;
   this->basebackup_id = CPGBackupCtlBase::strToInt(bbid);
 
 }
@@ -2288,7 +2292,7 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
          << ") VALUES(?1, datetime('now'))";
 
 #ifdef __DEBUG__
-  cerr << "executing SQL: " << insert.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "executing SQL: " << insert.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -2356,7 +2360,7 @@ void BackupCatalog::createRetentionPolicy(std::shared_ptr<RetentionDescr> retent
   insert << ");";
 
 #ifdef __DEBUG__
-  cerr << "executing SQL: " << insert.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "executing SQL: " << insert.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -2445,9 +2449,8 @@ void BackupCatalog::performPinAction(BasicPinDescr *descr,
   update << ");";
 
 #ifdef __DEBUG__
-  cerr << "generate UPDATE SQL: "
-       << update.str()
-       << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate UPDATE SQL: "
+                           << update.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -2469,7 +2472,8 @@ void BackupCatalog::performPinAction(BasicPinDescr *descr,
   for (num_bind_id = 1; num_bind_id <= basebackupIds.size(); num_bind_id++) {
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: binding basebackup ID " << basebackupIds[num_bind_id - 1] << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: binding basebackup ID "
+                             << basebackupIds[num_bind_id - 1];
 #endif
 
     sqlite3_bind_int(stmt, num_bind_id, basebackupIds[num_bind_id - 1]);
@@ -2607,7 +2611,7 @@ void BackupCatalog::exceedsRetention(std::shared_ptr<BaseBackupDescr> basebackup
       << ";";
 
 #ifdef __DEBUG__
-    cerr << "generate SQL: " << sql.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate SQL: " << sql.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -2663,7 +2667,7 @@ void BackupCatalog::exceedsRetention(std::shared_ptr<BaseBackupDescr> basebackup
   exceeds_retention_rule = sqlite3_column_int(stmt, 0);
 
 #ifdef __DEBUG__
-  cerr << "exceeds_retention_rule value retrieved: " << exceeds_retention_rule << endl;
+  BOOST_LOG_TRIVIAL(debug) << "exceeds_retention_rule value retrieved: " << exceeds_retention_rule;
 #endif
 
   if (exceeds_retention_rule <= 0)
@@ -2744,7 +2748,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
         << "WHERE b.id = ?1 AND b.archive_id = ?2;";
 
 #ifdef __DEBUG__
-  cerr << "generate SQL: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate SQL: " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -2917,7 +2921,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
   }
 
 #ifdef __DEBUG__
-  cerr << "DEBUG: execute SQL " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: execute SQL " << query.str();
 #endif
 
   /* Prepare the query */
@@ -3110,7 +3114,7 @@ BackupCatalog::getBackupListRetentionDateTime(std::string archive_name,
         << ") ORDER BY b.started DESC;";
 
 #ifdef __DEBUG__
-  cerr << "generate SQL: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate SQL: " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -3304,7 +3308,7 @@ BackupCatalog::getBackupList(std::string archive_name) {
         << "WHERE archive_id = (SELECT id FROM archive WHERE name = ?1) ORDER BY b.started DESC;";
 
 #ifdef __DEBUG__
-  cerr << "generate SQL: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate SQL: " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -3445,7 +3449,7 @@ void BackupCatalog::updateArchiveAttributes(shared_ptr<CatalogDescr> descr,
   updateSQL << " WHERE id = ?" << boundCols << ";";
 
 #ifdef __DEBUG__
-  cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate UPDATE SQL " << updateSQL.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -3584,7 +3588,7 @@ BackupCatalog::getBackupProfiles() {
         << "FROM backup_profiles ORDER BY name;";
 
 #ifdef __DEBUG__
-  cerr << "QUERY: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "QUERY: " << query.str();
 #endif
 
   std::vector<int> attr;
@@ -3674,7 +3678,7 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(int profile_
         << "FROM backup_profiles WHERE id = ?1;";
 
 #ifdef __DEBUG__
-  cout << "QUERY : " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "QUERY : " << query.str();
 #endif
 
   /*
@@ -3758,7 +3762,7 @@ std::shared_ptr<BackupProfileDescr> BackupCatalog::getBackupProfile(std::string 
         << "FROM backup_profiles WHERE name = ?1;";
 
 #ifdef __DEBUG__
-  cout << "QUERY : " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "QUERY : " << query.str();
 #endif
 
   /*
@@ -3835,7 +3839,7 @@ void BackupCatalog::createBackupProfile(std::shared_ptr<BackupProfileDescr> prof
          << "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);";
 
 #ifdef __DEBUG__
-  cerr << "createBackupProfile query: " << insert.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "createBackupProfile query: " << insert.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -4682,7 +4686,7 @@ std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> BackupCatalog::getArch
         << " ORDER BY name;";
 
 #ifdef __DEBUG__
-  cerr << "QUERY: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "QUERY: " << query.str();
 #endif
 
   /*
@@ -5109,7 +5113,7 @@ void BackupCatalog::updateStream(int streamid,
   updateSQL << " WHERE id = ?" << (++boundCols) << ";";
 
 #ifdef __DEBUG__
-  cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate UPDATE SQL " << updateSQL.str();
 #endif
 
   /*
@@ -5174,7 +5178,7 @@ std::shared_ptr<CatalogProc> BackupCatalog::getProc(int archive_id, std::string 
    * Prepare the query...
    */
 #ifdef __DEBUG__
-  cerr << "SELECT SQL: " << query << endl;
+  BOOST_LOG_TRIVIAL(debug) << "SELECT SQL: " << query;
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -5276,7 +5280,7 @@ void BackupCatalog::registerProc(std::shared_ptr<CatalogProc> procInfo) {
                           NULL);
 
 #ifdef __DEBUG__
-  cerr << "INSERT SQL: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "INSERT SQL: " << query.str();
 #endif
 
   if (rc != SQLITE_OK) {
@@ -5339,8 +5343,11 @@ void BackupCatalog::unregisterProc(int pid,
                           &stmt,
                           NULL);
 #ifdef __DEBUG__
-  cerr << "DELETE SQL: " << query.str() << endl;
-  cerr << "   bound attrs pid=" << pid << ", archive_id=" << archive_id << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DELETE SQL: " << query.str();
+  BOOST_LOG_TRIVIAL(debug) << "   bound attrs pid="
+                           << pid
+                           << ", archive_id="
+                           << archive_id;
 #endif
 
   if (rc != SQLITE_OK) {
@@ -5428,7 +5435,7 @@ void BackupCatalog::updateProc(std::shared_ptr<CatalogProc> procInfo,
   updateSQL << "AND archive_id = ?" << boundCols << ";";
 
 #ifdef __DEBUG__
-  cerr << "generate UPDATE SQL " << updateSQL.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generate UPDATE SQL " << updateSQL.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -5719,7 +5726,7 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
   }
 
 #ifdef __DEBUG__
-  cout << "executing SQL: " << get_retention_sql.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "executing SQL: " << get_retention_sql.str();
 #endif
 
   /*
@@ -5889,7 +5896,7 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
         << " FROM retention a JOIN retention_rules b ON a.id = b.id WHERE a.name = ?1 ORDER BY a.name ASC, b.type ASC;";
 
 #ifdef __DEBUG__
-  cout << "generated SQL " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generated SQL " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -5959,7 +5966,7 @@ shared_ptr<RetentionDescr> BackupCatalog::getRetentionPolicy(string name) {
     retentionPolicy->rules.push_back(retention_rule);
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: retention rule id " << retention_rule->type << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: retention rule id " << retention_rule->type;
 #endif
 
     /* next one */
@@ -6147,9 +6154,8 @@ void BackupCatalog::registerTablespaceForBackup(std::shared_ptr<BackupTablespace
         << ") VALUES(?1, ?2, ?3, ?4);";
 
 #ifdef __DEBUG__
-  cerr << "DEBUG: registerTablespaceForBackup() query: "
-       << query.str()
-       << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: registerTablespaceForBackup() query: "
+                           << query.str();
 #endif
 
   /*
@@ -6238,7 +6244,7 @@ BackupCatalog::getCatalogConnection(int archive_id) {
         << " FROM connections WHERE archive_id = ?1 ORDER BY type ASC;";
 
 #ifdef __DEBUG__
-  cout << "generated SQL " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generated SQL " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -6323,7 +6329,7 @@ void BackupCatalog::getCatalogConnection(std::shared_ptr<ConnectionDescr> conDes
         << " FROM connections WHERE archive_id = ?1 AND type = ?2;";
 
 #ifdef __DEBUG__
-  cout << "generated SQL: " << query.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generated SQL: " << query.str();
 #endif
 
   rc = sqlite3_prepare_v2(this->db_handle,
@@ -6401,7 +6407,7 @@ BackupCatalog::createCatalogConnection(std::shared_ptr<ConnectionDescr> conDescr
                           -1, &stmt, NULL);
 
 #ifdef __DEBUG__
-  cerr << "Generated SQL: " << insert.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "Generated SQL: " << insert.str();
 #endif
 
   if (rc != SQLITE_OK) {
@@ -6756,13 +6762,12 @@ void BackupCatalog::checkCatalog() {
   version = this->getCatalogVersion();
 
 #ifdef __DEBUG__
-  std::cerr << "catalog version "
-            << version
-            << ", catalog magic "
-            << this->getCatalogMagic()
-            << " linked against PostgreSQL "
-            << PGStream::compiledPGVersionNum()
-            << std::endl;
+  BOOST_LOG_TRIVIAL(debug) << "catalog version "
+                           << version
+                           << ", catalog magic "
+                           << this->getCatalogMagic()
+                           << " linked against PostgreSQL "
+                           << PGStream::compiledPGVersionNum();
 #endif
 
   if (version < this->getCatalogMagic())

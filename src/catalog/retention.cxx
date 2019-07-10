@@ -1,6 +1,7 @@
 #include <retention.hxx>
 #include <boost/pointer_cast.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <boost/log/trivial.hpp>
 
 using namespace credativ;
 
@@ -314,11 +315,10 @@ bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDesc
     }
 
 #ifdef __DEBUG__XLOG__
-    cerr << "DEBUG: insert new tli/offset "
-         << timeline
-         << "/"
-         << cleanup_offset->wal_cleanup_start_pos
-         << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: insert new tli/offset "
+                             << timeline
+                             << "/"
+                             << cleanup_offset->wal_cleanup_start_pos;
 #endif
 
     result = true;
@@ -371,7 +371,7 @@ void Retention::move(vector<shared_ptr<BaseBackupDescr>> &target,
   }
 
 #ifdef __DEBUG__
-  cerr << "DEBUG: moving index(" << index << ") to target list" << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: moving index(" << index << ") to target list";
 #endif
 
   target.push_back(bbdescr);
@@ -937,7 +937,7 @@ unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr
      */
     if (bbdescr->pinned) {
 
-      cout << "NOTICE: ignoring PINNED basebackup " << bbdescr->fsentry << endl;
+      BOOST_LOG_TRIVIAL(info) << "ignoring PINNED basebackup " << bbdescr->fsentry;
 
     }
 
@@ -951,7 +951,7 @@ unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr
        */
       if (bbdescr->pinned) {
 
-        cout << "WARNING: ABORTED basebackup " << bbdescr->fsentry << " is pinned but WAL will be removed" << endl;
+        BOOST_LOG_TRIVIAL(warning) << "ABORTED basebackup " << bbdescr->fsentry << " is pinned but WAL will be removed";
 
         /*
          * Since an ABORTED basebackup doesn't have a trustable xlogposend location,
@@ -1089,7 +1089,10 @@ DateTimeRetention::~DateTimeRetention() {}
 
 void DateTimeRetention::setIntervalExpr(std::string value) {
 
-  cerr << "interval expr " << value << endl;
+#ifdef __DEBUG__
+  BOOST_LOG_TRIVIAL(debug) << "interval expr " << value;
+#endif
+
   interval.push(value);
 
 }
@@ -1148,7 +1151,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
       /* Check wether this basebackup is "in-progress" */
       if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) {
 
-        cerr << "basebackup can be deleted, but is in-progress, ignoring" << endl;
+        BOOST_LOG_TRIVIAL(warning) << "basebackup can be deleted, but is in-progress, ignoring";
 
         cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
                                                                 bbdescr->wal_segment_size);
@@ -1161,9 +1164,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
 
         if (bbdescr->pinned) {
 
-#ifdef __DEBUG__
-          cerr << "DEBUG: basebackup is pinned, ignoring" << endl;
-#endif
+          BOOST_LOG_TRIVIAL(info) << "basebackup is pinned, ignoring";
 
           cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
                                                                   bbdescr->wal_segment_size);
@@ -1189,7 +1190,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
           currindex++;
 
 #ifdef __DEBUG__
-          cerr << "DEBUG: basebackup can be deleted, retention rule applies" << endl;
+          BOOST_LOG_TRIVIAL(info) << "DEBUG: basebackup can be deleted, retention rule applies";
 #endif
 
         }
@@ -1198,7 +1199,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
     } else {
 
 #ifdef __DEBUG__
-      cerr << "DEBUG: keep basebackup ID " << bbdescr->id << endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: keep basebackup ID " << bbdescr->id;
 #endif
 
       /*
@@ -1478,10 +1479,9 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
           if ( (bbdescr->pinned)
                || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
 
-            cout << "INFO: keeping basebackup \""
-                 << bbdescr->fsentry
-                 << "\""
-                 << endl;
+            BOOST_LOG_TRIVIAL(info) << "keeping basebackup \""
+                                    << bbdescr->fsentry
+                                    << "\"";
 
             /*
              * A drop rule with a match, but this basebackup is either
@@ -1497,10 +1497,10 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
           } else {
 
-            cout << "INFO: selected basebackup \""
-                 << bbdescr->fsentry
-                 << "\" for deletion"
-                 << endl;
+            BOOST_LOG_TRIVIAL(info) << "selected basebackup \""
+                                    << bbdescr->fsentry
+                                    << "\" for deletion"
+                                    << endl;
 
             this->move(this->cleanupDescr->basebackups,
                        deleteList,
@@ -1562,10 +1562,9 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
           if ( (bbdescr->pinned)
                || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
 
-            cout << "INFO: keeping pinned basebackup \""
-                 << bbdescr->fsentry
-                 << "\""
-                 << endl;
+            BOOST_LOG_TRIVIAL(info) << "keeping pinned basebackup \""
+                                    << bbdescr->fsentry
+                                    << "\"";
 
             /*
              * This is a KEEP rule with no match, but either pinned or
@@ -1579,10 +1578,9 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
           } else {
 
-            cout << "INFO: selected basebackup \""
-                 << bbdescr->fsentry
-                 << "\" for deletion"
-                 << endl;
+            BOOST_LOG_TRIVIAL(info) << "selected basebackup \""
+                                    << bbdescr->fsentry
+                                    << "\" for deletion";
 
             this->move(this->cleanupDescr->basebackups,
                        deleteList,
@@ -1604,9 +1602,8 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
 #ifdef __DEBUG_XLOG__
     if (modified_xlog_cleanup_offset) {
-      cerr << "modified XLOG cleanup offset: recptr = "
-           << PGStream::encodeXLOGPos(bbxlogrecptr_start)
-           << endl;
+      BOOST_LOG_TRIVIAL(debug) << "modified XLOG cleanup offset: recptr = "
+                               << PGStream::encodeXLOGPos(bbxlogrecptr_start);
     }
 #endif
 

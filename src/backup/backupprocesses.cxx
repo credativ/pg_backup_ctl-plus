@@ -3,6 +3,7 @@
 #include <backupprocesses.hxx>
 #include <xlogdefs.hxx>
 #include <memorybuffer.hxx>
+#include <boost/log/trivial.hpp>
 
 /* Required for select() */
 extern "C" {
@@ -137,20 +138,15 @@ ArchiverState WALStreamerProcess::sendStatusUpdate() {
   ReceiverStatusUpdateMessage rsum(this->pgconn);
 
   #ifdef __DEBUG_XLOG__
-  std::cerr << " ... sending status update to primary "
-            << std::endl;
-  std::cerr << "     -> write position: "
-            << PGStream::encodeXLOGPos(this->streamident.write_position)
-            << std::endl;
-  std::cerr << "     -> flush position: "
-            << PGStream::encodeXLOGPos(this->streamident.flush_position)
-            << std::endl;
-  std::cerr << "     -> last reported flush position: "
-            << PGStream::encodeXLOGPos(this->streamident.last_reported_flush_position)
-            << std::endl;
-  std::cerr << "     -> apply position: "
-            << PGStream::encodeXLOGPos(this->streamident.apply_position)
-            << std::endl;
+  BOOST_LOG_TRIVIAL(debug) << " ... sending status update to primary ";
+  BOOST_LOG_TRIVIAL(debug) << "     -> write position: "
+                           << PGStream::encodeXLOGPos(this->streamident.write_position);
+  BOOST_LOG_TRIVIAL(debug) << "     -> flush position: "
+                           << PGStream::encodeXLOGPos(this->streamident.flush_position);
+  BOOST_LOG_TRIVIAL(debug) << "     -> last reported flush position: "
+                           << PGStream::encodeXLOGPos(this->streamident.last_reported_flush_position);
+  BOOST_LOG_TRIVIAL(debug) << "     -> apply position: "
+                           << PGStream::encodeXLOGPos(this->streamident.apply_position);
 #endif
 
   if (this->streamident.flush_position == InvalidXLogRecPtr) {
@@ -302,16 +298,15 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
         = PGStream::encodeXLOGPos(datamsg->getXLOGStartPos());
 
 #ifdef __DEBUG_XLOG__
-      std::cerr << "NEW XLOG POS " << this->streamident.xlogpos << std::endl;
+      BOOST_LOG_TRIVIAL(debug) << "NEW XLOG POS " << this->streamident.xlogpos;
 #endif
 
       /* get server position, reported by the connected WAL sender */
       serverpos = datamsg->getXLOGServerPos();
 
 #ifdef __DEBUG_XLOG__
-      std::cerr << "SERVER XLOG POS "
-                << PGStream::encodeXLOGPos(serverpos)
-                << std::endl;
+      BOOST_LOG_TRIVIAL(debug) << "SERVER XLOG POS "
+                               << PGStream::encodeXLOGPos(serverpos);
 #endif
       this->streamident.server_position = serverpos;
 
@@ -358,9 +353,8 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
         }
 
 #ifdef __DEBUG_XLOG__
-        std::cerr << "DEBUG: flush position after write(): "
-                  << PGStream::encodeXLOGPos(this->streamident.flush_position)
-                  << std::endl;
+        BOOST_LOG_TRIVIAL(debug) << "DEBUG: flush position after write(): "
+                                 << PGStream::encodeXLOGPos(this->streamident.flush_position);
 #endif
 
       } else { /* if ... backupHandler != nullptr */
@@ -379,7 +373,7 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
       PrimaryFeedbackMessage *pm = dynamic_cast<PrimaryFeedbackMessage *>(message);
 
 #ifdef __DEBUG_XLOG__
-      std::cerr << "primary feedback message" << std::endl;
+      BOOST_LOG_TRIVIAL(debug) << "primary feedback message";
 #endif
 
       /*
@@ -388,7 +382,7 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
       if (pm->responseRequested()) {
 
 #ifdef __DEBUG_XLOG__
-        std::cerr << "receiver status update forced" << std::endl;
+        BOOST_LOG_TRIVIAL(debug) << "receiver status update forced";
 #endif
 
         /* ...send it */
@@ -408,7 +402,7 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
     {
       /* unhandled message type */
 #ifdef __DEBUG_XLOG__
-      std::cerr << "unhandled message type " << msgType << std::endl;
+      BOOST_LOG_TRIVIAL(debug) << "unhandled message type " << msgType;
 #endif
       break;
     }
@@ -477,7 +471,7 @@ bool WALStreamerProcess::receive() {
     throw StreamingFailure("new log segment requested, use finalize() instead");
   }
 
-  cerr << "entering WAL streaming receive() " << endl;
+  BOOST_LOG_TRIVIAL(info) << "entering WAL streaming receive() ";
 
   /*
    * Initialize status update start interval.
@@ -518,7 +512,7 @@ bool WALStreamerProcess::receive() {
         >= std::chrono::milliseconds(this->receiver_status_timeout)) {
 
 #ifdef __DEBUG_XLOG__
-      cerr << "standby status update overdue" << endl;
+      BOOST_LOG_TRIVIAL(debug) << "standby status update overdue";
 #endif
 
       this->sendStatusUpdate();
@@ -564,7 +558,9 @@ bool WALStreamerProcess::receive() {
                                          this->receiveBuffer,
                                          this->streamident.wal_segment_size);
 
-    std::cerr << "write XLOG message " << std::endl;
+#ifdef __DEBUG_XLOG__
+    BOOST_LOG_TRIVIAL(debug) << "write XLOG message ";
+#endif
 
     try {
       if (message != nullptr) {
@@ -591,16 +587,18 @@ bool WALStreamerProcess::receive() {
    * further actions depending on current state.
    */
   if (this->current_state == ARCHIVER_STREAMING_NO_DATA) {
-    cerr << "no data, continue ... " << endl;
+
+    BOOST_LOG_TRIVIAL(warning) << "no data, continue ... ";
     can_continue = true;
+
   }
+
   if (this->current_state == ARCHIVER_STREAMING_ERROR) {
-    cerr << "failure on PQgetCopyData(): " << PQerrorMessage(this->pgconn) << endl;
-    // std::ostringstream oss;
-    // oss << "could not shutdown streaming connection properly: "
-    //     << PQerrorMessage(this->pgconn);
-    // throw StreamingFailure(oss.str());
+
+    BOOST_LOG_TRIVIAL(error) << "failure on PQgetCopyData(): "
+                             << PQerrorMessage(this->pgconn);
     can_continue = false;
+
   }
 
   /*
@@ -887,7 +885,7 @@ void WALStreamerProcess::start() {
         << ";";
 
 #ifdef __DEBUG__
-  std::cerr << "WALStreamer start() query: " << query.str() << std::endl;
+  BOOST_LOG_TRIVIAL(debug) << "WALStreamer start() query: " << query.str();
 #endif
 
   /*

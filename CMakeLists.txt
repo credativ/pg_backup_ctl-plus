@@ -34,6 +34,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_definitions(-std=c++11)
 add_definitions(-Wall)
 
+## This is for boost::log support. Since we don't
+## want to link statically, we have to tell...
+add_definitions(-DBOOST_ALL_DYN_LINK)
+
 ##
 ## Additional modules for CMake
 ##
@@ -67,13 +71,13 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 include_directories ("${PROJECT_SOURCE_DIR}/include/recovery")
 include_directories ("${PROJECT_SOURCE_DIR}/include/proto")
 add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
-add_library (pgbckctl-proto SHARED src/jobs/server.cxx)
+add_library (pgbckctl-proto SHARED src/protocol/proto-buffer.cxx src/jobs/server.cxx)
 add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/jobs/signalhandler.cxx src/jobs/daemon.cxx src/jobs/server.cxx
   src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
   src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
   src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx
-  src/recovery/restore.cxx src/main/memorybuffer.cxx src/protocol/proto-buffer.cxx)
+  src/recovery/restore.cxx src/main/memorybuffer.cxx)
 
 IF(APPLE)
    target_link_libraries (pg_backup_ctl++ pgbckctl-proto pgbckctl-common)
@@ -172,7 +176,7 @@ endif (sqlite3_FOUND)
 ##
 ## We need Boost::filesystem
 ##
-find_package(Boost REQUIRED COMPONENTS filesystem regex system date_time iostreams)
+find_package(Boost REQUIRED COMPONENTS log_setup log filesystem regex system date_time iostreams)
 if (Boost_FOUND)
    include_directories(${Boost_INCLUDE_DIRS})
    message("linking Boost ${Boost_LIBRARIES}")

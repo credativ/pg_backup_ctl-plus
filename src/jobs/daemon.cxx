@@ -14,10 +14,8 @@ extern "C" {
 #include <signal.h>
 }
 
-#ifdef __DEBUG__
-#include <iostream>
-#endif
-
+/* logging */
+#include <boost/log/trivial.hpp>
 #include <istream>
 
 #include <bgrndroletype.hxx>
@@ -116,7 +114,7 @@ bool BackgroundWorker::checkPID(pid_t pid) {
   bool result = true;
 
 #ifdef __DEBUG__
-  cerr << "checkPID(): checking PID " << pid << endl;
+  BOOST_LOG_TRIVIAL(debug) << "checkPID(): checking PID " << pid;
 #endif
 
   /*
@@ -129,7 +127,7 @@ bool BackgroundWorker::checkPID(pid_t pid) {
     if (rc == ESRCH) {
       /* PID does not exist */
 #ifdef __DEBUG__
-      cerr << "checkPID(): " << pid << " does not exist" << endl;
+      BOOST_LOG_TRIVIAL(debug) << "checkPID(): " << pid << " does not exist";
 #endif
       result = false;
     }
@@ -137,7 +135,7 @@ bool BackgroundWorker::checkPID(pid_t pid) {
     if (rc == EPERM) {
       /* No permissions for this PID ... */
 #ifdef __DEBUG__
-      cerr << "checkPID(): " << pid << " permission denied" << endl;
+      BOOST_LOG_TRIVIAL(debug) << "checkPID(): " << pid << " permission denied";
 #endif
       result = false;
     }
@@ -246,7 +244,10 @@ void BackgroundWorker::registerMe() {
 
   try {
 
-    std::cerr << "checking for worker for archive " << procInfo->archive_id << std::endl;
+#ifdef __DEBUG__
+    BOOST_LOG_TRIVIAL(debug) << "checking for worker for archive " << procInfo->archive_id;
+#endif
+
     tempProc = catalog->getProc(procInfo->archive_id,
                                 procInfo->type);
 
@@ -321,9 +322,9 @@ void BackgroundWorker::initialize() {
     throw WorkerFailure("background worker information not initialized");
 
 #ifdef __DEBUG__
-  cerr << "worker PID " << getpid()
-       << " command tag " << this->ji.cmdHandle->tag << endl;
-  cerr << "worker catalog " << this->ji.cmdHandle->getCatalog()->name() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "worker PID " << getpid()
+                           << " command tag " << this->ji.cmdHandle->tag;
+  BOOST_LOG_TRIVIAL(debug) << "worker catalog " << this->ji.cmdHandle->getCatalog()->name();
 #endif
 
   /*
@@ -360,9 +361,8 @@ void BackgroundWorker::initialize() {
   } catch(CPGBackupCtlFailure& e) {
 
 #ifdef __DEBUG__
-    cerr << "error registering launcher process, forcing shutdown: "
-         << e.what()
-         << endl;
+    BOOST_LOG_TRIVIAL(debug) << "error registering launcher process, forcing shutdown: "
+                             << e.what();
 #endif
 
     /*
@@ -517,7 +517,11 @@ void background_worker_shm_reaper::reap() {
     pid_t deadpid = this->dead_pids.top();
     this->dead_pids.pop();
 
-    cerr << "WARN: reaping dead PID " << deadpid << " from shared memory" << endl;
+#ifdef __DEBUG__
+    BOOST_LOG_TRIVIAL(debug) << "WARN: reaping dead PID "
+                             << deadpid
+                             << " from shared memory";
+#endif
 
     /*
      * Ugly, but we need to loop through the shared memory
@@ -607,7 +611,13 @@ bool WorkerSHM::attach(std::string catalog, bool attach_only) {
   this->size = this->calculateSHMsize();
 
   assert(this->size > 0 && this->max_workers > 0);
-  cerr << "size/max_workers " << this->size << "/" << this->max_workers << endl;
+
+#ifdef __DEBUG__
+  BOOST_LOG_TRIVIAL(debug) << "size/max_workers "
+                           << this->size
+                           << "/"
+                           << this->max_workers;
+#endif
 
   /*
    * Internal handle not yet connected. Either create one or,
@@ -1085,7 +1095,6 @@ static void _pgbckctl_sigchld_handler(int sig) {
            */
           launcher_reaper->dead_pids.push(pid);
 
-          cerr << "dead pid " << pid << " logged" << endl;
         }
 
       }
@@ -1096,12 +1105,8 @@ static void _pgbckctl_sigchld_handler(int sig) {
      * Check status of exited child.
      */
     if (WIFEXITED(wait_status)) {
+
       /* child terminated via exit() */
-
-#ifdef __DEBUG__
-      cerr << "child pid " << pid << " exited with status " << wait_status << endl;
-#endif
-
       break;
     }
 
@@ -1161,7 +1166,7 @@ static pid_t daemonize(job_info &info) {
 
   if (info.detach) {
 
-    cout << "parent launcher detaching" << endl;
+    BOOST_LOG_TRIVIAL(info) << "parent launcher detaching";
 
     pid = fork();
     forkerrno = errno;
@@ -1173,7 +1178,7 @@ static pid_t daemonize(job_info &info) {
     }
 
     if (pid > 0) {
-      cout << "parent launcher forked with pid " << pid << ", detaching" << endl;
+      BOOST_LOG_TRIVIAL(info) << "parent launcher forked with pid " << pid << ", detaching";
       waitpid(pid, NULL, WNOHANG);
 
       /*
@@ -1250,14 +1255,12 @@ static pid_t daemonize(job_info &info) {
     do {
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
-        std::cout << "launcher shutdown request received"
-                  << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "launcher shutdown request received";
         break;
       }
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
-        std::cout << "launcher emergency shutdown request received"
-                  << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "launcher emergency shutdown request received";
         break;
       }
 
@@ -1307,7 +1310,9 @@ static pid_t daemonize(job_info &info) {
     /* mark this as a background worker */
     info.background_exec = true;
 
-    cerr << "initialize child reaper handler" << endl;
+#ifdef __DEBUG__
+    BOOST_LOG_TRIVIAL(debug) << "initialize child reaper handler";
+#endif
 
     /*
      * Create and initialize the dead man's reaper...
@@ -1316,7 +1321,7 @@ static pid_t daemonize(job_info &info) {
     dynamic_cast<background_worker_shm_reaper *>(launcher_reaper)->set_shm_handle(worker_shm);
     worker.assign_reaper(launcher_reaper);
 
-    cerr << "reset worker shared memory area" << endl;
+    BOOST_LOG_TRIVIAL(warning) << "reset worker shared memory area" << endl;
 
     /*
      * Reset shared memory area, but only if no
@@ -1332,8 +1337,8 @@ static pid_t daemonize(job_info &info) {
 
     if (worker_shm->getNumberOfAttached() > 1) {
 
-      cerr << "ERROR: cannot re-initialize worker shared memory:" << endl;
-      cerr << "       there are still workers attached, you need to terminate them first" << endl;
+      BOOST_LOG_TRIVIAL(warning) << "ERROR: cannot re-initialize worker shared memory:" << endl
+                                 << "       there are still workers attached, you need to terminate them first";
 
     } else {
 
@@ -1348,7 +1353,7 @@ static pid_t daemonize(job_info &info) {
          * Whoops, this failed somehow, this is considered
          * a hard error.
          */
-        cerr << "failure resetting worker SHM: " << e.what() << endl;
+        BOOST_LOG_TRIVIAL(fatal) << "failure resetting worker SHM: " << e.what();
         worker_shm->unlock();
         exit(DAEMON_FAILURE);
 
@@ -1358,7 +1363,7 @@ static pid_t daemonize(job_info &info) {
 
     worker_shm->unlock();
 
-    cerr << "reset worker shared memory area done" << endl;
+    BOOST_LOG_TRIVIAL(info) << "reset worker shared memory area done";
 
     /* Mark launcher process.
      *
@@ -1397,7 +1402,7 @@ static pid_t daemonize(job_info &info) {
       usleep(1000);
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_NORMAL) {
-        std::cout << "shutdown request received" << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "shutdown request received";
 
         /*
          * This is considered a smart shutdown, where we
@@ -1407,13 +1412,13 @@ static pid_t daemonize(job_info &info) {
         try {
           worker.prepareShutdown();
         } catch (std::exception& e) {
-          cerr << "smart shutdown catched error: " << e.what() << endl;
+          BOOST_LOG_TRIVIAL(error) << "smart shutdown catched error: " << e.what();
         }
         break;
       }
 
       if (_pgbckctl_shutdown_mode == DAEMON_TERM_EMERGENCY) {
-        std::cout << "emergency shutdown request received" << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "emergency shutdown request received";
         break;
       }
 
@@ -1434,7 +1439,7 @@ static pid_t daemonize(job_info &info) {
 
           pid_t worker_pid;
 
-          cerr << "BACKGROUND COMMAND: " << command << endl;
+          BOOST_LOG_TRIVIAL(debug) << "BACKGROUND COMMAND: " << command;
 
           /*
            * Execute the command.
@@ -1453,33 +1458,33 @@ static pid_t daemonize(job_info &info) {
              * A negative value of worker_pid indicates that the initial setup
              * of worker_command() and the specified job_handle had failed.
              */
-            cerr << "launcher cannot fork worker process: worker setup failed" << endl;
+            BOOST_LOG_TRIVIAL(fatal) << "launcher cannot fork worker process: worker setup failed";
 
           } else {
 
-            cout << "launcher forked worker process at PID " << worker_pid << endl;
+            BOOST_LOG_TRIVIAL(info) << "launcher forked worker process at PID " << worker_pid;
 
           }
 
         } catch (CParserIssue &pe) {
 
-          cerr << "parser failed: " << pe.what() << endl;
+          BOOST_LOG_TRIVIAL(error) << "parser failed: " << pe.what();
           exit(DAEMON_FAILURE);
 
         } catch (WorkerFailure &e) {
 
           /* something shitty has happend ... */
-          cerr << "fork() failed: " << e.what() << endl;
+          BOOST_LOG_TRIVIAL(fatal) << "fork() failed: " << e.what();
           exit(DAEMON_FAILURE);
 
         } catch (TCPServerFailure &tsrve) {
 
-          cerr << "could not instantiate TCP streaming server: " << tsrve.what() << endl;
+          BOOST_LOG_TRIVIAL(fatal) << "could not instantiate TCP streaming server: " << tsrve.what();
           exit(DAEMON_FAILURE);
 
         } catch (std::exception &e) {
 
-          cerr << "background worker failure: " << e.what() << endl;
+          BOOST_LOG_TRIVIAL(fatal) << "background worker failure: " << e.what();
           exit(DAEMON_FAILURE);
 
         }
@@ -1678,7 +1683,7 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
      */
     worker.release_launcher_role();
 
-    cerr << "background job executing command " << command << endl;
+    BOOST_LOG_TRIVIAL(info) << "background job executing command " << command;
 
     worker_info.pid = ::getpid();
     worker_info.started = CPGBackupCtlBase::ISO8601_strTo_ptime(CPGBackupCtlBase::current_timestamp());
@@ -1756,7 +1761,9 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
     worker_slot_index = worker_shm->allocate(worker_info);
     worker_shm->unlock();
 
-    cerr << "WORKER SLOT " << worker_slot_index << endl;
+#ifdef __DEBUG__
+    BOOST_LOG_TRIVIAL(debug) << "WORKER SLOT " << worker_slot_index;
+#endif
 
     try {
       bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
@@ -1796,7 +1803,9 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
 
     }
 
-    cerr << "WORKER EXIT" << endl;
+#ifdef __DEBUG__
+    BOOST_LOG_TRIVIAL(debug) << "WORKER EXIT";
+#endif
 
     /* Exit, if done */
     exit(0);
@@ -1855,7 +1864,7 @@ FILE * credativ::run_pipelined_command(job_info &info) {
   }
 
 #ifdef __DEBUG__
-  cout << "DEBUG: executing " << cmd.str() << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: executing " << cmd.str();
 #endif
 
   info.fpipe_handle = ::popen(cmd.str().c_str(), info.po_mode.c_str());
@@ -1987,7 +1996,7 @@ pid_t credativ::run_process(job_info& info) {
           << info.executable.string()
           << ": "
           << strerror(errno);
-      cerr << oss.str() << endl;
+      BOOST_LOG_TRIVIAL(error) << oss.str();
       exit(-1);
     }
 

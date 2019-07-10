@@ -1,4 +1,5 @@
 #include <istream>
+#include <boost/log/trivial.hpp>
 
 /*
  * For PGStream::generateSlotNameUUID() ...
@@ -388,20 +389,24 @@ void PGStream::connect() {
    */
 
 #ifdef __DEBUG__
-  cout << "DSN is " << this->descr->coninfo->dsn << endl;
+  BOOST_LOG_TRIVIAL(debug) << "DSN is " << this->descr->coninfo->dsn;
 #endif
 
   if (this->descr->coninfo->dsn.length() > 0) {
-    cout << "using database DSN for connection" << endl;
+
+    BOOST_LOG_TRIVIAL(info) << "using database DSN for connection";
     conninfo << this->descr->coninfo->dsn
              << " "
              << "replication=true";
+
   } else {
+
     conninfo << "host=" << this->descr->coninfo->pghost;
     conninfo << " " << "dbname=" << this->descr->coninfo->pgdatabase;
     conninfo << " " << "user=" << this->descr->coninfo->pguser;
     conninfo << " " << "port=" << this->descr->coninfo->pgport;
     conninfo << " " << "replication=true";
+
   }
 
   /*
@@ -783,7 +788,7 @@ std::string PGStream::generateSlotNameUUID(std::string prefix) {
   CPGBackupCtlBase::strReplaceAll(my_uuid_str, "-", "_");
 
 #ifdef __DEBUG__
-  cerr << "generated SLOT name " << my_uuid_str << endl;
+  BOOST_LOG_TRIVIAL(debug) << "generated SLOT name " << my_uuid_str;
 #endif
 
   this->streamident.slot_name = my_uuid_str;

@@ -4,6 +4,8 @@
  *
  ******************************************************************************/
 
+#include <boost/log/trivial.hpp>
+
 #include <iostream>
 #include <string>
 #include <popt.h>
@@ -253,10 +255,10 @@ std::shared_ptr<PGBackupCtlCommand> makeCommand(std::string in) {
     command->assignSigStopHandler(stopHandler);
 
   } catch(CParserIssue &pe) {
-    cerr << "parser error: " << pe.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << "parser error: " << pe.what();
     throw pe;
   } catch(CCatalogIssue &ce) {
-    cerr << "parser error: " << ce.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << "parser error: " << ce.what();
     throw ce;
   } catch(std::exception &e) {
 
@@ -298,7 +300,7 @@ static void handle_interactive(std::string in,
     cout << CatalogDescr::commandTagName(cmdType) << endl;
 
   } catch (exception& e) {
-    cerr << "command execution failure: " << e.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
 
     /*
      * Check if runtime configuration variable interactive.on_error_exit
@@ -330,7 +332,7 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
      * Parsing exception catched will force return code
      * PG_BACKUP_CTL_PARSER_ERROR.
      */
-    cerr << "parser error: " << e.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << "parser error: " << e.what();
     return PG_BACKUP_CTL_PARSER_ERROR;
 
   }
@@ -344,7 +346,7 @@ static int handle_inputfile(PGBackupCtlArgs *args) {
     command->execute(string(args->catalogDir));
   } catch(CPGBackupCtlFailure& e) {
 
-    cerr << "command execution failure: " << e.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
     return PG_BACKUP_CTL_CATALOG_ERROR;
 
   }
@@ -474,9 +476,8 @@ static void executeCommand(PGBackupCtlArgs *args) {
         shared_ptr<BackupHistoryFile> file = it.second;
 
 #ifdef __DEBUG__
-        cerr << "backup found: " << file->getBackupLabel()
-             << " stopped at " << file->getBackupStopTime()
-             <<  endl;
+        BOOST_LOG_TRIVIAL(debug) << "backup found: " << file->getBackupLabel()
+                                 << " stopped at " << file->getBackupStopTime();
 #endif
 
         if (file->isCompressed()) {
@@ -504,7 +505,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
       catalog.commitTransaction();
 
     } catch (CArchiveIssue &e) {
-      cerr << e.what() << "\n";
+      BOOST_LOG_TRIVIAL(error) << e.what();
       catalog.rollbackTransaction();
     }
   }
@@ -532,7 +533,7 @@ int main(int argc, const char **argv) {
    * zombies, we need a SIGCHLD signal handler.
    */
   if (signal(SIGCHLD, _pgbckctl_sigchld_handler) == SIG_ERR) {
-    cerr << "error setting up parent signal handler" << endl;
+    BOOST_LOG_TRIVIAL(error) << "error setting up parent signal handler";
     exit(PG_BACKUP_CTL_GENERIC_ERROR);
   }
 
@@ -558,7 +559,7 @@ int main(int argc, const char **argv) {
        * program lifetime.
        */
       args.catalogDir = (char *)(new string(PG_BACKUP_CTL_SQLITE))->c_str();
-      cerr << "--catalog not specified, using " << args.catalogDir << endl;
+      BOOST_LOG_TRIVIAL(info) << "--catalog not specified, using " << args.catalogDir;
     }
 
     /*
@@ -670,17 +671,17 @@ int main(int argc, const char **argv) {
      * signal handling...
      */
     if (signal(SIGQUIT, handle_signal_on_input) == SIG_ERR) {
-      cerr << "error setting up input signal handler" << endl;
+      BOOST_LOG_TRIVIAL(error) << "error setting up input signal handler";
       exit(PG_BACKUP_CTL_GENERIC_ERROR);
     }
 
     if (signal(SIGINT, handle_signal_on_input) == SIG_ERR) {
-      cerr << "error setting up input signal handler" << endl;
+      BOOST_LOG_TRIVIAL(error) << "error setting up input signal handler";
       exit(PG_BACKUP_CTL_GENERIC_ERROR);
     }
 
     if (signal(SIGTERM, handle_signal_on_input) == SIG_ERR) {
-      cerr << "error setting up input signal handler" << endl;
+      BOOST_LOG_TRIVIAL(error) << "error setting up input signal handler";
       exit(PG_BACKUP_CTL_GENERIC_ERROR);
     }
 
@@ -753,7 +754,7 @@ int main(int argc, const char **argv) {
     exit(0);
 
   } catch (exception& e) {
-    cerr << e.what() << endl;
+    BOOST_LOG_TRIVIAL(error) << e.what();
     exit(1);
   }
 

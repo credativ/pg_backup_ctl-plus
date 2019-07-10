@@ -7,6 +7,7 @@
 #include <vector>
 #include <boost/range/adaptors.hpp>
 #include <boost/range/iterator_range.hpp>
+#include <boost/log/trivial.hpp>
 
 #include <fs-archive.hxx>
 #include <fs-pipe.hxx>
@@ -45,12 +46,12 @@ StreamingBaseBackupDirectory::~StreamingBaseBackupDirectory() {}
 void StreamingBaseBackupDirectory::create() {
   if (!exists(this->streaming_subdir)) {
 #ifdef __DEBUG__
-    cerr << "DEBUG: creating streaming basebackup directory "
-         << "\""
-         << this->streaming_subdir.string()
-         << "\""
-         << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating streaming basebackup directory "
+                             << "\""
+                             << this->streaming_subdir.string()
+                             << "\"";
 #endif
+
     create_directories(this->streaming_subdir);
   } else {
     std::ostringstream oss;
@@ -398,23 +399,21 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
                                         current_status);
 
 #ifdef __DEBUG_XLOG__
-    cerr << "xlog file=" << xlogfilename << " "
-         << "tli=" << current_tli << " "
-         << "segmentNumber=" << current_segno << " "
-         << "size=" << fileSize
-         << endl;
+    BOOST_LOG_TRIVIAL(debug) << "xlog file=" << xlogfilename << " "
+                             << "tli=" << current_tli << " "
+                             << "segmentNumber=" << current_segno << " "
+                             << "size=" << fileSize;
 #endif
 
     if ((fileSize != xlogsegsize)
         && (current_status == WAL_SEGMENT_COMPLETE)
         && (current_status == WAL_SEGMENT_PARTIAL) ) {
 #ifdef __DEBUG_XLOG__
-      cerr << "invalid file size ("
-           << fileSize
-           << "bytes) in segment "
-           << direntname
-           << ": skipping"
-           << endl;
+      BOOST_LOG_TRIVIAL(debug) << "invalid file size ("
+                               << fileSize
+                               << "bytes) in segment "
+                               << direntname
+                               << ": skipping";
 #endif
       continue;
     }
@@ -441,9 +440,9 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
                 || current_status != WAL_SEGMENT_PARTIAL_COMPRESSED) ) ) {
 
 #ifdef __DEBUG__XLOG__
-      cerr << "HI TLI " << current_tli << " SEGNO "
-           << current_segno << " STATUS "
-           << current_status << endl;
+      BOOST_LOG_TRIVIAL(debug) << "HI TLI " << current_tli << " SEGNO "
+                               << current_segno << " STATUS "
+                               << current_status;
 #endif
 
       segmentNumber = current_segno;
@@ -544,7 +543,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
     WALSegmentFileStatus fstat = WAL_SEGMENT_UNKNOWN;
 
 #ifdef __DEBUG_XLOG__
-    cerr << "DEBUG XLOG: examining file: " << direntname << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG XLOG: examining file: " << direntname;
 #endif
 
     /*
@@ -617,11 +616,10 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
                     && (recptr <= (it->second)->wal_cleanup_start_pos) ) {
 
 #ifdef __DEBUG__
-          cerr << "XLogRecPtr is older than requested position("
-               << PGStream::encodeXLOGPos(recptr)
-               << "), deleting file "
-               << direntname
-               << endl;
+          BOOST_LOG_TRIVIAL(debug) << "XLogRecPtr is older than requested position("
+                                   << PGStream::encodeXLOGPos(recptr)
+                                   << "), deleting file "
+                                   << direntname;
 #endif
           remove(entry.path());
 
@@ -792,7 +790,7 @@ void ArchiveLogDirectory::checkCleanupDescriptor(std::shared_ptr<BackupCleanupDe
     cleanupDescr->mode = NO_WAL_TO_DELETE;
 
 #ifdef __DEBUG__
-    cerr << "no basebackups to identify WAL cleanup offset found" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "no basebackups to identify WAL cleanup offset found";
 #endif
 
     return;
@@ -935,7 +933,7 @@ void BackupDirectory::create() {
   if (!exists(this->handle)) {
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: creating backup directory structure" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating backup directory structure";
 #endif
 
     create_directories(this->basedir());
@@ -945,14 +943,14 @@ void BackupDirectory::create() {
 
     if (!exists(this->basedir())) {
 #ifdef __DEBUG__
-      cerr << "DEBUG: creating basedir directory" << endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating basedir directory";
 #endif
       create_directory(this->basedir());
     }
 
     if (!exists(this->logdir())) {
 #ifdef __DEBUG__
-      cerr << "DEBUG: creating logdir directory" << endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating logdir directory";
 #endif
       create_directory(this->logdir());
     }
