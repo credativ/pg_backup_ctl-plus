@@ -18,6 +18,9 @@
 /* required for string case insensitive comparison */
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <BackupCatalog.hxx>
+#include <rtconfig.hxx>
+
 #ifdef __DEBUG__
 #include <iostream>
 #endif
@@ -25,69 +28,282 @@
 /* charakters that are breaking words into pieces */
 #define WORD_BREAKS "\t\n@$><=;|&{() "
 
+/* Catalog handle used for queries to perform completion actions */
+std::shared_ptr<BackupCatalog> compl_catalog_handle = nullptr;
+
+/* A reference to the global runtime configuration.
+ * In opposite to compl_catalog_handle above, this is *not*
+ * initialized here! */
+std::shared_ptr<RuntimeConfiguration> compl_runtime_cfg = nullptr;
+
 /*
  * Completion tags, used to identify completion token type.
  */
 typedef enum {
-  COMPL_KEYWORD,
-  COMPL_IDENTIFIER,
-  COMPL_END,
-  COMPL_EOL
+
+              COMPL_KEYWORD,
+              COMPL_IDENTIFIER,
+              COMPL_END,
+              COMPL_EOL
+
 } CompletionWordType;
+
+/*
+ * Completion action, callback, array et al.
+ */
+typedef enum {
+
+              COMPL_STATIC_ARRAY,
+              COMPL_FUNC_SQL
+
+} CompletionAction;
 
 /*
  * Completion token definition.
  */
 typedef struct _completion_word completion_word;
 
+/* Completion list constructor callback */
+typedef completion_word* (* completion_callback)(completion_word *&,
+                                                 completion_word *);
+
 typedef struct _completion_word {
 
-  const char *name;
-  CompletionWordType type;
-  completion_word *next_completions;
+  std::string name;          /* completion string passed to readline. */
+  CompletionWordType type;   /* type of this completion word */
+  CompletionAction action;   /* action, either a static array or completion callback */
+
+  completion_word *next_completions; /* Might be NULL */
+
+  completion_callback cb;              /* Might be NULL */
 
 } completion_word;
+
+/******************************************************************************
+ * Completion calback functions for catalog objects completion.
+ *****************************************************************************/
+
+completion_word *compl_identifier(std::string sql,
+                                  completion_word *& compl_list,
+                                  completion_word *next_compl) {
+
+  std::shared_ptr<std::vector<std::string>> vlist;
+  completion_word item;
+
+  /* NOTE: can throw! */
+  compl_catalog_handle->open_ro();
+  vlist = compl_catalog_handle->SQL(sql);
+  compl_catalog_handle->close();
+
+  if (vlist->size() > 0) {
+
+    int counter = 0;
+
+    compl_list = new completion_word[vlist->size() + 1];
+
+    for(auto &string_item : *(vlist.get())) {
+
+      item.name = string_item;
+      item.type = COMPL_IDENTIFIER;
+      item.action = COMPL_STATIC_ARRAY;
+      item.next_completions = next_compl;
+      item.cb = NULL;
+
+      compl_list[counter] = item;
+      counter++;
+
+    }
+
+    /*
+     * Last element indicates end of completion list.
+     */
+    compl_list[vlist->size()].name = "";
+    compl_list[vlist->size()].type = COMPL_EOL;
+    compl_list[vlist->size()].action = COMPL_STATIC_ARRAY;
+    compl_list[vlist->size()].next_completions = NULL;
+    compl_list[vlist->size()].cb = NULL;
+
+    return compl_list;
+
+  } else {
+
+    /*
+     * We *must* add a COMPL_EOL item to indicate
+     * the end of the list!
+     */
+    compl_list = new completion_word[1];
+
+    item.name = "";
+    item.type = COMPL_EOL;
+    item.action = COMPL_STATIC_ARRAY;
+    item.next_completions = NULL;
+    item.cb = NULL;
+
+    compl_list[0] = item;
+    return compl_list;
+
+  }
+
+  return compl_list;
+
+}
+
+/**
+ * Completion list for runtime variables.
+ */
+completion_word *compl_variable(completion_word *& compl_list,
+                                completion_word *next_compl) {
+
+  int counter = 0;
+
+  /*
+   * In case runtime is not properly initialized, just
+   * return an empty completion list (with a dummy
+   * COMPL_EOL of course).
+   */
+  if (compl_runtime_cfg == nullptr) {
+
+    compl_list = new completion_word[1];
+
+    compl_list[0].name = "";
+    compl_list[0].type = COMPL_EOL;
+    compl_list[0].action = COMPL_STATIC_ARRAY;
+    compl_list[0].next_completions = NULL;
+    compl_list[0].cb = NULL;
+
+    return compl_list;
+
+  }
+
+  /*
+   * The same if the list is empty
+   */
+  if (compl_runtime_cfg->count_variables() == 0) {
+
+    compl_list = new completion_word[1];
+
+    compl_list[0].name = "";
+    compl_list[0].type = COMPL_EOL;
+    compl_list[0].action = COMPL_STATIC_ARRAY;
+    compl_list[0].next_completions = NULL;
+    compl_list[0].cb = NULL;
+
+    return compl_list;
+
+  }
+
+  compl_list = new completion_word[compl_runtime_cfg->count_variables() + 1];
+
+  /*
+   * Loop through the variables list.
+   */
+  auto it_start = compl_runtime_cfg->begin();
+  auto it_end   = compl_runtime_cfg->end();
+
+  for(; it_start != it_end; ++it_start) {
+
+    std::shared_ptr<credativ::ConfigVariable> var = it_start->second;
+
+    compl_list[counter].name = var->getName();
+    compl_list[counter].type = COMPL_IDENTIFIER;
+    compl_list[counter].action = COMPL_STATIC_ARRAY;
+    compl_list[counter].next_completions = next_compl;
+    compl_list[counter].cb = NULL;
+
+    counter++;
+
+  }
+
+  /*
+   * Finally we need the end-of-list placeholder.
+   */
+  compl_list[counter].name = "";
+  compl_list[counter].type = COMPL_EOL;
+  compl_list[counter].action = COMPL_STATIC_ARRAY;
+  compl_list[counter].next_completions = NULL;
+  compl_list[counter].cb = NULL;
+
+  return compl_list;
+}
+
+/**
+ * Completion list of archive identifiers.
+ */
+completion_word *compl_archive_identifier(completion_word *& compl_list,
+                                          completion_word *next_compl) {
+
+  ostringstream sql;
+
+  sql << "SELECT name FROM archive ORDER BY name ASC;";
+  return compl_identifier(sql.str(), compl_list, next_compl);
+
+}
+
+/*
+ * Completion list of retention identifiers.
+ */
+completion_word *compl_retention_identifier(completion_word *& compl_list,
+                                            completion_word *next_compl) {
+
+  ostringstream sql;
+
+  sql << "SELECT name FROM retention ORDER BY name ASC;";
+  return compl_identifier(sql.str(), compl_list, next_compl);
+
+}
 
 /******************************************************************************
  * Completion definitions.
  *****************************************************************************/
 
-completion_word param_pgport_completion[] = { { "PGPORT", COMPL_END, NULL },
-                                              { "", COMPL_EOL, NULL } };
+completion_word param_pgport_completion[] = { { "PGPORT", COMPL_END, COMPL_STATIC_ARRAY, NULL, NULL },
+                                              { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word param_pguser_completion[] = { { "PGUSER", COMPL_KEYWORD, param_pgport_completion },
-                                              { "", COMPL_EOL, NULL } };
+completion_word param_pguser_completion[] = { { "PGUSER",
+                                                COMPL_KEYWORD, COMPL_STATIC_ARRAY, param_pgport_completion, NULL },
+                                              { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word param_pgdatabase_completion[] = { { "PGDATABASE" , COMPL_KEYWORD, param_pguser_completion },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word param_pgdatabase_completion[] = { { "PGDATABASE" ,
+                                                    COMPL_KEYWORD, COMPL_STATIC_ARRAY, param_pguser_completion, NULL },
+                                                  { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word param_start_completion[] = { { "DSN", COMPL_END, NULL },
-                                             { "PGHOST", COMPL_KEYWORD, param_pgdatabase_completion },
-                                             { "", COMPL_EOL, NULL } };
+completion_word param_start_completion[]
+= { { "DSN", COMPL_END, COMPL_STATIC_ARRAY, NULL,  NULL },
+    { "PGHOST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, param_pgdatabase_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL,  NULL } };
 
-completion_word create_archive_dir_completion[] = { { "DIRECTORY", COMPL_KEYWORD, param_start_completion },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word create_archive_dir_completion[] = { { "DIRECTORY", COMPL_KEYWORD,
+                                                      COMPL_STATIC_ARRAY, param_start_completion, NULL },
+                                                    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_archive_params_completion[] = { { "PARAMS", COMPL_KEYWORD, create_archive_dir_completion },
-                                                       { "", COMPL_EOL, NULL } };
+completion_word create_archive_params_completion[]
+= { { "PARAMS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_archive_dir_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_archive_params_completion },
-                                                      { "", COMPL_EOL, NULL } /* marks end of list */ };
+completion_word create_archive_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, create_archive_params_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } /* marks end of list */ };
 
-completion_word list_archive_verbose_compl[] = { { "VERBOSE", COMPL_KEYWORD, NULL },
-                                               { "", COMPL_EOL, NULL } };
+completion_word list_archive_verbose_compl[]
+= { { "VERBOSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, list_archive_verbose_compl },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word list_archive_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, list_archive_verbose_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                                         { "", COMPL_EOL, NULL } };
+completion_word list_connection_archive_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_archive_identifier },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_connection_for_completion[] = { { "FOR", COMPL_KEYWORD, list_connection_archive_completion },
-                                                     { "", COMPL_EOL, NULL } };
+completion_word list_connection_for_completion[]
+= { { "FOR", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_connection_archive_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion},
-                                                   { "", COMPL_EOL, NULL } };
+completion_word create_connection_completion[]
+= { { "CONNECTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_connection_for_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 /*
  * Forwarded declaration for param completion list of CREATE BACKUP PROFILE
@@ -96,163 +312,213 @@ completion_word create_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD
  */
 completion_word create_bck_prof_param_full[8] ;
 
-completion_word create_bck_prof_noverify_setting[] = { { "TRUE", COMPL_KEYWORD, create_bck_prof_param_full + 7 },
-                                                       { "FALSE", COMPL_KEYWORD, create_bck_prof_param_full + 7 },
-                                                       { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_noverify_setting[]
+= { { "TRUE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 7, NULL },
+    { "FALSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 7, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_wfw_setting[] = { { "TRUE", COMPL_KEYWORD, create_bck_prof_param_full + 6 },
-                                                  { "FALSE", COMPL_KEYWORD, create_bck_prof_param_full + 6 },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_wfw_setting[]
+= { { "TRUE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 6, NULL },
+    { "FALSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 6, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_chkpt_setting[] = { { "FAST", COMPL_KEYWORD, create_bck_prof_param_full + 5 },
-                                                    { "DELAYED", COMPL_KEYWORD, create_bck_prof_param_full + 5 },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_chkpt_setting[]
+= { { "FAST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 5, NULL },
+    { "DELAYED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 5, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_wal_setting[] = { { "INCLUDED", COMPL_KEYWORD, create_bck_prof_param_full + 4 },
-                                                  { "EXCLUDED", COMPL_KEYWORD, create_bck_prof_param_full + 4 },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_wal_setting[]
+= { { "INCLUDED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 4, NULL },
+    { "EXCLUDED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 4, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_label_string[] = { { "<label string>", COMPL_IDENTIFIER, create_bck_prof_param_full + 3 },
-                                                   { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_label_string[]
+= { { "<label string>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 3, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_max_rate[] = { { "<max rate in bytes>", COMPL_IDENTIFIER, create_bck_prof_param_full + 2 },
-                                               { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_max_rate[]
+= { { "<max rate in bytes>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 2, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_compr_type[] = { { "GZIP", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
-                                                 { "NONE", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
-                                                 { "ZSTD", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
-                                                 { "PBZIP", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
-                                                 { "PLAIN", COMPL_KEYWORD, create_bck_prof_param_full + 1 },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_compr_type[]
+= { { "GZIP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "NONE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "ZSTD", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "PBZIP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "PLAIN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_bck_prof_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, create_bck_prof_param_full },
-                                                       { "", COMPL_EOL, NULL } };
+completion_word create_bck_prof_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, create_bck_prof_param_full, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_backup_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, create_bck_prof_ident_completion },
-                                                       { "", COMPL_EOL, NULL } };
+completion_word create_backup_profile_completion[]
+= { { "PROFILE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_regex_compl[] = { { "<regular expression>", COMPL_IDENTIFIER, NULL },
-                                            { "", COMPL_EOL, NULL } };
+completion_word retention_regex_compl[]
+= { { "<regular expression>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_with_compl[] = { { "LABEL", COMPL_KEYWORD, retention_regex_compl },
-                                           { "", COMPL_EOL, NULL } };
+completion_word retention_with_compl[]
+= { { "LABEL", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_regex_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_minutes_compl[] = { { "MINUTES", COMPL_KEYWORD, NULL },
-                                              { "", COMPL_EOL, NULL } };
+completion_word retention_minutes_compl[]
+= { { "MINUTES", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_nn_minutes_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_minutes_compl },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word retention_nn_minutes_compl[]
+= { { "[0-9]*", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, retention_minutes_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_hours_compl[] = { { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
-                                            { "MINUTES", COMPL_KEYWORD, NULL },
-                                            { "", COMPL_EOL, NULL } };
+completion_word retention_hours_compl[]
+= { { "HOURS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_minutes_compl, NULL },
+    { "MINUTES", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_nn_hours_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_hours_compl },
-                                               { "", COMPL_EOL, NULL } };
+completion_word retention_nn_hours_compl[]
+= { { "[0-9]*", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, retention_hours_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_days_compl[] = { { "DAYS", COMPL_KEYWORD, retention_nn_hours_compl },
-                                           { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
-                                           { "MINUTES", COMPL_KEYWORD, NULL },
-                                           { "", COMPL_EOL, NULL } };
+completion_word retention_days_compl[]
+= { { "DAYS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_hours_compl, NULL },
+    { "HOURS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_minutes_compl, NULL },
+    { "MINUTES", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_nn_days_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_days_compl },
-                                              { "", COMPL_EOL, NULL } };
+completion_word retention_nn_days_compl[]
+= { { "[0-9]*", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, retention_days_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_months_compl[] = { { "MONTHS", COMPL_KEYWORD, retention_nn_days_compl },
-                                             { "", COMPL_EOL, NULL } };
+completion_word retention_months_compl[]
+= { { "MONTHS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_days_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_nn_months_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_months_compl },
-                                                { "", COMPL_EOL, NULL } };
+completion_word retention_nn_months_compl[]
+= { { "[0-9]*", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, retention_months_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_year_compl[] = { { "YEARS", COMPL_KEYWORD, retention_nn_months_compl },
-                                           { "DAYS", COMPL_KEYWORD, retention_nn_hours_compl },
-                                           { "HOURS", COMPL_KEYWORD, retention_nn_minutes_compl },
-                                           { "MONTHS", COMPL_KEYWORD, retention_nn_days_compl },
-                                           { "", COMPL_EOL, NULL } };
+completion_word retention_year_compl[]
+= { { "YEARS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_months_compl, NULL },
+    { "DAYS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_hours_compl, NULL },
+    { "HOURS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_minutes_compl, NULL },
+    { "MONTHS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_days_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_nn_year_compl[] = { { "[0-9]*", COMPL_IDENTIFIER, retention_year_compl },
-                                               { "", COMPL_EOL, NULL } };
+completion_word retention_nn_year_compl[]
+= { { "[0-9]*", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, retention_year_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_than_compl[] = { { "THAN", COMPL_KEYWORD, retention_nn_year_compl },
-                                           { "", COMPL_EOL, NULL } };
+completion_word retention_than_compl[]
+= { { "THAN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_nn_year_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word retention_rule_compl[] = { { "WITH", COMPL_KEYWORD, retention_with_compl },
-                                           { "OLDER", COMPL_KEYWORD, retention_than_compl },
-                                           { "NEWER", COMPL_KEYWORD, retention_than_compl },
-                                           { "+<number of basebackups>", COMPL_IDENTIFIER, NULL },
-                                           { "", COMPL_EOL, NULL } };
+completion_word retention_rule_compl[]
+= { { "WITH", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_with_compl, NULL },
+    { "OLDER", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_than_compl, NULL },
+    { "NEWER", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_than_compl, NULL },
+    { "+<number of basebackups>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_retention_rule_compl[] = { { "KEEP", COMPL_KEYWORD, retention_rule_compl },
-                                                  { "DROP", COMPL_KEYWORD, retention_rule_compl },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word create_retention_rule_compl[]
+= { { "KEEP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_rule_compl, NULL },
+    { "DROP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_rule_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_retention_ident[] = { { "<identifier>", COMPL_IDENTIFIER, create_retention_rule_compl },
-                                             { "", COMPL_EOL, NULL } };
+completion_word create_retention_ident[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, create_retention_rule_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_retention_completion[] = { { "POLICY", COMPL_KEYWORD, create_retention_ident },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word create_retention_completion[]
+= { { "POLICY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_retention_ident, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word create_completion[] = { { "ARCHIVE", COMPL_KEYWORD, create_archive_ident_completion },
-                                        { "STREAMING", COMPL_KEYWORD, create_connection_completion },
-                                        { "BACKUP", COMPL_KEYWORD, create_backup_profile_completion },
-                                        { "RETENTION", COMPL_KEYWORD, create_retention_completion },
-                                        { "", COMPL_EOL, NULL } /* marks end of list */ };
+completion_word create_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_archive_ident_completion, NULL  },
+    { "STREAMING", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_connection_completion, NULL },
+    { "BACKUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_backup_profile_completion, NULL },
+    { "RETENTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_retention_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } /* marks end of list */ };
 
-completion_word list_backup_completion[] = { { "PROFILE", COMPL_KEYWORD, list_archive_ident_completion },
-                                             { "CATALOG", COMPL_KEYWORD, list_archive_ident_completion },
-                                             { "", COMPL_EOL, NULL } };
+completion_word list_backup_completion[]
+= { { "PROFILE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_archive_ident_completion, NULL },
+    { "CATALOG", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_archive_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_backup_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                                     { "", COMPL_EOL, NULL } };
+completion_word list_backup_verbose_compl[]
+= { { "VERBOSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_backup_list_completion[] = { { "IN", COMPL_KEYWORD, list_backup_archive_completion },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word list_backup_archive_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, list_backup_verbose_compl,
+      (completion_callback)compl_archive_identifier },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_retention_completion[] = { { "POLICIES", COMPL_KEYWORD, NULL },
-                                                { "POLICY", COMPL_KEYWORD, list_archive_ident_completion },
-                                                { "", COMPL_EOL, NULL } };
+completion_word list_backup_list_completion[]
+= { { "IN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_backup_archive_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word list_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                      { "BACKUP", COMPL_KEYWORD, list_backup_completion },
-                                      { "BASEBACKUPS", COMPL_KEYWORD, list_backup_list_completion },
-                                      { "CONNECTION", COMPL_KEYWORD, list_connection_for_completion },
-                                      { "RETENTION", COMPL_KEYWORD, list_retention_completion },
-                                      { "", COMPL_EOL, NULL } /* marks end of list */ };
+completion_word list_retention_completion[]
+= { { "POLICIES", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "POLICY", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_retention_identifier },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_basebackup_opt_force_sysid_upd[] = { { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, NULL },
-                                                           { "", COMPL_EOL, NULL } };
+completion_word list_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) (compl_archive_identifier) },
+    { "BACKUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_backup_completion, NULL },
+    { "BASEBACKUPS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_backup_list_completion, NULL },
+    { "CONNECTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_connection_for_completion, NULL },
+    { "RETENTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_retention_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } /* marks end of list */ };
 
-completion_word start_basebackup_profile_ident[] = { { "<identifier>", COMPL_IDENTIFIER, start_basebackup_opt_force_sysid_upd },
-                                                     { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_opt_force_sysid_upd[]
+= { { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_basebackup_profile[] = { { "PROFILE", COMPL_KEYWORD, start_basebackup_profile_ident },
-                                               { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, NULL },
-                                               { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_profile_ident[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, start_basebackup_opt_force_sysid_upd, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_basebackup_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_basebackup_profile },
-                                                        { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_profile[]
+= { { "PROFILE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_basebackup_profile_ident, NULL },
+    { "FORCE_SYSTEMID_UPDATE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_basebackup_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start_basebackup_ident_completion },
-                                               { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, start_basebackup_profile, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_basebackup_for[] = { { "FOR", COMPL_KEYWORD, start_basebackup_archive },
-                                           { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_basebackup_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_streaming_option_detach[] = { { "NODETACH", COMPL_KEYWORD, NULL },
-                                                     { "", COMPL_EOL, NULL } };
+completion_word start_basebackup_for[]
+= { { "FOR", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_basebackup_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_streaming_option[] = { { "RESTART", COMPL_KEYWORD, start_streaming_option_detach },
-                                             { "NODETACH", COMPL_KEYWORD, NULL },
-                                             { "", COMPL_EOL, NULL } };
+completion_word start_streaming_option_detach[]
+= { { "NODETACH", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_streaming_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, start_streaming_option },
-                                                        { "", COMPL_EOL, NULL } };
+completion_word start_streaming_option[]
+= { { "RESTART", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_streaming_option_detach, NULL },
+    { "NODETACH", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_streaming_archive[] = { { "ARCHIVE", COMPL_KEYWORD, start_streaming_ident_completion },
-                                               { "", COMPL_EOL, NULL } };
+completion_word start_streaming_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, start_streaming_option, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_streaming_for[] = { { "FOR", COMPL_KEYWORD, start_streaming_archive },
-                                          { "", COMPL_EOL, NULL } };
+completion_word start_streaming_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_streaming_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
+
+completion_word start_streaming_for[]
+= { { "FOR", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_streaming_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 /*
  * Forwarded declarations for LISTEN_ON <ip address> [ ... ] PORT <port number>
@@ -261,177 +527,218 @@ completion_word start_streaming_for[] = { { "FOR", COMPL_KEYWORD, start_streamin
  */
 completion_word recovery_stream_listen_port[3];
 
-completion_word recovery_stream_port[] = { { "<port number>", COMPL_IDENTIFIER, NULL },
-                                           { "", COMPL_EOL, NULL } };
+completion_word recovery_stream_port[]
+= { { "<port number>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word recovery_stream_ip_address[] = { { "<ip address>", COMPL_IDENTIFIER, recovery_stream_listen_port },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word recovery_stream_ip_address[]
+= { { "<ip address>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_listen_port, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word recovery_stream_for_archive_ident[] = { { "<identifier>", COMPL_IDENTIFIER, recovery_stream_listen_port },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word recovery_stream_for_archive_ident[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_listen_port, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word recovery_stream_for_archive[] = { { "ARCHIVE", COMPL_KEYWORD, recovery_stream_for_archive_ident },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word recovery_stream_for_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_for_archive_ident, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_recovery_stream[] = { { "FOR" , COMPL_KEYWORD, recovery_stream_for_archive },
-                                            { "", COMPL_EOL, NULL } };
+completion_word start_recovery_stream[]
+= { { "FOR" , COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_for_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_recovery_compl[] = { { "STREAM" , COMPL_KEYWORD, start_recovery_stream },
-                                           { "", COMPL_EOL, NULL } };
+completion_word start_recovery_compl[]
+= { { "STREAM" , COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_recovery_stream, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word start_completion[] = { { "BASEBACKUP", COMPL_KEYWORD, start_basebackup_for },
-                                       { "STREAMING", COMPL_KEYWORD, start_streaming_for },
-                                       { "LAUNCHER", COMPL_KEYWORD, NULL },
-                                       { "RECOVERY", COMPL_KEYWORD, start_recovery_compl },
-                                       { "", COMPL_EOL, NULL } };
+completion_word start_completion[]
+= { { "BASEBACKUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_basebackup_for, NULL },
+    { "STREAMING", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_streaming_for, NULL },
+    { "LAUNCHER", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "RECOVERY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_recovery_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word verify_archive_options[] = { { "CONNECTION", COMPL_KEYWORD, NULL },
-                                             { "", COMPL_EOL, NULL } };
+completion_word verify_archive_options[]
+= { { "CONNECTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word verify_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, verify_archive_options },
-                                                      { "", COMPL_EOL, NULL } };
+completion_word verify_archive_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, verify_archive_options, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word verify_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, verify_archive_ident_completion },
-                                                { "", COMPL_EOL, NULL } };
+completion_word verify_archive_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, verify_archive_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_connection_archive_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                                         { "", COMPL_EOL, NULL } };
+completion_word drop_connection_archive_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_archive_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_connection_from_completion[] = { { "FROM", COMPL_KEYWORD, drop_connection_archive_completion },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word drop_connection_from_completion[]
+= { { "FROM", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_connection_archive_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_connection_completion[] = { { "CONNECTION", COMPL_KEYWORD, drop_connection_from_completion },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word drop_connection_completion[]
+= { { "CONNECTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_connection_from_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_profile_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word drop_profile_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_profile_completion[] = { { "PROFILE", COMPL_KEYWORD, drop_profile_ident_completion },
-                                              { "", COMPL_EOL, NULL } };
+completion_word drop_profile_completion[]
+= { { "PROFILE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_profile_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_basebackup_ident_compl[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word drop_basebackup_ident_compl[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_basebackup_archive_compl[] = { { "ARCHIVE", COMPL_KEYWORD, drop_basebackup_ident_compl },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word drop_basebackup_archive_compl[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_basebackup_ident_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_basebackup_from_compl[] = { { "FROM", COMPL_KEYWORD, drop_basebackup_archive_compl },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word drop_basebackup_from_compl[]
+= { { "FROM", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_basebackup_archive_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_basebackup_completion[] = { { "<ID>", COMPL_IDENTIFIER, drop_basebackup_from_compl },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word drop_basebackup_completion[]
+= { { "<ID>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, drop_basebackup_from_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_retention_ident_compl[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word drop_retention_ident_compl[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_retention_policy_compl[] = { { "POLICY", COMPL_KEYWORD, drop_retention_ident_compl },
-                                                  { "", COMPL_EOL, NULL } };
+completion_word drop_retention_policy_compl[]
+= { { "POLICY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_retention_ident_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word drop_completion[] = { { "ARCHIVE", COMPL_KEYWORD, list_archive_ident_completion },
-                                      { "STREAMING", COMPL_KEYWORD, drop_connection_completion },
-                                      { "BACKUP", COMPL_KEYWORD, drop_profile_completion },
-                                      { "BASEBACKUP", COMPL_KEYWORD, drop_basebackup_completion },
-                                      { "RETENTION", COMPL_KEYWORD, drop_retention_policy_compl },
-                                      { "", COMPL_EOL, NULL } };
+completion_word drop_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_archive_ident_completion, NULL },
+    { "STREAMING", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_connection_completion, NULL },
+    { "BACKUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_profile_completion, NULL },
+    { "BASEBACKUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_basebackup_completion, NULL },
+    { "RETENTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_retention_policy_compl, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word alter_archive_set_completion[] = { { "SET", COMPL_KEYWORD, param_start_completion },
-                                                   { "", COMPL_EOL, NULL } };
+completion_word alter_archive_set_completion[]
+= { { "SET", COMPL_KEYWORD, COMPL_STATIC_ARRAY, param_start_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word alter_archive_ident_completion[] = { { "<identifier>", COMPL_IDENTIFIER, alter_archive_set_completion },
-                                                     { "", COMPL_EOL, NULL } };
+completion_word alter_archive_ident_completion[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, alter_archive_set_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word alter_completion[] = { { "ARCHIVE", COMPL_KEYWORD, alter_archive_ident_completion },
-                                       { "", COMPL_EOL, NULL } };
+completion_word alter_completion[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, alter_archive_ident_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word show_completion_variable[] = { { "<variable>", COMPL_IDENTIFIER, NULL },
-                                               { "", COMPL_EOL, NULL } };
+completion_word show_completion_variable[]
+= { { "<variable>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word show_completion[] = { { "WORKERS", COMPL_KEYWORD, NULL },
-                                      { "VARIABLES", COMPL_KEYWORD, NULL },
-                                      { "VARIABLE", COMPL_KEYWORD, show_completion_variable },
-                                      { "", COMPL_EOL, NULL } };
+completion_word show_completion[]
+= { { "WORKERS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "VARIABLES", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "VARIABLE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_variable },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word stop_completion_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                            { "", COMPL_EOL, NULL } };
+completion_word stop_completion_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_archive_identifier },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word stop_completion_archive[] = { { "ARCHIVE", COMPL_KEYWORD, stop_completion_ident },
-                                              { "", COMPL_EOL, NULL } };
+completion_word stop_completion_streaming_for[]
+= { { "FOR", COMPL_KEYWORD, COMPL_STATIC_ARRAY, stop_completion_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word stop_completion_streaming_for[] = { { "FOR", COMPL_KEYWORD, stop_completion_archive },
-                                                    { "", COMPL_EOL, NULL } };
+completion_word stop_completion[]
+= { { "STREAMING" , COMPL_KEYWORD, COMPL_STATIC_ARRAY, stop_completion_streaming_for, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word stop_completion[] = { { "STREAMING" , COMPL_KEYWORD, stop_completion_streaming_for },
-                                      { "", COMPL_EOL, NULL } };
+completion_word pin_completion_ident[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word pin_completion_ident[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                           { "", COMPL_EOL, NULL } };
+completion_word pin_completion_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_archive_identifier },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word pin_completion_archive[] = { { "ARCHIVE", COMPL_KEYWORD, pin_completion_ident },
-                                             { "", COMPL_EOL, NULL } };
+completion_word pin_completion_in[]
+= { { "IN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word pin_completion_in[] = { { "IN", COMPL_KEYWORD, pin_completion_archive },
-                                        { "", COMPL_EOL, NULL } };
+completion_word unpin_completion[]
+= { { "+", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "NEWEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "OLDEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "<BASEBACKUP ID>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "PINNED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word unpin_completion[] = { { "+", COMPL_KEYWORD, pin_completion_in },
-                                       { "NEWEST", COMPL_KEYWORD, pin_completion_in },
-                                       { "OLDEST", COMPL_KEYWORD, pin_completion_in },
-                                       { "<BASEBACKUP ID>", COMPL_IDENTIFIER, pin_completion_in },
-                                       { "PINNED", COMPL_KEYWORD, pin_completion_in },
-                                       { "", COMPL_EOL, NULL } };
+completion_word pin_completion[]
+= { { "+", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "NEWEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "OLDEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "<BASEBACKUP ID>", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion_in, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word pin_completion[] = { { "+", COMPL_KEYWORD, pin_completion_in },
-                                     { "NEWEST", COMPL_KEYWORD, pin_completion_in },
-                                     { "OLDEST", COMPL_KEYWORD, pin_completion_in },
-                                     { "<BASEBACKUP ID>", COMPL_KEYWORD, pin_completion_in },
-                                     { "", COMPL_EOL, NULL } };
+completion_word apply_retention_archive_name[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_retention_archive_name[] = { { "<identifier>", COMPL_IDENTIFIER, NULL },
-                                                   { "", COMPL_EOL, NULL } };
+completion_word apply_retention_archive[]
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, apply_retention_archive_name, NULL } ,
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_retention_archive[] = { { "ARCHIVE", COMPL_KEYWORD, apply_retention_archive_name } ,
-                                              { "", COMPL_EOL, NULL } };
+completion_word apply_retention_to_archive[]
+= { { "TO", COMPL_KEYWORD, COMPL_STATIC_ARRAY, apply_retention_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_retention_to_archive[] = { { "TO", COMPL_KEYWORD, apply_retention_archive },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word apply_retention_name[]
+= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, apply_retention_to_archive, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_retention_name[] = { { "<identifier>", COMPL_IDENTIFIER, apply_retention_to_archive },
-                                           { "", COMPL_EOL, NULL } };
+completion_word apply_retention_completion[]
+= { { "POLICY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, apply_retention_name, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_retention_completion[] = { { "POLICY", COMPL_KEYWORD, apply_retention_name },
-                                                 { "", COMPL_EOL, NULL } };
+completion_word apply_completion[]
+= { { "RETENTION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, apply_retention_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word apply_completion[] = { { "RETENTION", COMPL_KEYWORD, apply_retention_completion },
-                                       { "", COMPL_EOL, NULL } };
+completion_word set_variable_assignment[]
+= { { "=", COMPL_END, COMPL_STATIC_ARRAY, NULL, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word set_variable_assignment[] = { { "=", COMPL_END, NULL },
-                                              { "", COMPL_EOL, NULL } };
+completion_word set_completion[]
+= { { "VARIABLE", COMPL_KEYWORD, COMPL_FUNC_SQL, set_variable_assignment,
+      (completion_callback) compl_variable },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word set_variable_completion[] = { { "<variable>", COMPL_IDENTIFIER, set_variable_assignment },
-                                              { "", COMPL_EOL, NULL } };
+completion_word reset_completion[]
+= { { "VARIABLE", COMPL_KEYWORD, COMPL_FUNC_SQL, NULL,
+      (completion_callback) compl_variable },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word set_completion[] = { { "VARIABLE", COMPL_KEYWORD, set_variable_completion },
-                                     { "", COMPL_EOL, NULL } };
-
-completion_word reset_completion_variable[] = { { "<variable>", COMPL_IDENTIFIER, NULL },
-                                                { "", COMPL_EOL, NULL } };
-
-completion_word reset_completion[] = { { "VARIABLE", COMPL_KEYWORD, reset_completion_variable },
-                                       { "", COMPL_EOL, NULL } };
-
-completion_word start_keyword[] = { { "CREATE", COMPL_KEYWORD, create_completion },
-                                    { "START", COMPL_KEYWORD, start_completion },
-                                    { "LIST", COMPL_KEYWORD, list_completion },
-                                    { "VERIFY", COMPL_KEYWORD, verify_archive_completion },
-                                    { "DROP", COMPL_KEYWORD, drop_completion },
-                                    { "ALTER", COMPL_KEYWORD, alter_completion },
-                                    { "SHOW", COMPL_KEYWORD, show_completion },
-                                    { "STOP", COMPL_KEYWORD, stop_completion },
-                                    { "PIN", COMPL_KEYWORD, pin_completion },
-                                    { "UNPIN", COMPL_KEYWORD, unpin_completion },
-                                    { "APPLY", COMPL_KEYWORD, apply_completion },
-                                    { "SET", COMPL_KEYWORD, set_completion },
-                                    { "RESET", COMPL_KEYWORD, reset_completion },
-                                    { "", COMPL_EOL, NULL } /* marks end of list */ };
+completion_word start_keyword[]
+= { { "CREATE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_completion, NULL },
+    { "START", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_completion, NULL },
+    { "LIST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, list_completion, NULL },
+    { "VERIFY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, verify_archive_completion, NULL },
+    { "DROP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, drop_completion, NULL },
+    { "ALTER", COMPL_KEYWORD, COMPL_STATIC_ARRAY, alter_completion, NULL },
+    { "SHOW", COMPL_KEYWORD, COMPL_STATIC_ARRAY, show_completion, NULL },
+    { "STOP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, stop_completion, NULL },
+    { "PIN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, pin_completion, NULL },
+    { "UNPIN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, unpin_completion, NULL },
+    { "APPLY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, apply_completion, NULL },
+    { "SET", COMPL_KEYWORD, COMPL_STATIC_ARRAY, set_completion, NULL },
+    { "RESET", COMPL_KEYWORD, COMPL_STATIC_ARRAY, reset_completion, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } /* marks end of list */ };
 
 /* global buffer to hold completed input for readline callbacks */
 std::vector<completion_word> completed_keywords = {};
@@ -461,7 +768,8 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
   for (unsigned int i = 0; i < previous_words.size() - 1; i++) {
 
     std::string current_word = previous_words[i];
-    completion_word *candidates;
+    completion_word *candidates = NULL;
+    CompletionAction completion_action = COMPL_STATIC_ARRAY;
 
     /* nothing to compare */
     if (current_word.length() <= 0)
@@ -475,7 +783,20 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
       candidates = start_keyword;
     else {
 
-      candidates = completed_keywords.back().next_completions;
+      completion_word cw = completed_keywords.back();
+
+      if (cw.action == COMPL_STATIC_ARRAY) {
+
+        candidates = cw.next_completions;
+
+      } else if (cw.action == COMPL_FUNC_SQL) {
+
+        cw.cb(candidates, cw.next_completions);
+
+        /* We need to free the allocated array afterwards */
+        completion_action = cw.action;
+
+      }
 
     }
 
@@ -518,6 +839,10 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
         break;
       }
     }
+
+    if (completion_action == COMPL_FUNC_SQL)
+      delete[] candidates;
+
   }
 
   return;
@@ -540,7 +865,9 @@ char **keyword_completion(const char *input, int start, int end) {
    * also contains the uncompleted last input. We also
    * replace the whole content of previous_words.
    */
-  boost::split(previous_words, current_input_buf, boost::is_any_of(WORD_BREAKS));
+  boost::split(previous_words,
+               current_input_buf,
+               boost::is_any_of(WORD_BREAKS));
 
   /*
    * Now recognize completed words. This is done from the start
@@ -565,7 +892,8 @@ char **keyword_completion(const char *input, int start, int end) {
 
 }
 
-void init_readline() {
+void init_readline(std::string catalog_name,
+                   std::shared_ptr<RuntimeConfiguration> rtc) {
 
   /*
    * Full completion tokens for parameter list for CREATE BACKUP PROFILE
@@ -578,14 +906,22 @@ void init_readline() {
    * IMPORTANT: If you change the number of elements here, make sure you
    *            match them in the forward declaration above!
    */
-  completion_word create_bck_prof_w0 = { "COMPRESSION", COMPL_KEYWORD, create_bck_prof_compr_type };
-  completion_word create_bck_prof_w1 = { "MAX_RATE", COMPL_KEYWORD, create_bck_prof_max_rate };
-  completion_word create_bck_prof_w2 = { "LABEL", COMPL_KEYWORD, create_bck_prof_label_string };
-  completion_word create_bck_prof_w3 = { "WAL", COMPL_KEYWORD, create_bck_prof_wal_setting };
-  completion_word create_bck_prof_w4 = { "CHECKPOINT", COMPL_KEYWORD, create_bck_prof_chkpt_setting};
-  completion_word create_bck_prof_w5 = { "WAIT_FOR_WAL", COMPL_KEYWORD, create_bck_prof_wfw_setting };
-  completion_word create_bck_prof_w6 = { "NOVERIFY", COMPL_KEYWORD, create_bck_prof_noverify_setting };
-  completion_word create_bck_prof_w7 = { "", COMPL_EOL, NULL } ;
+  completion_word create_bck_prof_w0
+    = { "COMPRESSION", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_compr_type, NULL };
+  completion_word create_bck_prof_w1
+    = { "MAX_RATE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_max_rate, NULL };
+  completion_word create_bck_prof_w2
+    = { "LABEL", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_label_string, NULL };
+  completion_word create_bck_prof_w3
+    = { "WAL", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_wal_setting, NULL };
+  completion_word create_bck_prof_w4
+    = { "CHECKPOINT", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_chkpt_setting, NULL };
+  completion_word create_bck_prof_w5
+    = { "WAIT_FOR_WAL", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_wfw_setting, NULL };
+  completion_word create_bck_prof_w6
+    = { "NOVERIFY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_noverify_setting, NULL };
+  completion_word create_bck_prof_w7
+    = { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } ;
 
   create_bck_prof_param_full[0] = create_bck_prof_w0;
   create_bck_prof_param_full[1] = create_bck_prof_w1;
@@ -602,13 +938,28 @@ void init_readline() {
    * The LISTEN_ON and PORT options need to call the completion
    * tokens for LISTEN_ON recursively.
    */
-  completion_word recovery_stream_listen_port_w0 = { "LISTEN_ON", COMPL_KEYWORD, recovery_stream_ip_address };
-  completion_word recovery_stream_listen_port_w1 = { "PORT", COMPL_KEYWORD, recovery_stream_port };
-  completion_word recovery_stream_listen_port_w2 = { "", COMPL_EOL, NULL };
+  completion_word recovery_stream_listen_port_w0
+    = { "LISTEN_ON", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_ip_address, NULL };
+  completion_word recovery_stream_listen_port_w1
+    = { "PORT", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_port, NULL };
+  completion_word recovery_stream_listen_port_w2
+    = { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL };
 
   recovery_stream_listen_port[0] = recovery_stream_listen_port_w0;
   recovery_stream_listen_port[1] = recovery_stream_listen_port_w1;
   recovery_stream_listen_port[2] = recovery_stream_listen_port_w2;
+
+  /*
+   * Initialize catalog handle for completion queries, iff
+   * necessary.
+   */
+  if (compl_catalog_handle == nullptr) {
+    compl_catalog_handle = std::make_shared<BackupCatalog>(catalog_name);
+  }
+
+  if (compl_runtime_cfg == nullptr) {
+    compl_runtime_cfg = rtc;
+  }
 
   /* XXX: what about specific append settings?
    *
@@ -659,7 +1010,7 @@ _evaluate_keyword(completion_word *lookup_table,
   while (lookup_table[(*index)].type != COMPL_EOL) {
 
     /* NOTE: lookup keyword, but also increment index for next round */
-    name = lookup_table[(*index)++].name;
+    name = lookup_table[(*index)++].name.c_str();
 
     if (strncasecmp(name, input, len) == 0) {
       return strdup(name);
@@ -667,7 +1018,7 @@ _evaluate_keyword(completion_word *lookup_table,
 
   }
 
-  /* only in case no match found */
+  /* only in case no match found, should be NULL */
   return result;
 }
 
@@ -684,8 +1035,26 @@ keyword_generator(const char *input, int state) {
 
   if (!completed_keywords.empty()) {
 
-    result = _evaluate_keyword(completed_keywords.back().next_completions,
-                               input, &list_index, len);
+    completion_word cw = completed_keywords.back();
+    completion_word *next;
+
+    if (cw.action == COMPL_STATIC_ARRAY) {
+
+      result = _evaluate_keyword(cw.next_completions,
+                                 input, &list_index, len);
+
+    } else if (cw.action == COMPL_FUNC_SQL) {
+
+      /* call SQL completion callback */
+      cw.cb(next, cw.next_completions);
+      result = _evaluate_keyword(next,
+                                 input, &list_index, len);
+
+      /* _evaluate_keyword makes a duplicate of the returned
+       * character string, so it should be safe to free it */
+      delete[] next;
+
+    }
 
   } else {
 
@@ -695,4 +1064,5 @@ keyword_generator(const char *input, int state) {
   }
 
   return result;
+
 }

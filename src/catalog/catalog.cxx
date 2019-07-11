@@ -6585,6 +6585,67 @@ BackupCatalog::dropCatalogConnection(std::string archive_name, std::string type)
 
 }
 
+shared_ptr<vector<string>> BackupCatalog::SQL(string sql) {
+
+  shared_ptr<vector<string>> list = make_shared<vector<string>>();
+  sqlite3_stmt *stmt;
+  int rc;
+
+  /*
+   * Make sure database is opened.
+   */
+  if (!isOpen) {
+    ostringstream oss;
+
+    oss << "database is not open";
+    throw CCatalogIssue(oss.str());
+  }
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          sql.c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "could not prepare query: "
+        << sqlite3_errmsg(this->db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /* perform the SELECT */
+  rc = sqlite3_step(stmt);
+
+  /* Check for empty result */
+  if (rc == SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return list;
+  }
+
+  /* Seems we have a result list,
+   * push 'em all into our vector */
+  while (rc == SQLITE_ROW && rc != SQLITE_DONE) {
+
+    string list_item;
+
+    if (sqlite3_column_type(stmt, 0) != SQLITE_TEXT) {
+      ostringstream oss;
+
+      oss << "only single text columns allowed in SQL() method";
+      sqlite3_finalize(stmt);
+      throw CCatalogIssue(oss.str());
+    }
+
+    list_item = (char *)sqlite3_column_text(stmt, 0);
+    list->push_back(list_item);
+
+    rc = sqlite3_step(stmt);
+  }
+
+  sqlite3_finalize(stmt);
+  return list;
+}
+
 void
 BackupCatalog::getStreams(std::string archive_name,
                           std::vector<std::shared_ptr<StreamIdentification>> &result) {
@@ -6806,7 +6867,8 @@ void BackupCatalog::open_ro() {
   rc = sqlite3_open_v2(this->sqliteDB.c_str(),
                        &(this->db_handle),
                        SQLITE_OPEN_READONLY,
-                       "");
+                       NULL);
+
   if(rc) {
     ostringstream oss;
     /*

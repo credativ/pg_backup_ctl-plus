@@ -686,7 +686,8 @@ int main(int argc, const char **argv) {
     }
 
     /* prepare readline support */
-    init_readline();
+    init_readline(string(args.catalogDir),
+                  RtCfg);
 
     while(!wants_exit) {
 

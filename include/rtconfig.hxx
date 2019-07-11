@@ -335,6 +335,8 @@ namespace credativ {
 
     virtual void reset(std::string name);
 
+    virtual size_t count_variables();
+
   };
 
 

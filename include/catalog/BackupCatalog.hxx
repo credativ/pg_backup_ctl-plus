@@ -708,6 +708,19 @@ namespace credativ {
      * catalog version.
      */
     virtual int getCatalogVersion();
+
+    /**
+     * Fires the specified SQL string and returns
+     * a list of std::string as a std::vector.
+     *
+     * This method is primarily intended to query
+     * arbitrary catalog tables for a list of string
+     * values.
+     *
+     * The method only allows actions against a
+     * SQLite database opened in read-only mode.
+     */
+    virtual std::shared_ptr<std::vector<std::string>> SQL(std::string sql);
   };
 }
 

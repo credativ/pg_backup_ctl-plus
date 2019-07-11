@@ -405,6 +405,10 @@ RuntimeConfiguration::RuntimeConfiguration() {}
 
 RuntimeConfiguration::~RuntimeConfiguration() {}
 
+size_t RuntimeConfiguration::count_variables() {
+  return variables.size();
+}
+
 config_variable_iterator RuntimeConfiguration::end() {
   return this->variables.end();
 }
