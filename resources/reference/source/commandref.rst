@@ -456,6 +456,19 @@ Example::
 
   START BASEBACKUP FOR ARCHIVE pg10;
 
+START RECOVERY STREAM
+=======================
+
+Syntax::
+
+  START RECOVERY STREAM FOR ARCHIVE <identifier>
+  [ { LISTEN_ON <ip address> } ] PORT <port number>
+
+This command starts a recovery background process attached to the
+specified archive identified by ``<identifier>``. The recovery background
+process can be used to recover a specified basebackup over the PostgreSQL
+Streaming Replication protocol.
+
 START STREAMING FOR ARCHIVE
 ===========================
 
