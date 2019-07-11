@@ -797,6 +797,8 @@ void PGProtoStreamingServer::_send_ParameterStatus() {
    */
   this->_parameter_to_buffer(temp_buf, "server_version",
                              this->streamDescr->version);
+  this->_parameter_to_buffer(temp_buf, "integer_datetimes",
+                             "on");
 
   status.hdr.type = pgprotocol::ParameterStatusMessage;
 
