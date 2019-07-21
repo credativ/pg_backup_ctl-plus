@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <ostream>
 #include <iostream>
+
 #include <pgsql-proto.hxx>
 
 using namespace credativ;
@@ -16,20 +17,22 @@ using namespace credativ::pgprotocol;
 void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
                                   size_t &msg_size) {
 
+  /* ErrorResponse header */
+  pgprotocol::pg_protocol_msg_header hdr;
+
   /*
    * Allocate enough space in the buffer. We must
    * add a byte for each message, because a null byte
    * indicates a new error field in the whole message.
+   * Also, we need a finalizing NULL byte to indicate
+   * the end of message.
    */
-  size_t buf_msg_size = this->content_size + this->count();
-
-  /* ErrorResponse header */
-  pgprotocol::pg_protocol_msg_header hdr;
+  msg_size = this->content_size + this->count() + 1;
 
   hdr.type = ErrorMessage;
-  hdr.length = MESSAGE_HDR_LENGTH_SIZE + buf_msg_size;
+  hdr.length = MESSAGE_HDR_LENGTH_SIZE + msg_size;
 
-  dest.allocate(MESSAGE_HDR_SIZE + buf_msg_size);
+  dest.allocate(MESSAGE_HDR_SIZE + msg_size);
 
   dest.write_byte(hdr.type);
   dest.write_int(hdr.length);
@@ -46,11 +49,16 @@ void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
     dest.write_byte(ef.type);
 
     /* Write message, including null byte! */
-    dest.write_buffer(ef.value.c_str(), ef.value.length() + 1);
+    dest.write_buffer(ef.value.c_str(), ef.value.length());
+    dest.write_byte('\0');
 
     /* Remove element from the stack and proceed */
     pop();
+
   }
+
+  /* Final NULL byte, indicating end of message */
+  dest.write_byte('\0');
 
 }
 

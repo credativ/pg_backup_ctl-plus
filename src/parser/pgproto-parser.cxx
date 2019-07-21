@@ -23,6 +23,7 @@
 #include <functional>
 
 #include <rtconfig.hxx>
+#include <pgsql-proto.hxx>
 
 /**
  *
@@ -46,6 +47,11 @@ namespace credativ {
       : qi::grammar<Iterator, ascii::space_type> {
 
     private:
+
+      /*
+       * Streaming Protocol command descriptor.
+       */
+      PGProtoCmdDescr cmd;
 
     public:
 
@@ -79,7 +85,8 @@ namespace credativ {
         using phoenix::construct;
         using phoenix::val;
 
-        cmd_identify_system = no_case[ lexeme[ lit("IDENTIFY_SYSTEM") ] ];
+        cmd_identify_system = no_case[ lexeme[ lit("IDENTIFY_SYSTEM") ] ]
+          [ boost::bind(&PGProtoCmdDescr::setCommandTag, &cmd, IDENTIFY_SYSTEM) ];
 
         start %= eps >> (
                          cmd_identify_system

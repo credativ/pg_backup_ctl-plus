@@ -2,6 +2,7 @@
 #define __HAVE_PGSQL_PROTO_HXX__
 
 #include <stack>
+#include <vector>
 #include <proto-buffer.hxx>
 
 /*
@@ -25,7 +26,12 @@ namespace credativ {
                 PGPROTO_READY_FOR_QUERY,
                 PGPROTO_READY_FOR_QUERY_WAIT,
                 PGPROTO_SEND_BACKEND_KEY,
-                PGPROTO_ERROR_CONDITION /* usually set back to PGPROTO_READY_FOR_QUERY_WAIT */
+                PGPROTO_ERROR_CONDITION,
+                PGPROTO_ERROR_AFTER_QUERY, /* usually set back to PGPROTO_READY_FOR_QUERY_WAIT */
+                PGPROTO_COMMAND_COMPLETE,
+                PGPROTO_PROCESS_QUERY_START,
+                PGPROTO_PROCESS_QUERY_RESULT,
+                PGPROTO_PROCESS_QUERY_EXECUTE
 
   } PostgreSQLProtocolState;
 
@@ -75,6 +81,18 @@ namespace credativ {
     const PGAuthenticationType AuthRequest_SASL_CONT = 11;
     const PGAuthenticationType AuthRequest_SASL_FIN  = 12;
 
+    /* Fixed PostgreSQL command tags */
+    typedef enum {
+                  INSERT_CMD,
+                  UPDATE_CMD,
+                  DELETE_CMD,
+                  SELECT_CMD,
+                  MOVE_CMD,
+                  FETCH_CMD,
+                  COPY_CMD,
+                  UNKNOWN_CMD
+    } PGProtoCmdTag;
+
     struct pg_protocol_msg_header {
 
       PGMessageType type;
@@ -122,6 +140,88 @@ namespace credativ {
     const PGErrorResponseType PGProtoSeverity          = 'S';
     const PGErrorResponseType PGProtoSeverityNonLocale = 'V';
     const PGErrorResponseType PGProtoMessage           = 'M';
+
+    /***
+     * Streaming protocol command tags.
+     */
+    typedef enum {
+
+                  INVALID_COMMAND,
+                  IDENTIFY_SYSTEM
+
+    } ProtocolCommandTag;
+
+    /**
+     * Handles and definitions to process
+     * queries in the recovery instance.
+     */
+    class PGProtoCmdDescr {
+    public:
+
+      ProtocolCommandTag tag = INVALID_COMMAND;
+
+      std::vector<std::string> cmd_arguments;
+      std::string query;
+
+      void setCommandTag(ProtocolCommandTag const& tag);
+
+    };
+
+    /**
+     * PGProtoRowDataDescr
+     */
+    class PGProtoColumnDataDescr {
+    public:
+
+      int length;
+      ProtocolBuffer data;
+
+    };
+
+    /**
+     * Formatted result set.
+     *
+     * Holds the column values.
+     */
+    class PGProtoDataDescr {
+    public:
+
+      pg_protocol_msg_header hdr = { DescribeMessage };
+
+      /*
+       * Number of field values (usually identical to
+       * the column count in PGProtoRowDescr instances
+       */
+      std::vector<PGProtoColumnDataDescr> row_values;
+
+    };
+
+    class PGProtoColumnDescr {
+    public:
+
+      std::string name = "";
+      int   tableoid   = 0;
+      short attnum     = 0;
+      int   typeoid    = 0;  /* XXX: text datatype OID? */
+      short typelen    = -1; /* varlena */
+      int   typemod    = -1; /* varlena */
+      short format     = 0;  /* indicates TEXT format */
+
+    };
+
+    /**
+     * PGProtoRowDescr
+     *
+     * Header for query result sets.
+     */
+    class PGProtoRowDescr {
+    public:
+
+      pg_protocol_msg_header hdr = { RowDescriptionMessage };
+
+      /* List of PGProtoColumnDescr items */
+      std::vector<PGProtoColumnDescr> column_ist;
+    };
 
     /**
      * Encoded text representations
@@ -254,6 +354,15 @@ namespace credativ {
 
     };
 
+    class ProtocolCommandHandler {
+    protected:
+      ProtocolCommandTag tag = INVALID_COMMAND;
+    public:
+
+      ProtocolCommandHandler(PGProtoCmdDescr descr);
+      virtual ~ProtocolCommandHandler();
+
+    };
 
   }
 
