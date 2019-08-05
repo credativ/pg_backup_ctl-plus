@@ -71,3 +71,20 @@ can build the command reference as shown below:
     $ make SPHINXBUILD=sphinx-build-3 html
 
 The documentation can then be found in the build/ subdirectory.
+
+CentOS/RHEL 7
+-------------
+
+CentOS/RHEL 7 requires a relatively new boost version to build. The shipped
+boost library version 1.53 is too old to support the whole functionality (especially
+the boost-log infrastructure), so building this on this platform requires inclusions of
+EPEL. EPEL provides boost version 1.69, which fits our requirements.
+Another requirement is cmake version >= 3.
+
+      $ cd build
+      $ BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 CXX="ccache g++" CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake3 ..
+
+      or without DEBUG output
+
+      $ CXX="ccache g++" CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake3 ..
+      $ BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 CXX="ccache g++" cmake3 ..
