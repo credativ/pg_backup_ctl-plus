@@ -396,6 +396,11 @@ namespace credativ {
      */
     virtual void open_ro();
 
+    /**
+     * Returns wether the database was successfully opened.
+     */
+    virtual bool opened();
+
     /*
      * Close the sqlite catalog database.
      */

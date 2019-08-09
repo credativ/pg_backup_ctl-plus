@@ -24,6 +24,7 @@
 
 #include <rtconfig.hxx>
 #include <pgsql-proto.hxx>
+#include <pgproto-parser.hxx>
 
 /**
  *
@@ -53,13 +54,31 @@ namespace credativ {
        */
       PGProtoCmdDescr cmd;
 
-    public:
+      /**
+       * Internal runtime confguration handle.
+       *
+       * Initialized through constructor.
+       */
+      std::shared_ptr<RuntimeConfiguration> runtime_configuration = nullptr;
 
       /*
        * Rule return declarations
        */
       qi::rule<Iterator, ascii::space_type> start;
       qi::rule<Iterator, ascii::space_type> cmd_identify_system;
+      qi::rule<Iterator, ascii::space_type> cmd_list_basebackups;
+
+    public:
+
+      /**
+       * Returns a pointer to a PGProtoCmdDescr after having
+       * parsed a command string successfully. Once a parsing step
+       * is completed, the properties of a parser object remains until
+       * the next line is parsed.
+       */
+      std::shared_ptr<PGProtoCmdDescr> getCommand() {
+        return std::make_shared<PGProtoCmdDescr>(cmd);
+      }
 
       PGProtoStreamingParser(std::shared_ptr<RuntimeConfiguration> rtc)
         : PGProtoStreamingParser::base_type(start, "PostgreSQL replication command") {
@@ -85,12 +104,30 @@ namespace credativ {
         using phoenix::construct;
         using phoenix::val;
 
+        runtime_configuration = rtc;
+
+        /*
+         * LIST_BASEBACKUPS command
+         *
+         * Protocol command extension
+         */
+        cmd_list_basebackups = no_case[ lexeme[ lit("LIST_BASEBACKUPS") ] ]
+          [ boost::bind(&PGProtoCmdDescr::setCommandTag, &cmd, LIST_BASEBACKUPS) ];
+
+        /*
+         * IDENTIFY_SYSTEM command
+         */
         cmd_identify_system = no_case[ lexeme[ lit("IDENTIFY_SYSTEM") ] ]
           [ boost::bind(&PGProtoCmdDescr::setCommandTag, &cmd, IDENTIFY_SYSTEM) ];
 
         start %= eps >> (
                          cmd_identify_system
-                         );
+
+                         |
+
+                         cmd_list_basebackups
+
+                         ) >> lit(";");
 
         /*
          * error handling
@@ -109,11 +146,63 @@ namespace credativ {
 
         start.name("command");
         cmd_identify_system.name("IDENTIFY_SYSTEM");
+        cmd_list_basebackups.name("LIST_BASEBACKUPS");
 
       }
 
     };
 
   }
+
+}
+
+using namespace credativ;
+using namespace credativ::pgprotocol;
+
+PostgreSQLStreamingParser::PostgreSQLStreamingParser(std::shared_ptr<RuntimeConfiguration> rtc) {
+
+  runtime_configuration = rtc;
+
+}
+
+PostgreSQLStreamingParser::~PostgreSQLStreamingParser() {}
+
+std::shared_ptr<ProtocolCommandHandler> PostgreSQLStreamingParser::parse(std::string cmdstr) {
+
+  using boost::spirit::ascii::space;
+  typedef std::string::iterator iterator_type;
+  typedef credativ::pgprotocol::PGProtoStreamingParser<iterator_type> PGProtoStreamingParser;
+
+  /*
+   * Dispose previous command handler...
+   */
+  command_handler = nullptr;
+
+  /*
+   * Empty strings are effectively a no-op.
+   */
+  if (cmdstr.length() == 0)
+    return command_handler;
+
+  /* Prepare the parsing steps */
+
+  PGProtoStreamingParser myparser(runtime_configuration);
+
+  std::string::iterator iter = cmdstr.begin();
+  std::string::iterator end  = cmdstr.end();
+
+  bool parse_result = phrase_parse(iter, end, myparser, space);
+
+  if (parse_result && iter == end) {
+
+    std::shared_ptr<PGProtoCmdDescr> cmd = myparser.getCommand();
+    command_handler = std::make_shared<ProtocolCommandHandler>(cmd, runtime_configuration);
+
+  } else {
+
+    throw PGProtoCmdFailure("aborted due to parser error");
+  }
+
+  return command_handler;
 
 }

@@ -38,6 +38,12 @@ namespace credativ {
     int archive_id = -1;
 
     /**
+     * Catalog this streaming instance is attached to.
+     * This usually means the path to the SQLite database.
+     */
+    std::string catalog_name = "";
+
+    /**
      * Wether to use SSL certificates. Defaults to TRUE
      *
      * NOTE: non-SSL currently *not* implemented.

@@ -497,9 +497,22 @@ void StartRecoveryArchiveCommand::execute(bool flag) {
   }
 
   /*
+   * Recovery Stream Descriptor needs to know the
+   * archive ID it is attached to.
+   */
+  shared_ptr<RecoveryStreamDescr> streamDescr = getRecoveryStreamDescr();
+  streamDescr->archive_id = temp_descr->id;
+
+  /*
+   * Safe the catalog name into the recovery descriptor. The
+   * streaming instance needs to have its own catalog connection.
+   */
+  streamDescr->catalog_name = catalog->fullname();
+
+  /*
    * Start the background streaming server for the specified archive.
    */
-  StreamingServer srv(this->getRecoveryStreamDescr());
+  StreamingServer srv(streamDescr);
 
   cerr << "instantiated streaming server with port "
        << this->getRecoveryStreamDescr()->port

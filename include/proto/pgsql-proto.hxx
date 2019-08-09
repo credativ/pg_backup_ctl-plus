@@ -31,7 +31,8 @@ namespace credativ {
                 PGPROTO_COMMAND_COMPLETE,
                 PGPROTO_PROCESS_QUERY_START,
                 PGPROTO_PROCESS_QUERY_RESULT,
-                PGPROTO_PROCESS_QUERY_EXECUTE
+                PGPROTO_PROCESS_QUERY_EXECUTE,
+                PGPROTO_PROCESS_QUERY_IN_PROGRESS
 
   } PostgreSQLProtocolState;
 
@@ -147,13 +148,18 @@ namespace credativ {
     typedef enum {
 
                   INVALID_COMMAND,
-                  IDENTIFY_SYSTEM
+                  IDENTIFY_SYSTEM,
+                  LIST_BASEBACKUPS
 
     } ProtocolCommandTag;
 
-    /**
+    /*************************************************************************
      * Handles and definitions to process
      * queries in the recovery instance.
+     *************************************************************************/
+
+    /**
+     * Command descriptor populated by the streaming protocol parser.
      */
     class PGProtoCmdDescr {
     public:
@@ -168,13 +174,51 @@ namespace credativ {
     };
 
     /**
+     * Protocol Buffer Aggregator interface class.
+     *
+     * This should be implemented by a PGProtoStreamingCommand instances
+     * if they create protocol level response messages.
+     */
+    class PGProtoBufferAggregator {
+    protected:
+
+      /**
+       * The current_step identifies the current status of
+       * protocol messages stacked via the buffer aggregator.
+       *
+       * Steps should always start by 1, never by 0 and never with
+       * negative values. 0 always defines the buffer aggregator for never
+       * being called before, whereas a negative value indicates
+       * the end of the message flow.
+       */
+      int current_step = 0; /* not yet called */
+
+    public:
+
+      PGProtoBufferAggregator() {}
+      virtual ~PGProtoBufferAggregator() {};
+
+      virtual int step(ProtocolBuffer &buffer) = 0;
+      virtual void reset() = 0;
+
+    };
+
+    /**
      * PGProtoRowDataDescr
      */
     class PGProtoColumnDataDescr {
     public:
 
       int length;
-      ProtocolBuffer data;
+      std::string data;
+
+    };
+
+    class PGProtoColumns {
+    public:
+
+      int row_size = 0;
+      std::vector<PGProtoColumnDataDescr> values;
 
     };
 
@@ -192,12 +236,17 @@ namespace credativ {
        * Number of field values (usually identical to
        * the column count in PGProtoRowDescr instances
        */
-      std::vector<PGProtoColumnDataDescr> row_values;
+      std::vector<PGProtoColumns> row_values;
 
     };
 
     class PGProtoColumnDescr {
     public:
+
+      static const int PG_TYPELEN_VARLENA = -1;
+      static const int PG_TYPEMOD_VARLENA = -1;
+      static const int PG_TYPEOID_TEXT    = 25;
+      static const int PG_TYPEOID_INT4    = 23;
 
       std::string name = "";
       int   tableoid   = 0;
@@ -219,8 +268,97 @@ namespace credativ {
 
       pg_protocol_msg_header hdr = { RowDescriptionMessage };
 
+      /*
+       * Number of column descriptors
+       *
+       * We don't use the vector count here, since
+       * on the protocol level the column count is just
+       * a short (16bit int) value.
+       */
+      short count = 0;
+
       /* List of PGProtoColumnDescr items */
-      std::vector<PGProtoColumnDescr> column_ist;
+      std::vector<PGProtoColumnDescr> column_list;
+
+    };
+
+    /**
+     * PGProtoResult
+     *
+     * Encapsulates result sets sent over
+     * the PostgreSQL wire protocol.
+     */
+    class PGProtoResultSet {
+    private:
+
+      int row_descr_size = 0;
+
+      /*
+       * PGProtoRowDescr is the "header" of each
+       * data response.
+       */
+      PGProtoRowDescr row_descr;
+      PGProtoDataDescr data_descr;
+
+      virtual int calculateRowDescrSize();
+
+      /**
+       * Prepares a data or row descriptor message to be sent
+       * over the wire.
+       *
+       * Returns the calculated message size includeing message
+       * header length size without the message byte length.
+       *
+       * If a value < 0 is returned, the return code is as follows:
+       *
+       * -1: the column counts in row and data descriptor do not match.
+       */
+      virtual int prepareSend(ProtocolBuffer &buffer,
+                              int type);
+
+      /*
+       * Internal iterator handle to loop through data rows.
+       */
+      std::vector<PGProtoColumns>::iterator row_iterator;
+
+    public:
+
+      static const int PGPROTO_ROW_DESCR_MESSAGE = 1;
+      static const int PGPROTO_DATA_DESCR_MESSAGE = 2;
+
+      PGProtoResultSet();
+      virtual ~PGProtoResultSet();
+
+      /*
+       * Clear the result set. If an iteration to retrieve
+       * rows into a ProtocolBuffer was in progress, this will
+       * also be resettet.
+       */
+      virtual void clear();
+
+      /**
+       * Write the row descriptor message into the specified
+       * protocol buffer. This also resets the internal
+       * row data iterator to the very first row in the
+       * result set.
+       */
+      virtual int descriptor(ProtocolBuffer &buffer);
+      virtual int data(ProtocolBuffer &buffer);
+
+      virtual void addColumn(PGProtoColumnDescr col,
+                             std::vector<PGProtoColumnDataDescr> data);
+      virtual void addColumn(std::string colname,
+                             int tableoid,
+                             short attnum,
+                             int typeoid,
+                             short typelen,
+                             int typemod,
+                             short format = 0);
+
+      virtual void addRow(std::vector<PGProtoColumnDataDescr> column_values);
+
+      virtual unsigned int rowCount();
+
     };
 
     /**
@@ -354,16 +492,6 @@ namespace credativ {
 
     };
 
-    class ProtocolCommandHandler {
-    protected:
-      ProtocolCommandTag tag = INVALID_COMMAND;
-    public:
-
-      ProtocolCommandHandler(PGProtoCmdDescr descr);
-      virtual ~ProtocolCommandHandler();
-
-    };
-
   }
 
 }
@@ -374,5 +502,11 @@ namespace credativ {
 #define MESSAGE_DATA_LENGTH(msg) (((msg).hdr).length - MESSAGE_HDR_LENGTH_SIZE)
 #define MESSAGE_LENGTH_OFFSET ((off_t) sizeof(credativ::pgprotocol::PGMessageType))
 #define MESSAGE_DATA_OFFSET (MESSAGE_LENGTH_OFFSET + MESSAGE_HDR_LENGTH_SIZE)
+
+/**
+ * Currently we don't have any reason to allow arbitrary large
+ * query lengths, so restrict the input buffer to up to 4096 bytes.
+ */
+#define PGPROTO_MAX_QUERY_SIZE 4096
 
 #endif

@@ -16,9 +16,12 @@ extern "C" {
 #include <iostream>
 }
 
+#include <rtconfig.hxx>
 #include <bgrndroletype.hxx>
 #include <pgsql-proto.hxx>
 #include <proto-buffer.hxx>
+#include <pgproto-parser.hxx>
+#include <pgproto-commands.hxx>
 #include <server.hxx>
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
@@ -208,6 +211,12 @@ namespace credativ {
 
   class PGProtoStreamingServer : public PGBackupCtlStreamingServer {
   private:
+
+    /**
+     * Runtime configuration private to this server
+     * instance.
+     */
+    std::shared_ptr<RuntimeVariableEnvironment> server_env = std::make_shared<RuntimeVariableEnvironment>();
 
     /**
      * The internal query descriptor initialized
@@ -446,6 +455,9 @@ PGProtoStreamingServer::PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDes
    */
   cmd = std::make_shared<pgprotocol::PGProtoCmdDescr>();
 
+  server_env->assignRuntimeConfiguration(RuntimeVariableEnvironment::createRuntimeConfiguration());
+  BOOST_LOG_TRIVIAL(debug) << "created runtime configuration";
+
 }
 
 PGProtoStreamingServer::~PGProtoStreamingServer() {}
@@ -453,6 +465,23 @@ PGProtoStreamingServer::~PGProtoStreamingServer() {}
 #define INITIAL_STARTUP_BUFFER_SIZE 8
 
 void PGProtoStreamingServer::run() {
+
+  std::shared_ptr<RuntimeConfiguration> runtime_configuration
+    = server_env->getRuntimeConfiguration();
+
+  /*
+   * Create global runtime parameters.
+   */
+  runtime_configuration->create("recovery_instance.archive_id",
+                                streamDescr->archive_id,
+                                -1);
+  runtime_configuration->create("recovery_instance.use_ssl",
+                                streamDescr->use_ssl,
+                                false);
+
+  runtime_configuration->create("recovery_instance.catalog_name",
+                                streamDescr->catalog_name,
+                                "");
 
   BOOST_LOG_TRIVIAL(debug) << "DEBUG: run PGProtoStreamingServer";
 
@@ -539,7 +568,9 @@ void PGProtoStreamingServer::_read_startup_gucs() {
         sbuf.clear();
 
         std::cerr << "GUC VALUE: " << val << std::endl;
-        startup_gucs.insert( std::pair<std::string, std::string>(key, val) );
+
+        if (key.length() > 0)
+          startup_gucs.insert( std::pair<std::string, std::string>(key, val) );
 
         val = "";
         key = "";
@@ -651,16 +682,29 @@ void PGProtoStreamingServer::handle_read(const boost::system::error_code& ec, st
 
       }
 
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO process query string: "
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO processed query string: "
                                << query_string;
 
       break;
     }
 
+  case PGPROTO_READY_FOR_QUERY_WAIT:
+    {
+      /*
+       * This usually means a ready for query message
+       * was submitted after a command complete message.
+       *
+       * Turn back to normal query processing.
+       */
+      BOOST_LOG_TRIVIAL(debug) << "PGPROTO ready for query wait";
+
+      state = PGPROTO_PROCESS_QUERY_START;
+      start_read();
+      break;
+    }
+
   case PGPROTO_PROCESS_QUERY_START:
     {
-
-
       BOOST_LOG_TRIVIAL(debug) << "PG PROTO process query START";
 
       /* prepare to read query string */
@@ -718,7 +762,7 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
     {
       BOOST_LOG_TRIVIAL(debug) << "PG PROTO command complete";
 
-      this->_send_command_complete(this->last_cmd_tag, this->processed_rows);
+      this->_send_ReadyForQuery();
       start_write(this->buf.getSize());
       break;
 
@@ -747,12 +791,6 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
       /* Write handler just completed a ReadyForQuery message */
       BOOST_LOG_TRIVIAL(debug) << "PG PROTO ready for query completed";
 
-      // error_msg(pgprotocol::PG_ERR_ERROR, "not yet implemented, exiting");
-      // set_sqlstate("08004");
-      // _send_error();
-
-      // this->start_write(buf.getSize());
-      buf.allocate(MESSAGE_HDR_SIZE);
       state = PGPROTO_PROCESS_QUERY_START;
       start_read();
 
@@ -777,9 +815,23 @@ void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
 
       break;
     }
+  case PGPROTO_PROCESS_QUERY_IN_PROGRESS:
+    {
+      /* nothing to do here, we need to proceed until
+       * PGPROTO_COMMAND_COMPLETE */
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO processing query in progress";
+      break;
+    }
+
   default:
 
-    throw TCPServerFailure("unexpected PostgreSQL protocol state");
+    {
+      std::ostringstream oss;
+
+      oss << "unexpected PostgreSQL protocol state " << state;
+      throw TCPServerFailure(oss.str());
+    }
+
   }
 
 }
@@ -873,6 +925,25 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
 
   char *qbuf;
   std::string query_string = "";
+  std::string error_string = "";
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO query string length: " << qsize;
+
+  /**
+   * Make sure we allocate an reasonable sized
+   * buffer for the input query. If we have a buffer
+   * larger than PGPROTO_MAX_QUERY_SIZE we error out.
+   */
+  if (qsize > PGPROTO_MAX_QUERY_SIZE) {
+
+    error_msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
+    error_msg(pgprotocol::PG_ERR_DETAIL, "query exceeds maximum query length");
+    set_sqlstate("42601");
+    _send_error();
+
+    state = PGPROTO_ERROR_AFTER_QUERY;
+
+  }
 
   /*
    * Extract query string from buffer.
@@ -882,12 +953,82 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
 
   buf.read_buffer(qbuf, qsize);
 
-  BOOST_LOG_TRIVIAL(debug) << "PG PROTO query string length: " << qsize;
+  /**
+   * Extract the query length from the buffer and convert it
+   * to a std::string. Then call the parser to handle the query.
+   */
   query_string = std::string(qbuf);
 
   delete[] qbuf;
 
-  state = PGPROTO_ERROR_AFTER_QUERY;
+  BOOST_LOG_TRIVIAL(debug) << "query " << query_string;
+
+  try {
+
+    /* Parse the query */
+    pgprotocol::PostgreSQLStreamingParser pgparser(server_env->getRuntimeConfiguration());
+    std::shared_ptr<pgprotocol::ProtocolCommandHandler> handler = nullptr;
+    std::shared_ptr<pgprotocol::PGProtoStreamingCommand> cmd = nullptr;
+
+    handler = pgparser.parse(query_string);
+
+    BOOST_LOG_TRIVIAL(debug) << "parser exited successfully";
+
+    /* We're not bothered with a PGProtoCmdFailure, so
+     * proceed and execute the successfully parsed command.
+     */
+    if (handler != nullptr) {
+
+      int step;
+
+      BOOST_LOG_TRIVIAL(debug) << "executing command";
+
+      cmd = handler->getExecutable();
+      cmd->execute();
+
+      while((step = cmd->step(buf)) != -1) {
+
+        state = PGPROTO_PROCESS_QUERY_IN_PROGRESS;
+
+        BOOST_LOG_TRIVIAL(debug) << "PG PROTO sent query message buffer "
+                                 << buf.getSize();
+
+        start_write(buf.getSize());
+
+        BOOST_LOG_TRIVIAL(debug) << "stepping protocol message "
+                                 << step;
+
+      }
+
+      /* Query processing done, prepare a command complete message
+       * and leave the rest to handle_write() */
+      _send_command_complete(pgprotocol::SELECT_CMD, 0);
+      start_write(buf.getSize());
+
+    } else {
+
+      error_string = "could not execute uninitialized command handle";
+      state = PGPROTO_ERROR_AFTER_QUERY;
+
+    }
+
+  } catch(pgprotocol::PGProtoCmdFailure &failure) {
+
+    /* protocol specific exception handling */
+
+    BOOST_LOG_TRIVIAL(fatal) << failure.what();
+    state = PGPROTO_ERROR_AFTER_QUERY;
+    error_string = failure.what();
+
+  } catch (std::exception &e) {
+
+    /* generic exception handling */
+
+    BOOST_LOG_TRIVIAL(fatal) << e.what();
+    error_string = e.what();
+    state = PGPROTO_ERROR_AFTER_QUERY;
+
+  }
 
   /*
    * If an error condition was met, prepare
@@ -895,7 +1036,8 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
    */
   if (state == PGPROTO_ERROR_AFTER_QUERY) {
 
-    error_msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
+    error_msg(pgprotocol::PG_ERR_ERROR, error_string);
+    error_msg(pgprotocol::PG_ERR_DETAIL, "query was: " + query_string);
     set_sqlstate("42601");
     _send_error();
 
@@ -1064,6 +1206,12 @@ void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
       break;
     }
 
+  case pgprotocol::PG_ERR_DETAIL:
+    {
+      this->errm.push('D', msg);
+
+      break;
+    }
   case pgprotocol::PG_ERR_NOTICE:
     {
       this->errm.push(errtype, "NOTICE");
@@ -1138,7 +1286,10 @@ void PGProtoStreamingServer::_send_command_complete(pgprotocol::PGProtoCmdTag ta
     }
   }
 
-  hdr.length = MESSAGE_HDR_SIZE + message_buffer.str().length();
+  hdr.length = MESSAGE_HDR_LENGTH_SIZE + message_buffer.str().length();
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO command completion tag " << message_buffer.str();
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO message buffer length " << hdr.length;
 
   buf.allocate(hdr.length + MESSAGE_HDR_BYTE);
   buf.write_byte(hdr.type);

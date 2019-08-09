@@ -183,6 +183,18 @@ size_t ProtocolBuffer::write_int(const int value) {
 
 }
 
+size_t ProtocolBuffer::write_short(const short value) {
+
+  size_t bw = 0;
+  short wv = htons(value);
+
+  bw += MemoryBuffer::write((void *) &wv, sizeof(wv), this->curr_pos);
+  this->curr_pos += bw;
+
+  return bw;
+
+}
+
 size_t ProtocolBuffer::write_byte(const unsigned char c) {
 
   size_t bw = 0;
@@ -191,6 +203,19 @@ size_t ProtocolBuffer::write_byte(const unsigned char c) {
   this->curr_pos += bw;
 
   return bw;
+
+}
+
+size_t ProtocolBuffer::read_short(short &value) {
+
+  size_t br = 0;
+  short rv;
+
+  br = MemoryBuffer::read((void *) &rv, sizeof(rv), this->curr_pos);
+  this->curr_pos += br;
+  value = ntohs(rv);
+
+  return br;
 
 }
 

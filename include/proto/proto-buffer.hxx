@@ -26,7 +26,13 @@ namespace credativ {
     virtual size_t write_buffer(const void *buf, size_t bufsize);
 
     /**
-     *
+     * Write a 16 bit short integer to buffer starting from
+     * the current position
+     */
+    virtual size_t write_short(const short value);
+
+    /**
+     * Write the specified byte into the current position of the buffer.
      */
     virtual size_t write_byte(const unsigned char c);
 
@@ -42,6 +48,11 @@ namespace credativ {
      * more room (4 byte), an CPGBackupCtlFailure is thrown.
      */
     virtual size_t write_int(const int value);
+
+    /**
+     * Read a 16bit integer from the current position.
+     */
+    virtual size_t read_short(short &value);
 
     /**
      * Read integer value from the buffer at its current position. If the

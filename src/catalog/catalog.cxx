@@ -6860,6 +6860,12 @@ void BackupCatalog::open_rw() {
   this->isOpen = (this->db_handle != NULL);
 }
 
+bool BackupCatalog::opened() {
+
+  return this->isOpen;
+
+}
+
 void BackupCatalog::open_ro() {
 
   int rc;
