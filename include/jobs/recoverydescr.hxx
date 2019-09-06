@@ -24,7 +24,7 @@ namespace credativ {
     /**
      * Port number to listen on.
      */
-    unsigned int port;
+    unsigned int port = 7432;
 
     /**
      * List of IP addresses to listen on.
