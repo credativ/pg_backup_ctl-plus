@@ -1,10 +1,8 @@
 #include <iostream>
 #include <boost/log/trivial.hpp>
 
-#include <pgsql-proto.hxx>
 #include <pgproto-commands.hxx>
-
-#include <BackupCatalog.hxx>
+#include <proto-catalog.hxx>
 
 using namespace credativ;
 using namespace credativ::pgprotocol;
@@ -15,7 +13,8 @@ using namespace credativ::pgprotocol;
  * ***************************************************************************/
 
 PGProtoStreamingCommand::PGProtoStreamingCommand(std::shared_ptr<PGProtoCmdDescr> descr,
-                                                 std::shared_ptr<RuntimeConfiguration> rtc) {
+                                                 std::shared_ptr<RuntimeConfiguration> rtc,
+                                                 std::shared_ptr<WorkerSHM> worker_shm) {
 
   if (descr != nullptr) {
     this->command_handle = descr;
@@ -26,6 +25,8 @@ PGProtoStreamingCommand::PGProtoStreamingCommand(std::shared_ptr<PGProtoCmdDescr
   } else {
     runtime_configuration = std::make_shared<RuntimeConfiguration>();
   }
+
+  this->worker_shm = worker_shm;
 
 }
 
@@ -60,21 +61,87 @@ void PGProtoStreamingCommand::openCatalog(bool readwrite) {
 
 }
 
+bool PGProtoStreamingCommand::needsArchive() {
+
+  return needs_archive_access;
+
+}
+
 /* ****************************************************************************
  * PGProtoIdentifySystem command ... IDENTIFY_SYSTEM
  * ***************************************************************************/
 
 PGProtoIdentifySystem::PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> descr,
-                                             std::shared_ptr<RuntimeConfiguration> rtc)
-  : PGProtoStreamingCommand(descr, rtc) {
+                                             std::shared_ptr<RuntimeConfiguration> rtc,
+                                             std::shared_ptr<WorkerSHM> worker_shm)
+  : PGProtoStreamingCommand(descr, rtc, worker_shm) {
 
   command_tag = "IDENTIFY_SYSTEM";
+
+  current_step = 0;
+  needs_archive_access = true;
 
 }
 
 PGProtoIdentifySystem::~PGProtoIdentifySystem() {}
 
 void PGProtoIdentifySystem::execute() {
+
+
+  int archive_id;
+  std::string basebackup_fqfn;
+  std::string catalog_name;
+  int worker_id;
+  int child_id;
+
+  /*
+   * Prepare backup catalog access...
+   */
+  runtime_configuration->get("recovery_instance.catalog_name")->getValue(catalog_name);
+
+  BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using catalog \""
+                           << catalog_name
+                           << "\"";
+
+  /*
+   * Runtime configuration tells us the
+   * archive we are connected to.
+   */
+  runtime_configuration->get("recovery_instance.archive_id")->getValue(archive_id);
+
+  BOOST_LOG_TRIVIAL(debug) << "requesting basebackups from archive ID=" << archive_id;
+
+  /*
+   * The same with the basebackup we are connected to.
+   */
+  runtime_configuration->get("recovery_instance.basebackup_path")->getValue(basebackup_fqfn);
+
+  BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using basebackup in path \""
+                           << basebackup_fqfn
+                           << "\"";
+
+  /*
+   * Get worker and child id for shared memory access.
+   */
+  runtime_configuration->get("recovery_instance.worker_id")->getValue(worker_id);
+  runtime_configuration->get("recovery_instance.child_id")->getValue(child_id);
+
+  /*
+   * Create the catalog handler
+   */
+  PGProtoCatalogHandler ch(catalog_name,
+                           basebackup_fqfn,
+                           archive_id,
+                           worker_id,
+                           child_id,
+                           worker_shm);
+
+  resultSet = std::make_shared<PGProtoResultSet>();
+
+  /*
+   * Finally execute the query and materialize the result set.
+   */
+  ch.queryIdentifySystem(resultSet);
 
 }
 
@@ -86,19 +153,62 @@ void PGProtoIdentifySystem::reset() {
 
 int PGProtoIdentifySystem::step(ProtocolBuffer &buffer) {
 
-  return -1;
+  switch(current_step) {
+
+  case 0:
+    {
+
+      /* First call, materialize RowDescriptor message. */
+      resultSet->descriptor(buffer);
+      current_step = PGProtoResultSet::PGPROTO_ROW_DESCR_MESSAGE;
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO row descriptor message created";
+      break;
+
+    }
+
+  case PGProtoResultSet::PGPROTO_ROW_DESCR_MESSAGE:
+  case PGProtoResultSet::PGPROTO_DATA_DESCR_MESSAGE:
+    {
+
+      /*
+       * Row descriptor already materialized, create
+       * the DataRow message now.
+       */
+      if (resultSet->data(buffer) <= 0) {
+
+        /* no more data, we're done */
+        current_step = -1;
+
+                BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message end";
+        break;
+      }
+
+      current_step = PGProtoResultSet::PGPROTO_DATA_DESCR_MESSAGE;
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message sent";
+      break;
+
+    }
+
+  }
+
+  return current_step;
 
 }
 
 /* ****************************************************************************
- * LIST_BASEBACKUPS command ... LIST_BASEBACKUPS
+ * PGProtoListBasebackups command ... LIST_BASEBACKUPS
  * ***************************************************************************/
 
 PGProtoListBasebackups::PGProtoListBasebackups(std::shared_ptr<PGProtoCmdDescr> descr,
-                                               std::shared_ptr<RuntimeConfiguration> rtc)
-  : PGProtoStreamingCommand(descr, rtc) {
+                                               std::shared_ptr<RuntimeConfiguration> rtc,
+                                               std::shared_ptr<WorkerSHM> worker_shm)
+  : PGProtoStreamingCommand(descr, rtc, worker_shm) {
 
   command_tag = "LIST_BASEBACKUPS";
+  needs_archive_access = false;
+  current_step = 0;
 
 }
 
@@ -177,6 +287,23 @@ void PGProtoListBasebackups::prepareListOfBackups() {
   resultSet = std::make_shared<PGProtoResultSet>();
 
   /*
+   * Prepare the column list.
+   */
+  resultSet->addColumn("id",
+                       0,
+                       0,
+                       PGProtoColumnDescr::PG_TYPEOID_TEXT,
+                       -1,
+                       0);
+
+  resultSet->addColumn("fsentry",
+                       0,
+                       0,
+                       PGProtoColumnDescr::PG_TYPEOID_TEXT,
+                       -1,
+                       0);
+
+  /*
    * Loop through the list. We only consider valid basebackups here, since
    * the command is supposed to inform the caller which basebackups are valid
    * to be used for recovery.
@@ -187,29 +314,33 @@ void PGProtoListBasebackups::prepareListOfBackups() {
     std::vector<PGProtoColumnDataDescr> data;
     PGProtoColumnDataDescr colvalue;
 
-    resultSet->addColumn("id",
-                         0,
-                         0,
-                         PGProtoColumnDescr::PG_TYPEOID_TEXT,
-                         sizeof(int),
-                         0);
-
     converter << it->id;
 
     colvalue.length = converter.str().length();
     colvalue.data   = converter.str();
     converter.clear();
 
-    resultSet->addColumn("fsentry",
-                         0,
-                         0,
-                         PGProtoColumnDescr::PG_TYPEOID_TEXT,
-                         sizeof(int),
-                         0);
+    /*
+     * Add column data to list.
+     */
+    data.push_back(colvalue);
 
     colvalue.length = it->fsentry.length();
     colvalue.data   = it->fsentry;
     converter.clear();
+
+    /*
+     * Add column data to list.
+     */
+    data.push_back(colvalue);
+
+    /*
+     * Save the column data list within the result set.
+     */
+    resultSet->addRow(data);
+
+    BOOST_LOG_TRIVIAL(debug) << "PG PROTO result set row done, currently "
+                             << resultSet->rowCount() << " rows in set materialized";
 
   }
 

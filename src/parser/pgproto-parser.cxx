@@ -1,5 +1,6 @@
 #include <iostream>
 #include <boost/tokenizer.hpp>
+#include <boost/log/trivial.hpp>
 
 /* required for string case insensitive comparison */
 #include <boost/algorithm/string/predicate.hpp>
@@ -50,9 +51,27 @@ namespace credativ {
     private:
 
       /*
-       * Streaming Protocol command descriptor.
+       * Current streaming Protocol command descriptor. This points
+       * to the current active cmd instance.
        */
-      PGProtoCmdDescr cmd;
+      std::shared_ptr<PGProtoCmdDescr> cmd;
+
+      /**
+       * Queued command instances, filled by the parser.
+       */
+      std::queue<std::shared_ptr<PGProtoCmdDescr>> cmd_queue;
+
+      void newCommand(ProtocolCommandTag const& tag) {
+
+        cmd = std::make_shared<PGProtoCmdDescr>();
+
+        BOOST_LOG_TRIVIAL(debug) << "PGProtoStreamingParser new command" ;
+
+        /* Record last element for current parser iteration */
+        cmd_queue.push(cmd);
+        cmd->setCommandTag(tag);
+
+      }
 
       /**
        * Internal runtime confguration handle.
@@ -72,12 +91,23 @@ namespace credativ {
 
       /**
        * Returns a pointer to a PGProtoCmdDescr after having
-       * parsed a command string successfully. Once a parsing step
-       * is completed, the properties of a parser object remains until
-       * the next line is parsed.
+       * parsed a command string successfully. Since the parser can iterate over
+       * a multi statement query string, we queue up the command options, so
+       * that the caller should call getCommand() until a nullptr returns.
+       * This indicates the end of the parsing queue.
        */
       std::shared_ptr<PGProtoCmdDescr> getCommand() {
-        return std::make_shared<PGProtoCmdDescr>(cmd);
+
+        std::shared_ptr<PGProtoCmdDescr> ptr = nullptr;
+
+        if (cmd_queue.empty())
+          return ptr;
+
+        ptr = cmd_queue.front();
+        cmd_queue.pop();
+
+        return ptr;
+
       }
 
       PGProtoStreamingParser(std::shared_ptr<RuntimeConfiguration> rtc)
@@ -112,13 +142,13 @@ namespace credativ {
          * Protocol command extension
          */
         cmd_list_basebackups = no_case[ lexeme[ lit("LIST_BASEBACKUPS") ] ]
-          [ boost::bind(&PGProtoCmdDescr::setCommandTag, &cmd, LIST_BASEBACKUPS) ];
+          [ boost::bind(&PGProtoStreamingParser::newCommand, this, LIST_BASEBACKUPS) ];
 
         /*
          * IDENTIFY_SYSTEM command
          */
         cmd_identify_system = no_case[ lexeme[ lit("IDENTIFY_SYSTEM") ] ]
-          [ boost::bind(&PGProtoCmdDescr::setCommandTag, &cmd, IDENTIFY_SYSTEM) ];
+          [ boost::bind(&PGProtoStreamingParser::newCommand, this, IDENTIFY_SYSTEM) ];
 
         start %= eps >> (
                          cmd_identify_system
@@ -127,7 +157,8 @@ namespace credativ {
 
                          cmd_list_basebackups
 
-                         ) >> lit(";");
+                         ) >> lit(";")
+                     >> -(start);
 
         /*
          * error handling
@@ -167,7 +198,7 @@ PostgreSQLStreamingParser::PostgreSQLStreamingParser(std::shared_ptr<RuntimeConf
 
 PostgreSQLStreamingParser::~PostgreSQLStreamingParser() {}
 
-std::shared_ptr<ProtocolCommandHandler> PostgreSQLStreamingParser::parse(std::string cmdstr) {
+PGProtoCommandExecutionQueue PostgreSQLStreamingParser::parse(std::string cmdstr) {
 
   using boost::spirit::ascii::space;
   typedef std::string::iterator iterator_type;
@@ -176,13 +207,13 @@ std::shared_ptr<ProtocolCommandHandler> PostgreSQLStreamingParser::parse(std::st
   /*
    * Dispose previous command handler...
    */
-  command_handler = nullptr;
+  reset();
 
   /*
    * Empty strings are effectively a no-op.
    */
   if (cmdstr.length() == 0)
-    return command_handler;
+    return cmd_exec_queue;
 
   /* Prepare the parsing steps */
 
@@ -195,14 +226,29 @@ std::shared_ptr<ProtocolCommandHandler> PostgreSQLStreamingParser::parse(std::st
 
   if (parse_result && iter == end) {
 
-    std::shared_ptr<PGProtoCmdDescr> cmd = myparser.getCommand();
-    command_handler = std::make_shared<ProtocolCommandHandler>(cmd, runtime_configuration);
+    std::shared_ptr<PGProtoCmdDescr> cmd = nullptr;
+
+    while ( (cmd = myparser.getCommand()) != nullptr) {
+
+      std::shared_ptr<ProtocolCommandHandler> command_handler
+        = std::make_shared<ProtocolCommandHandler>(cmd, runtime_configuration);
+
+      /* Save in command execution queue */
+      cmd_exec_queue.push(command_handler);
+
+    }
 
   } else {
 
     throw PGProtoCmdFailure("aborted due to parser error");
   }
 
-  return command_handler;
+  return cmd_exec_queue;
+
+}
+
+void PostgreSQLStreamingParser::reset() {
+
+  cmd_exec_queue = PGProtoCommandExecutionQueue();
 
 }

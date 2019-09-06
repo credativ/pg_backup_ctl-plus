@@ -5,6 +5,8 @@
 #include <boost/filesystem.hpp>
 
 #include <rtconfig.hxx>
+#include <descr.hxx>
+#include <shm.hxx>
 #include <pgsql-proto.hxx>
 #include <BackupCatalog.hxx>
 
@@ -72,7 +74,7 @@ namespace credativ {
                              std::shared_ptr<RuntimeConfiguration> rtc);
       virtual ~ProtocolCommandHandler();
 
-      virtual std::shared_ptr<PGProtoStreamingCommand> getExecutable();
+      virtual std::shared_ptr<PGProtoStreamingCommand> getExecutable(std::shared_ptr<WorkerSHM> worker_shm);
 
     };
 
@@ -82,6 +84,12 @@ namespace credativ {
      */
     class PGProtoStreamingCommand : public PGProtoBufferAggregator {
     protected:
+
+      /**
+       * A reference to the worker shared memory handle.
+       * Initialized in case a command needs shared memory access.
+       */
+      std::shared_ptr<WorkerSHM> worker_shm = nullptr;
 
       /**
        * Reference to the command handle describing this
@@ -108,9 +116,18 @@ namespace credativ {
       /**
        * A result set suitable to form a
        * PostgreSQL wire-compatible set to be sent
-       * over the wire. Usually initialized by derived classes.
+       * over the wire. Usually initialized by derived classes
+       * after calling execute().
        */
       std::shared_ptr<PGProtoResultSet> resultSet = nullptr;
+
+      /**
+       * Indicates wether this command instance needs
+       * direct archive access. This means that the caller needs
+       * to set the basebackup identifier to this command instance,
+       * otherwise the command refuses to work.
+       */
+      bool needs_archive_access = false;
 
       /**
        * Helper routine to prepare and open the backup catalog.
@@ -127,10 +144,13 @@ namespace credativ {
     public:
 
       PGProtoStreamingCommand(std::shared_ptr<PGProtoCmdDescr> descr,
-                              std::shared_ptr<RuntimeConfiguration> rtc);
+                              std::shared_ptr<RuntimeConfiguration> rtc,
+                              std::shared_ptr<WorkerSHM> worker_shm);
       virtual ~PGProtoStreamingCommand();
 
       virtual void execute() = 0;
+
+      virtual bool needsArchive();
 
       virtual std::string tag();
     };
@@ -143,7 +163,9 @@ namespace credativ {
     public:
 
       PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> descr,
-                            std::shared_ptr<RuntimeConfiguration> rtc);
+                            std::shared_ptr<RuntimeConfiguration> rtc,
+                            std::shared_ptr<WorkerSHM> worker_shm);
+
       virtual ~PGProtoIdentifySystem();
 
       virtual void execute();
@@ -178,7 +200,9 @@ namespace credativ {
     public:
 
       PGProtoListBasebackups(std::shared_ptr<PGProtoCmdDescr> descr,
-                             std::shared_ptr<RuntimeConfiguration> rtc);
+                             std::shared_ptr<RuntimeConfiguration> rtc,
+                             std::shared_ptr<WorkerSHM> worker_shm);
+
       virtual ~PGProtoListBasebackups();
 
       virtual void execute();

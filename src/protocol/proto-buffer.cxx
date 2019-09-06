@@ -15,7 +15,8 @@ using namespace credativ::pgprotocol;
  * ****************************************************************************/
 
 void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
-                                  size_t &msg_size) {
+                                  size_t &msg_size,
+                                  bool error) {
 
   /* ErrorResponse header */
   pgprotocol::pg_protocol_msg_header hdr;
@@ -29,7 +30,16 @@ void ProtocolErrorStack::toBuffer(ProtocolBuffer &dest,
    */
   msg_size = this->content_size + this->count() + 1;
 
-  hdr.type = ErrorMessage;
+  if (error) {
+
+    hdr.type = ErrorMessage;
+
+  } else {
+
+    hdr.type = NoticeMessage;
+
+  }
+
   hdr.length = MESSAGE_HDR_LENGTH_SIZE + msg_size;
 
   dest.allocate(MESSAGE_HDR_SIZE + msg_size);
@@ -117,6 +127,9 @@ void ProtocolErrorStack::pop() {
    */
   this->content_size -= this->top_element_size;
 
+  /* Remove current element */
+  this->es.pop();
+
   /*
    * Recalculate top element size, but only if anything is left.
    */
@@ -131,8 +144,6 @@ void ProtocolErrorStack::pop() {
     this->content_size = 0;
 
   }
-
-  this->es.pop();
 
 }
 
@@ -195,6 +206,17 @@ size_t ProtocolBuffer::write_short(const short value) {
 
 }
 
+size_t ProtocolBuffer::write_byte(const char c) {
+
+  size_t bw = 0;
+
+  bw = MemoryBuffer::write((void *) &c, sizeof(c), this->curr_pos);
+  this->curr_pos += bw;
+
+  return bw;
+
+}
+
 size_t ProtocolBuffer::write_byte(const unsigned char c) {
 
   size_t bw = 0;
@@ -219,6 +241,19 @@ size_t ProtocolBuffer::read_short(short &value) {
 
 }
 
+size_t ProtocolBuffer::read_int(unsigned int &value) {
+
+  size_t br = 0;
+  unsigned int rv;
+
+  br = MemoryBuffer::read((void *) &rv, sizeof(rv), this->curr_pos);
+  this->curr_pos += br;
+  value = ntohl(rv);
+
+  return br;
+
+}
+
 size_t ProtocolBuffer::read_int(int &value) {
 
   size_t br = 0;
@@ -238,6 +273,19 @@ size_t ProtocolBuffer::read_buffer(void *buf, size_t readsz) {
 
   br = MemoryBuffer::read(buf, readsz, this->curr_pos);
   this->curr_pos += br;
+
+  return br;
+
+}
+
+size_t ProtocolBuffer::read_byte(char &c) {
+
+  size_t br = 0;
+  char rv;
+
+  br = MemoryBuffer::read((void *) &rv, sizeof(rv), this->curr_pos);
+  this->curr_pos += br;
+  c = rv;
 
   return br;
 

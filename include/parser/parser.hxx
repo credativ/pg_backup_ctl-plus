@@ -50,6 +50,16 @@ namespace credativ {
     JobSignalHandler *stopHandler = nullptr;
     JobSignalHandler *intHandler  = nullptr;
 
+    /**
+     * Background commands which are supposed to have a SHM
+     * shared segment attached need a worker ID to reference their
+     * slot into a shm_worker_area. This methods assignes a worker ID
+     * which is usually gotten by the caller via WorkerSHM::allocate().
+     *
+     * Thed default value -1 means no current SHM usage.
+     */
+    int worker_id = -1;
+
   public:
 
     PGBackupCtlCommand(CatalogTag tag);
@@ -62,6 +72,12 @@ namespace credativ {
      */
 
     virtual shared_ptr<CatalogDescr> getExecutableDescr();
+
+    /**
+     * Assigns a shared memory worker id, usually employed
+     * by background commands.
+     */
+    virtual void setWorkerID(int worker_id);
 
     /*
      * executes the command handle.

@@ -23,7 +23,7 @@ ProtocolCommandHandler::ProtocolCommandHandler(std::shared_ptr<PGProtoCmdDescr> 
 
 ProtocolCommandHandler::~ProtocolCommandHandler() {}
 
-std::shared_ptr<PGProtoStreamingCommand> ProtocolCommandHandler::getExecutable() {
+std::shared_ptr<PGProtoStreamingCommand> ProtocolCommandHandler::getExecutable(std::shared_ptr<WorkerSHM> worker_shm) {
 
   std::shared_ptr<PGProtoStreamingCommand> cmd = nullptr;
 
@@ -31,13 +31,13 @@ std::shared_ptr<PGProtoStreamingCommand> ProtocolCommandHandler::getExecutable()
 
   case IDENTIFY_SYSTEM:
     {
-      cmd = std::make_shared<PGProtoIdentifySystem>(cmdDescr, runtime_configuration);
+      cmd = std::make_shared<PGProtoIdentifySystem>(cmdDescr, runtime_configuration, worker_shm);
       break;
     }
 
   case LIST_BASEBACKUPS:
     {
-      cmd = std::make_shared<PGProtoListBasebackups>(cmdDescr, runtime_configuration);
+      cmd = std::make_shared<PGProtoListBasebackups>(cmdDescr, runtime_configuration, worker_shm);
       break;
     }
 

@@ -643,6 +643,20 @@ void CatalogDescr::makeRecoveryStreamDescr() {
 
 }
 
+void CatalogDescr::setRecoveryStreamAddr(std::string const& address) {
+
+  /* If the recovery descriptor wasn't initialized yet, abort */
+  if (this->recoveryStream == nullptr)
+    throw CCatalogIssue("recovery stream descriptor not initialized yet");
+
+  if (address.length() == 0)
+    throw CCatalogIssue("cannot add empty address to recovery stream descriptor");
+
+  BOOST_LOG_TRIVIAL(debug) << "adding listener address " << address;
+  this->recoveryStream->listen_on.push_back(address);
+
+}
+
 void CatalogDescr::setRecoveryStreamPort(std::string const& portnumber) {
 
   /* If the recovery descriptor wasn't initialized yet, abort */
@@ -2680,6 +2694,176 @@ void BackupCatalog::exceedsRetention(std::shared_ptr<BaseBackupDescr> basebackup
   /* ... close result and exit */
   sqlite3_finalize(stmt);
 
+}
+
+std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(std::string basebackup_fqfn,
+                                                              int archive_id) {
+
+  int rc;
+  sqlite3_stmt *stmt;
+  ostringstream query;
+  string backupCols;
+  shared_ptr<BaseBackupDescr> basebackup = make_shared<BaseBackupDescr>();
+  vector<int> backupAttrs;
+  vector<int> tblspcAttrs;
+
+    if (!this->available()) {
+    throw CCatalogIssue("catalog database not opened");
+  }
+
+  /* mark descriptor empty */
+  basebackup->id = -1;
+
+  /*
+   * Generate list of columns to retrieve...
+   */
+  backupAttrs.push_back(SQL_BACKUP_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_ARCHIVE_ID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_XLOGPOSEND_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_TIMELINE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_LABEL_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_FSENTRY_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STARTED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STOPPED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_STATUS_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_SYSTEMID_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
+
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_BCK_ID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCOID_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCLOC_ATTNO);
+  tblspcAttrs.push_back(SQL_BCK_TBLSPC_SPCSZ_ATTNO);
+
+  backupCols = BackupCatalog::SQLgetColumnList(SQL_BACKUP_ENTITY,
+                                               backupAttrs);
+
+    query << "SELECT "
+        << backupCols
+        << ", "
+
+    /*
+     * IMPORTANT:
+     *
+     * We can't use SQLgetColumnList here(), since we want to
+     * prevent NULL
+     */
+
+        << "COALESCE(bt.backup_id, -1) AS backup_id, "
+        << "COALESCE(bt.spcoid, -1) AS spcoid, "
+        << "COALESCE(spclocation, 'no location') AS spclocation, "
+        << "COALESCE(spcsize, -1) AS spcsize, "
+        << "b.wal_segment_size AS wal_segment_size, "
+        << "b.used_profile AS backup_profile_id "
+        << "FROM "
+        << "backup b LEFT JOIN backup_tablespaces bt ON (b.id = bt.backup_id) "
+        << "WHERE b.fsentry = ?1 AND b.archive_id = ?2;";
+
+#ifdef __DEBUG__
+  BOOST_LOG_TRIVIAL(debug) << "generate SQL: " << query.str();
+#endif
+
+  rc = sqlite3_prepare_v2(this->db_handle,
+                          query.str().c_str(),
+                          -1,
+                          &stmt,
+                          NULL);
+
+  if (rc != SQLITE_OK) {
+    ostringstream oss;
+    oss << "cannot prepare query: " << sqlite3_errmsg(db_handle);
+    throw CCatalogIssue(oss.str());
+  }
+
+  /*
+   * Bind WHERE conditions.
+   */
+  sqlite3_bind_text(stmt, 1, basebackup_fqfn.c_str(), -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, archive_id);
+
+  /*
+   * Execute the statement.
+   */
+  rc = sqlite3_step(stmt);
+
+  /*
+   * If multiple tablespaces are in the basebackup,
+   * there are more than one row to process!
+   */
+
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+
+    ostringstream oss;
+
+    oss << "error retrieving backup list from catalog database: "
+        << sqlite3_errmsg(this->db_handle);
+    sqlite3_finalize(stmt);
+    throw CCatalogIssue(oss.str());
+
+  }
+
+  /*
+   * If no rows returned, there's effectively
+   * nothing more to do here (no basebackup by
+   * the specified ID found).
+   */
+  if (rc == SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return basebackup;
+  }
+
+  /*
+   * If only a single tablespace is part of the
+   * basebackup, make sure we loop through it.
+   *
+   * Code here is doubled in getBackupList() (except the loop header),
+   * but it's not sure wether the code retains here this way. So just
+   * repeat it and leave it to some future work to optimize it.
+   */
+
+  do {
+
+    shared_ptr<BackupTablespaceDescr> tablespace = make_shared<BackupTablespaceDescr>();
+
+    basebackup->setAffectedAttributes(backupAttrs);
+    tablespace->setAffectedAttributes(tblspcAttrs);
+
+    /*
+     * If not initialized, retrieve properties into
+     * our BaseBackupDescr instance.
+     */
+    if (basebackup->id < 0) {
+      this->fetchBackupIntoDescr(stmt, basebackup, Range(0, backupAttrs.size() - 1));
+    }
+
+    /*
+     * Since we fetch tablespace and basebackup information in one
+     * query, we only push basebackup information if the last
+     * encountered backup_id differs into the our result list.
+     *
+     * In opposite to getBackupList(), we have only a single backup id
+     * here to fetch, so there's no need to check if we have to
+     * create a new BaseBackupDescr instance.
+     */
+    this->fetchBackupTablespaceIntoDescr(stmt,
+                                         tablespace,
+                                         Range(backupAttrs.size(), backupAttrs.size()
+                                               + tblspcAttrs.size() -1));
+
+    if (tablespace->backup_id >= 0) {
+      basebackup->tablespaces.push_back(tablespace);
+    }
+
+    rc = sqlite3_step(stmt);
+
+  } while(rc == SQLITE_ROW);
+
+  /* clean up */
+  sqlite3_finalize(stmt);
+
+  return basebackup;
 }
 
 std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,

@@ -127,6 +127,12 @@ void BaseCatalogCommand::assignSigStopHandler(JobSignalHandler *handler) {
   this->stopHandler = handler;
 }
 
+void BaseCatalogCommand::setWorkerID(int worker_id) {
+
+  this->worker_id = worker_id;
+
+}
+
 void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
 
   /*
@@ -465,14 +471,24 @@ void StartRecoveryArchiveCommand::execute(bool flag) {
      * over to the background launcher process.
      */
     ostringstream mycmd;
+    string separator = "";
 
     mycmd << "START RECOVERY STREAM FOR ARCHIVE "
           << this->archive_name
           << " PORT " << this->recoveryStream->port;
 
-    for(auto const &ipaddress : this->recoveryStream->listen_on) {
+    if (this->recoveryStream->listen_on.size() > 0) {
 
-      mycmd << " LISTEN_ON " << ipaddress;
+      mycmd << " LISTEN_ON ( ";
+
+      for(auto const &ipaddress : this->recoveryStream->listen_on) {
+
+        mycmd << separator << ipaddress;
+        separator = ", ";
+
+      }
+
+      mycmd << " ) ";
 
     }
 
@@ -508,6 +524,53 @@ void StartRecoveryArchiveCommand::execute(bool flag) {
    * streaming instance needs to have its own catalog connection.
    */
   streamDescr->catalog_name = catalog->fullname();
+
+  /*
+   * Assign worker id. If we don't have one, this means we aren't
+   * attached to a shared memory yet, which is the case only, if
+   * aren't instatiated via a background command launcher. So, if we
+   * do not have a worker id, get one.
+   */
+  if (worker_id < 0) {
+
+    try {
+
+    WorkerSHM shm;
+    int worker_slot_index;
+    shm_worker_area wa;
+
+    wa.pid = ::getpid();
+    wa.started = CPGBackupCtlBase::ISO8601_strTo_ptime(CPGBackupCtlBase::current_timestamp());
+    wa.archive_id = streamDescr->archive_id;
+    wa.cmdType = this->tag;
+
+    shm.attach(this->catalog->fullname(), true);
+
+    {
+      boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>(*(shm.check_and_get_mutex()));
+      worker_slot_index = shm.allocate(wa);
+      this->worker_id = worker_slot_index;
+      streamDescr->worker_id = this->worker_id;
+    }
+
+    } catch (SHMFailure &shmfailure) {
+
+      /* re-throw as CPGBackupCtlFailure */
+      throw CPGBackupCtlFailure(shmfailure.what());
+
+    }
+
+  } else {
+
+    /*
+     * Worker shared memory area already initialized, save
+     * the worker ID into the recovery descriptor. Child
+     * streaming processes need them to manage their child
+     * info structure there
+     */
+    streamDescr->worker_id = this->worker_id;
+
+  }
 
   /*
    * Start the background streaming server for the specified archive.
@@ -720,14 +783,13 @@ void ShowWorkersCommandHandle::execute(bool noop) {
         }
 
       } catch(SHMFailure &e) {
-        /* in any case, unlock() the SHM and re-throw. */
+
         throw e;
       }
 
     }
   }
 
-  shm.unlock();
   shm.detach();
 
   /*
@@ -753,6 +815,24 @@ void ShowWorkersCommandHandle::execute(bool noop) {
          << " | archive ID " << worker.archive_id
          << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
          << endl;
+
+    /* Print child info, if any */
+    for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+      sub_worker_info child_info = worker.child_info[idx];
+
+      if (child_info.pid > 0) {
+        cout << " `-> CHILD "
+             << idx
+             << " | PID "
+             << child_info.pid
+             << " | "
+             << ((child_info.backup_id < 0) ? "no backup in use" : "backup used: ID="
+                 + CPGBackupCtlBase::intToStr(child_info.backup_id))
+             << endl;
+      }
+    }
+
   }
 }
 

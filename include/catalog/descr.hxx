@@ -779,6 +779,14 @@ namespace credativ {
     void setRecoveryStreamPort(std::string const& portnumber);
 
     /**
+     * addRecoveryStreamAddress() stores the specified
+     * hostname or ip in the recovery descriptor currently
+     * present in a CatalogDescr instance. If makeRecoveryStreamDescr()
+     * wasn't called before, this will throw.
+     */
+    void setRecoveryStreamAddr(std::string const& address);
+
+    /**
      * Initialize a PinDescr attached to a catalog
      * descr.
      */

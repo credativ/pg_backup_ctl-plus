@@ -693,6 +693,18 @@ namespace credativ {
                                                            int archive_Id);
 
     /**
+     * Returns a basebackup descriptor, describing the
+     * specified basebackup referenced within the given archive_id
+     * and by the basebackup ID.
+     *
+     * The returned pointer is always
+     * initialized, if the specified basebackup cannot be
+     * found the returned BaseBackupDescr has an ID set to -1.
+     */
+    virtual std::shared_ptr<BaseBackupDescr> getBaseBackup(std::string basebackup_fqfn,
+                                                           int archive_Id);
+
+    /**
      * Returns a catalog status view for the given archive.
      */
     virtual std::shared_ptr<StatCatalogArchive> statCatalog(std::string archive_name);

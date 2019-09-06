@@ -26,7 +26,7 @@
 #endif
 
 /* charakters that are breaking words into pieces */
-#define WORD_BREAKS "\t\n@$><=;|&{() "
+#define WORD_BREAKS "\t\n@$><=;|&{ "
 
 /* Catalog handle used for queries to perform completion actions */
 std::shared_ptr<BackupCatalog> compl_catalog_handle = nullptr;
@@ -520,27 +520,34 @@ completion_word start_streaming_for[]
 = { { "FOR", COMPL_KEYWORD, COMPL_STATIC_ARRAY, start_streaming_archive, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-/*
- * Forwarded declarations for LISTEN_ON <ip address> [ ... ] PORT <port number>
- *
- * See init_readline() for initialization.
- */
-completion_word recovery_stream_listen_port[3];
-
-completion_word recovery_stream_port[]
-= { { "<port number>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, NULL, NULL },
+completion_word recovery_stream_ip_list_end[]
+= { { ")", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word recovery_stream_ip_address[]
-= { { "<ip address>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_listen_port, NULL },
+= { { "<ip address>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_ip_list_end, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
-completion_word recovery_stream_for_archive_ident[]
-= { { "<identifier>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_listen_port, NULL },
+completion_word recovery_stream_ip_list_start[]
+= { { "(", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_ip_address, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
+
+completion_word recovery_stream_listen_on[]
+= { { "LISTEN_ON", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_ip_list_start, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } } ;
+
+completion_word recovery_stream_port[]
+= { { "<port number>", COMPL_IDENTIFIER, COMPL_STATIC_ARRAY, recovery_stream_listen_on, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
+
+completion_word recovery_stream_listen_port[]
+= { { "LISTEN_ON", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_ip_list_start, NULL },
+    { "PORT", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_port, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word recovery_stream_for_archive[]
-= { { "ARCHIVE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_for_archive_ident, NULL },
+= { { "ARCHIVE", COMPL_KEYWORD, COMPL_FUNC_SQL, recovery_stream_listen_port,
+      (completion_callback) compl_archive_identifier },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word start_recovery_stream[]
@@ -931,23 +938,6 @@ void init_readline(std::string catalog_name,
   create_bck_prof_param_full[5] = create_bck_prof_w5;
   create_bck_prof_param_full[6] = create_bck_prof_w6;
   create_bck_prof_param_full[7] = create_bck_prof_w7;
-
-  /*
-   * And here the same for START RECOVERY STREAM FOR ARCHIVE.
-   *
-   * The LISTEN_ON and PORT options need to call the completion
-   * tokens for LISTEN_ON recursively.
-   */
-  completion_word recovery_stream_listen_port_w0
-    = { "LISTEN_ON", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_ip_address, NULL };
-  completion_word recovery_stream_listen_port_w1
-    = { "PORT", COMPL_KEYWORD, COMPL_STATIC_ARRAY, recovery_stream_port, NULL };
-  completion_word recovery_stream_listen_port_w2
-    = { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL };
-
-  recovery_stream_listen_port[0] = recovery_stream_listen_port_w0;
-  recovery_stream_listen_port[1] = recovery_stream_listen_port_w1;
-  recovery_stream_listen_port[2] = recovery_stream_listen_port_w2;
 
   /*
    * Initialize catalog handle for completion queries, iff

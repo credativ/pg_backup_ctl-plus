@@ -31,7 +31,29 @@ namespace credativ {
      */
     JobSignalHandler *intHandler = nullptr;
 
+    /**
+     * Pointer to internal catalog handler.
+     *
+     * This is usually instantiated and initialized
+     * by an external caller who maintaints our object instance
+     * and assigned via setCatalog().
+     */
     std::shared_ptr<BackupCatalog> catalog = NULL;
+
+    /**
+     * If attached to a shm_worker_area shared memory
+     * segment, worker_id will identify the used slot.
+     *
+     * Set to -1 if no shared memory segment is in use (which
+     * is true in case a catalog command is executed within
+     * a background job.
+     */
+    int worker_id = -1;
+
+    /**
+     * Legwork method for deep copy operation
+     * on this instance.
+     */
     virtual void copy(CatalogDescr& source);
   public:
     virtual void execute(bool existsOk) = 0;
@@ -50,6 +72,12 @@ namespace credativ {
      * Assign a SIGINT signal handler object.
      */
     virtual void assignSigIntHandler(JobSignalHandler *handler);
+
+    /**
+     * Assign worker ID to a catalog command instance. This is
+     * done via background command instantiation.
+     */
+    virtual void setWorkerID(int worker_id);
 
   };
 

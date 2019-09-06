@@ -27,6 +27,7 @@ namespace credativ {
                 PGPROTO_READY_FOR_QUERY_WAIT,
                 PGPROTO_SEND_BACKEND_KEY,
                 PGPROTO_ERROR_CONDITION,
+                PGPROTO_NOTICE_CONDITION,
                 PGPROTO_ERROR_AFTER_QUERY, /* usually set back to PGPROTO_READY_FOR_QUERY_WAIT */
                 PGPROTO_COMMAND_COMPLETE,
                 PGPROTO_PROCESS_QUERY_START,
@@ -41,22 +42,67 @@ namespace credativ {
     typedef char PGMessageType;
     typedef int PGAuthenticationType;
 
-    /*
+    /* ************************************************************************
      * PostgresSQL protocol message types
-     */
-    const PGMessageType ParameterStatusMessage = 'S';
-    const PGMessageType AuthenticationMessage  = 'R';
-    const PGMessageType ReadyForQueryMessage   = 'Z';
-    const PGMessageType ErrorMessage           = 'E';
-    const PGMessageType EmptyQueryMessage      = 'I';
-    const PGMessageType DescribeMessage        = 'D';
-    const PGMessageType RowDescriptionMessage  = 'T';
+     * ***********************************************************************/
+
+    /* FE messages */
+    const PGMessageType ExecuteMessage         = 'E';
     const PGMessageType QueryMessage           = 'Q';
-    const PGMessageType CommandCompleteMessage = 'C';
+    const PGMessageType FlushMessage           = 'H';
+    const PGMessageType FunctionCallMessage    = 'F';
     const PGMessageType CancelMessage          = 'X';
-    const PGMessageType NoticeMessage          = 'N';
+    const PGMessageType GSSResponseMessage     = 'p';
+    const PGMessageType ParseMessageType       = 'P';
+    const PGMessageType SASLInitialResponseMessage = 'p';
+    const PGMessageType SASLResponse               = 'p';
+    const PGMessageType SASLRequest                = '\0'; /* does not have a special type set */
+    const PGMessageType SSLRequest                 = '\0'; /* same here */
+    const PGMessageType StartupMessage             = '\0'; /* same here */
+    const PGMessageType SyncMessage                = 'S';
+    const PGMessageType TerminationMessage         = 'X';
+    const PGMessageType CopyFailMessage            = 'f';
+
+    /* BE messages */
+    const PGMessageType ErrorMessage           = 'E';
     const PGMessageType PasswordMessage        = 'p';
-    const PGMessageType BackendKeyMessage      = 'K';
+    const PGMessageType AuthenticationMessage  = 'R';
+    const PGMessageType AuthKerberosV5Message   = 'R';
+    const PGMessageType AuthKerberosClearTextMessage = 'R';
+    const PGMessageType AuthMD5PasswordMessage       = 'R';
+    const PGMessageType AuthSCMCredentialMessage     = 'R';
+    const PGMessageType AuthGSSMessage               = 'R';
+    const PGMessageType AuthSSPIMessage              = 'R';
+    const PGMessageType AuthGSSContinueMessage       = 'R';
+    const PGMessageType AuthSASLMessage              = 'R';
+    const PGMessageType AuthSASLContinueMessage      = 'R';
+    const PGMessageType AuthSASLFinal                = 'R';
+    const PGMessageType BackendKeyMessage            = 'K';
+    const PGMessageType BindCompleteMessage          = '2';
+    const PGMessageType CloseCompleteMessage         = '3';
+    const PGMessageType CommandCompleteMessage       = 'C';
+    const PGMessageType DescribeMessage              = 'D';
+    const PGMessageType CopyOutResponseMessage       = 'H';
+    const PGMessageType CopyBothResponseMessage      = 'W';
+    const PGMessageType EmptyQueryMessage            = 'I';
+    const PGMessageType FunctionCallResponseMessage  = 'V';
+    const PGMessageType NegotiateProtocolMessage     = 'v';
+    const PGMessageType NoDataMessage                = 'n';
+    const PGMessageType NoticeMessage                = 'N';
+    const PGMessageType NotificationMessage          = 'A';
+    const PGMessageType ParameterStatusMessage       = 'S';
+    const PGMessageType ParameterDescriptionMessage  = 't';
+    const PGMessageType ParseCompleteMessage         = '1';
+    const PGMessageType PortalSuspendedMessage       = 's';
+    const PGMessageType ReadyForQueryMessage         = 'Z';
+    const PGMessageType RowDescriptionMessage  = 'T';
+
+    /* FE & BE messages */
+    const PGMessageType CopyDataMessage              = 'd';
+    const PGMessageType CopyDoneMessage              = 'c';
+    const PGMessageType CopyInResponseMessage        = 'G';
+
+    /* ********************************************************************** */
 
     /*
      * SSL message types, used during startup
@@ -220,6 +266,10 @@ namespace credativ {
       int row_size = 0;
       std::vector<PGProtoColumnDataDescr> values;
 
+      unsigned int fieldCount() {
+        return values.size();
+      }
+
     };
 
     /**
@@ -233,8 +283,8 @@ namespace credativ {
       pg_protocol_msg_header hdr = { DescribeMessage };
 
       /*
-       * Number of field values (usually identical to
-       * the column count in PGProtoRowDescr instances
+       * The number of field values is usually identical to
+       * the column count in PGProtoRowDescr instances.
        */
       std::vector<PGProtoColumns> row_values;
 
@@ -280,6 +330,9 @@ namespace credativ {
       /* List of PGProtoColumnDescr items */
       std::vector<PGProtoColumnDescr> column_list;
 
+      unsigned int fieldCount() {
+        return column_list.size();
+      }
     };
 
     /**
@@ -345,8 +398,10 @@ namespace credativ {
       virtual int descriptor(ProtocolBuffer &buffer);
       virtual int data(ProtocolBuffer &buffer);
 
-      virtual void addColumn(PGProtoColumnDescr col,
-                             std::vector<PGProtoColumnDataDescr> data);
+      /**
+       * Adds a new column definition to the result set
+       * header.
+       */
       virtual void addColumn(std::string colname,
                              int tableoid,
                              short attnum,
@@ -355,8 +410,16 @@ namespace credativ {
                              int typemod,
                              short format = 0);
 
+      /**
+       * Adds a new row with the specified data. Should match a currently
+       * present column header.
+       */
       virtual void addRow(std::vector<PGProtoColumnDataDescr> column_values);
 
+      /**
+       * Current number of rows materialized in a PGProtoResultSet
+       * instance.
+       */
       virtual unsigned int rowCount();
 
     };
@@ -438,9 +501,14 @@ namespace credativ {
        * The size returned in the second argument shows the
        * size of the complete ErrorResponse message, _without_
        * the protocol header.
+       *
+       * The default error argument value 'true' indicates
+       * that ErrorResponse message is created, other a
+       * NoticeResponse message will be created.
        */
       virtual void toBuffer(ProtocolBuffer &dest,
-                            size_t &msg_size);
+                            size_t &msg_size,
+                            bool error = true);
 
       ProtocolErrorStack() {};
       virtual ~ProtocolErrorStack() {};
@@ -499,6 +567,7 @@ namespace credativ {
 #define MESSAGE_HDR_BYTE (sizeof(credativ::pgprotocol::PGMessageType))
 #define MESSAGE_HDR_LENGTH_SIZE (sizeof(unsigned int))
 #define MESSAGE_HDR_SIZE (MESSAGE_HDR_LENGTH_SIZE + MESSAGE_HDR_BYTE)
+#define MESSAGE_HDR_DATA_LENGTH(hdr) ((hdr).length - MESSAGE_HDR_LENGTH_SIZE)
 #define MESSAGE_DATA_LENGTH(msg) (((msg).hdr).length - MESSAGE_HDR_LENGTH_SIZE)
 #define MESSAGE_LENGTH_OFFSET ((off_t) sizeof(credativ::pgprotocol::PGMessageType))
 #define MESSAGE_DATA_OFFSET (MESSAGE_LENGTH_OFFSET + MESSAGE_HDR_LENGTH_SIZE)

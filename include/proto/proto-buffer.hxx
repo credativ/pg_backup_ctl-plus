@@ -32,7 +32,13 @@ namespace credativ {
     virtual size_t write_short(const short value);
 
     /**
-     * Write the specified byte into the current position of the buffer.
+     * Write a signed character value to buffer.
+     */
+    virtual size_t write_byte(const char c);
+
+    /**
+     * Write the specified unsigned character byte into the current
+     * position of the buffer.
      */
     virtual size_t write_byte(const unsigned char c);
 
@@ -62,6 +68,11 @@ namespace credativ {
     virtual size_t read_int(int &value);
 
     /**
+     * Read an unsigned integer from the current position of the buffer.
+     */
+    virtual size_t read_int(unsigned int &value);
+
+    /**
      * Read byte from the buffer at its current position. If the buffer
      * is already positioned at the end of the buffer, a CPGBackupCtlFailure
      * is thrown.
@@ -69,12 +80,18 @@ namespace credativ {
     virtual size_t read_byte(unsigned char &c);
 
     /**
+     * Read the signed character byte from the current position
+     * of the buffer.
+     */
+    virtual size_t read_byte(char &c);
+
+    /**
      * Move the cursor to the start position.
      */
     virtual void first();
 
     /**
-     * Move the cursor to the end position. 
+     * Move the cursor to the end position.
      */
     virtual void last();
 

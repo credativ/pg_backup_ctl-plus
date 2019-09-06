@@ -6,7 +6,11 @@
 
 namespace credativ {
 
-#define MAX_WORKER_INSTRUMENTATION_SLOTS 5
+#define WORKER_SHM_CRITICAL_SECTION_START_P(shm) \
+  { \
+  boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>(*((shm)->check_and_get_mutex()));
+
+#define WORKER_SHM_CRITICAL_SECTION_END }
 
   class background_reaper;
   class background_worker_shm_reaper;
@@ -23,19 +27,27 @@ namespace credativ {
   /**
    * Instrumentation item
    */
-  typedef struct worker_instrumentation_item {
+  typedef struct {
 
     int key;
-    uint64 value;
+    long long value;
+    boost::posix_time::ptime start_time;
 
   } worker_instrumentation_item ;
 
   /**
    * Shared memory structure for launcher control data.
    */
-  typedef struct shm_launcher_area {
-    pid_t pid;
+  typedef struct {
+    volatile pid_t pid;
   } shm_launcher_area;
+
+  typedef struct {
+
+    int backup_id = -1;
+    volatile pid_t pid;
+
+  } sub_worker_info;
 
   /**
    * Shared memory structure for worker control data.
@@ -43,15 +55,33 @@ namespace credativ {
    * A worker shared memory segment usually holds up to
    * WorkerSHM::max_workers # of this structures.
    */
-  typedef struct shm_worker_area {
+  typedef struct {
 
-    pid_t pid = -1; /* -1 means unused slot */
+    volatile pid_t pid = -1; /* -1 means unused slot */
     CatalogTag cmdType;
     int archive_id = -1; /* -1 means no archive attached */
     boost::posix_time::ptime started;
 
     /*
-     * Instrumentation area, currently 5 reserved slots.
+     * The following properties aren't updated directly
+     * by write() calls, but modified by specific methods
+     * of WorkerSHM instances.
+     */
+
+    /**
+     * true if any sub worker has registered a basebackup for use.
+     */
+    bool basebackup_in_use = false;
+
+    /**
+     * Sub worker information is stored here. Currently
+     * MAX_WORKER_CHILDS can be used.
+     */
+    sub_worker_info child_info[MAX_WORKER_CHILDS];
+
+    /**
+     * Instrumentation area, currently
+     * MAX_WORKER_INSTRUMENTATION_SLOTS reserved slots.
      */
     worker_instrumentation_item instr[MAX_WORKER_INSTRUMENTATION_SLOTS];
 
@@ -298,12 +328,32 @@ namespace credativ {
     virtual size_t getSize();
 
     /**
+     * Write a new background worker child information
+     * to its worker area in the shared memory segment.
+     *
+     * Specify -1 in the child_index if you want a new
+     * entry.
+     *
+     * If successful, write() will return the new
+     * child_index.
+     *
+     * Can throw SHMFailure in various cases.
+     */
+    virtual void write(unsigned int slot_index,
+                       int &child_index,
+                       sub_worker_info &child_info);
+
+    /**
      * Writes the specified items into the shared memory
      * slot on the specified index. Caller should
      * have locked the shared memory operation to protect
      * against concurrent changes.
      *
      * Throws in case we aren't attached.
+     *
+     * NOTE: This method does not update sub worker status
+     *       information! Use the specific overloaded version
+     *       instead.
      */
     virtual void write(unsigned int slot_index,
                        shm_worker_area &item);
@@ -331,10 +381,30 @@ namespace credativ {
     virtual shm_worker_area read(unsigned int slot_index);
 
     /**
+     * Reads and returns a copy of the child information
+     * properties stored at the specified slot index.
+     */
+    virtual sub_worker_info read(unsigned int slot_index,
+                                 unsigned int child_index);
+
+    /**
      * Resets the specified worker slot to represent a free
      * slot. Also sets the last index being freed.
      */
     virtual void free(unsigned int slot_index);
+
+    /**
+     * Free the child info from the specified
+     * worker shared memory area.
+     */
+    virtual void free_child(unsigned int slot_index,
+                            unsigned int child_index);
+
+    /**
+     * Free the child specified by PID.
+     */
+    virtual void free_child_by_pid(unsigned int slot_index,
+                                   pid_t child_pid);
 
     /**
      * Resets all worker slots to be empty.
@@ -366,23 +436,7 @@ namespace credativ {
      * Throws in case the shared memory area is not attached.
      */
     virtual void unlock();
-  };
 
-  class background_reaper {
-  public:
-    std::stack<pid_t> dead_pids;
-    virtual void reap() = 0;
-  };
-
-  class background_worker_shm_reaper : public background_reaper {
-  protected:
-    WorkerSHM *shm;
-  public:
-    background_worker_shm_reaper();
-    virtual ~background_worker_shm_reaper();
-
-    virtual void set_shm_handle(WorkerSHM *shm);
-    virtual void reap();
   };
 
 }

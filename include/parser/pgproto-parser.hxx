@@ -7,6 +7,9 @@ namespace credativ {
 
   namespace pgprotocol {
 
+    typedef std::queue<std::shared_ptr<PGProtoCmdDescr>> PGProtoParsedCmdQueue;
+    typedef std::queue<std::shared_ptr<ProtocolCommandHandler>> PGProtoCommandExecutionQueue;
+
     /**
      * The PostgreSQL streaming backup protocol command
      * parser.
@@ -24,7 +27,7 @@ namespace credativ {
        *
        * Only initialized after having called parse().
        */
-      std::shared_ptr<ProtocolCommandHandler> command_handler = nullptr;
+      PGProtoCommandExecutionQueue cmd_exec_queue;
 
     public:
 
@@ -32,16 +35,20 @@ namespace credativ {
       virtual ~PostgreSQLStreamingParser();
 
       /**
-       * Parse the specified string and return
-       * an protocol command handler instance.
+       * Parse the specified query string and return
+       * a command execution queue.
        *
-       * Can return a nullptr in case parsing exits because
-       * cmdstr was empty.
+       * Can return an empty queue in case no valid query string was parsed.
        *
        * Throws a PGProtoCmdFailure exception in case a parsing
        * error occured.
        */
-      virtual std::shared_ptr<ProtocolCommandHandler> parse(std::string cmdstr);
+      virtual PGProtoCommandExecutionQueue parse(std::string cmdstr);
+
+      /**
+       * Clears internal command execution queues.
+       */
+      virtual void reset();
 
     };
 

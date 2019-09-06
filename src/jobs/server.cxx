@@ -3,8 +3,10 @@
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/algorithm/string.hpp>
 #include <boost/array.hpp>
 #include <boost/bind.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/log/trivial.hpp>
 #include <iostream>
 #include <map>
@@ -16,12 +18,15 @@ extern "C" {
 #include <iostream>
 }
 
+#include <common.hxx>
 #include <rtconfig.hxx>
 #include <bgrndroletype.hxx>
 #include <pgsql-proto.hxx>
+#include <proto-catalog.hxx>
 #include <proto-buffer.hxx>
 #include <pgproto-parser.hxx>
 #include <pgproto-commands.hxx>
+#include <shm.hxx>
 #include <server.hxx>
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
@@ -52,6 +57,29 @@ namespace credativ {
   class PGBackupCtlStreamingServer {
   private:
   protected:
+
+    /**
+     * Runtime configuration private to this server
+     * instance.
+     */
+    std::shared_ptr<RuntimeVariableEnvironment> server_env = std::make_shared<RuntimeVariableEnvironment>();
+
+    /**
+     * The worker child ID we are registered at.
+     */
+    int child_id = -1;
+
+    /*
+     * The parent worker ID we are belonging to.
+     */
+    int worker_id = -1;
+
+    /**
+     * Shared memory segment for background workers.
+     *
+     * We need this to reflect basebackup usage and statistics.
+     */
+    std::shared_ptr<WorkerSHM> worker_shm = std::make_shared<WorkerSHM>();
 
     /*
      * Internal boost::asio handles.
@@ -90,10 +118,25 @@ namespace credativ {
 
         /* Reap completed child processes so that we don't end up with zombies. */
         int status = 0;
-        while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {}
+        while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+
+          if (worker_shm->get_shmid() > 0  && worker_id >= 0) {
+
+            /*
+             * XXX: This is tricky. We can't use mutex locks here in the
+             *      signal handler, so do the deletion directly. This is not
+             *      really safe. Consider employing a separate reaper thread!
+             */
+            worker_shm->free_child_by_pid(worker_id, pid);
+
+          }
+
+        }
 
         this->start_signal_wait();
+
       }
+
     }
 
     void start_accept() {
@@ -138,9 +181,64 @@ namespace credativ {
               /* The child process is not interested in processing the SIGCHLD signal. */
               sset->cancel();
 
-              start_read();
+              /*
+               * Everything in shape, attach to parent shared memory slot
+               * and save its childs information there.
+               */
+              worker_shm->attach(streamDescr->catalog_name, false);
+
+              try {
+
+                {
+                  shm_worker_area worker_info;
+                  sub_worker_info child_info;
+
+                  child_info.pid = ::getpid();
+
+                  /* we use a scoped lock */
+                  boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>(*(worker_shm->check_and_get_mutex()));
+
+                  worker_shm->write(streamDescr->worker_id, child_id, child_info);
+
+                }
+
+                /*
+                 * Save child id within runtime configuration, so it can easily
+                 * referenced by subsequent command handlers.
+                 */
+                server_env->getRuntimeConfiguration()->create("recovery_instance.child_id",
+                                                              child_id,
+                                                              child_id);
+
+                BOOST_LOG_TRIVIAL(debug) << "registered worker id="
+                                         << worker_id << ", child_id="
+                                         << child_id;
+
+                /*
+                 * Setup connection.
+                 */
+                initial_read();
+
+              } catch(TCPServerFailure &failure) {
+
+                BOOST_LOG_TRIVIAL(fatal) << failure.what();
+                soc->close();
+                ios->stop();
+
+              }
+
+              catch (SHMFailure &failure) {
+
+                BOOST_LOG_TRIVIAL(fatal) << failure.what();
+                soc->close();
+                ios->stop();
+
+              }
+
             }
+
           else
+
             {
               /*
                * Inform the io_service that the fork is finished (or failed) and that
@@ -152,7 +250,9 @@ namespace credativ {
 
               soc->close();
               start_accept();
+
             }
+
         }
       else
         {
@@ -161,33 +261,11 @@ namespace credativ {
         }
     }
 
-    virtual void start_read() {
+    virtual void initial_read() = 0;
+    virtual void start_read_header() = 0;
+    virtual void start_read_msg() = 0;
+    virtual void start_write(std::size_t length) = 0;
 
-      this->soc->async_read_some(boost::asio::buffer(data_),
-                                 boost::bind(&PGBackupCtlStreamingServer::handle_read,
-                                             this, _1, _2));
-
-    }
-
-    /*
-     * Process incoming data message and performs a response.
-     */
-    virtual void handle_read(const boost::system::error_code& ec, std::size_t length) {
-
-      if (!ec)
-        start_write(length);
-
-    }
-
-    virtual void start_write(std::size_t length) {
-      boost::asio::async_write(SOCKET_P(this), boost::asio::buffer(data_, length),
-                               boost::bind(&PGBackupCtlStreamingServer::handle_write, this, _1));
-    }
-
-    virtual void handle_write(const boost::system::error_code& ec) {
-      if (!ec)
-        start_read();
-    }
 
   public:
 
@@ -207,16 +285,24 @@ namespace credativ {
      * Run the io service.
      */
     virtual void run();
+
   };
+
+  /*
+   * Exit codes for startup GUC processing.
+   */
+  typedef enum {
+
+                BASEBACKUP_DOES_NOT_EXIST,
+                BASEBACKUP_ALREADY_USE,
+                STARTUP_GUC_INVALID,
+                STARTUP_GUC_REQUIRED,
+                STARTUP_GUC_OK
+
+  } StartupGUCFailure;
 
   class PGProtoStreamingServer : public PGBackupCtlStreamingServer {
   private:
-
-    /**
-     * Runtime configuration private to this server
-     * instance.
-     */
-    std::shared_ptr<RuntimeVariableEnvironment> server_env = std::make_shared<RuntimeVariableEnvironment>();
 
     /**
      * The internal query descriptor initialized
@@ -230,10 +316,19 @@ namespace credativ {
     PostgreSQLProtocolState state = PGPROTO_STARTUP;
 
     /**
-     * Internal memory buffer, gets re-allocated
-     * for any new incoming message.
+     * Current message header. Defines the current
+     * message processing context. Initialized by the pgproto_header_in()
+     * completion handler.
      */
-    ProtocolBuffer buf;
+    pgprotocol::pg_protocol_msg_header msghdr;
+
+    /**
+     * Internal memory buffers, gets re-allocated
+     * for any new incoming or outgoing message.
+     */
+    ProtocolBuffer write_buffer;
+    ProtocolBuffer read_header_buffer;
+    ProtocolBuffer read_body_buffer;
 
     /**
      * Clear contents of protocol error stack.
@@ -241,7 +336,7 @@ namespace credativ {
     void clearErrorStack();
 
     /*
-     * Protocol error stack. Flushed by _send_error().
+     * Protocol error stack. Flushed by _send_error() or _send_notice().
      */
     pgprotocol::ProtocolErrorStack errm;
 
@@ -256,9 +351,31 @@ namespace credativ {
     unsigned int processed_rows = 0;
 
     /**
-     * Guts of protocol startup.
+     * Disables streaming API commands. This is done
+     * by process_startup_guc() during startup in case no
+     * special basebackup name was selected for connection.
      */
-    void _startup();
+    bool disable_streaming_commands = false;
+
+    /**
+     * Reset query state affine properties to defaults.
+     */
+    virtual void resetQueryState();
+
+    /*
+     * Handles the startup header.
+     */
+    void _startup_header();
+
+    /**
+     * Requests a basebackup from the catalog.
+     * In case the basebackup exists, this will add the
+     * basebackup into the worker shared memory, so that concurrent
+     * caller recognized its usage here. Note that this is explicit
+     * and the the method still can return a specific
+     * startup error code.
+     */
+    StartupGUCFailure process_startup_guc();
 
     /**
      * Extracts and process the query string from
@@ -268,8 +385,10 @@ namespace credativ {
 
     /**
      * Prepare to process a QueryMessage from client.
+     * Returns the query string length extracted from
+     * the message header.
      */
-    void _process_query_start();
+    int _process_query_start(int hdr_len);
 
     /**
      * Read and convert startup GUCs into a local
@@ -279,9 +398,14 @@ namespace credativ {
     void _read_startup_gucs();
 
     /**
-     * Sends a error response to the client.
+     * Sends an error response to the client.
      */
     void _send_error();
+
+    /**
+     * Sends a notice response to the client.
+     */
+    void _send_notice();
 
     /**
      * Sends a CommandComplete Response.
@@ -317,32 +441,66 @@ namespace credativ {
                               std::string key,
                               std::string val);
 
+    /**
+     * Read the message header from the current buffer
+     * content.
+     */
+    pgprotocol::PGMessageType _read_message_header();
+
   protected:
 
     /*
      * Start reading a new protocol message.
      */
-    virtual void start_read();
-
+    virtual void start_read_header();
+    virtual void start_read_msg();
+    virtual void initial_read();
+    virtual void initial_read_body();
     virtual void start_write(size_t length);
 
     /**
-     * Handle an incoming message.
+     * Handles startup message body.
      */
-    virtual void handle_read(const boost::system::error_code& ec, std::size_t length);
+    virtual void startup_msg_body(const boost::system::error_code& ec,
+                                  std::size_t len);
 
     /**
-     * Handle an outgoing message.
+     * Handles incoming message body.
      */
-    virtual void handle_write(const boost::system::error_code &ec);
+    virtual void pgproto_msg_in(const boost::system::error_code& ec,
+                                std::size_t len);
 
-    /*
-     * Stacks an error message with the given severity
-     * on the protocol stack
+    /**
+     * Handles incoming message header.
      */
-    virtual void error_msg(pgprotocol::PGErrorSeverity severity,
-                           std::string msg,
-                           bool translatable = true);
+    virtual void pgproto_header_in(const boost::system::error_code& ec,
+                                   std::size_t len);
+
+    /**
+     * Handler for incoming startup message
+     */
+    virtual void startup_msg_in(const boost::system::error_code& ec,
+                                 std::size_t len);
+
+      /*
+     * Handles outgoing message.
+     */
+    virtual void pgproto_msg_out(const boost::system::error_code &ec);
+
+    /**
+     * Process protocol messages.
+     */
+    virtual bool process_message();
+
+    /**
+     * Stacks an protocol error or notice message with the given severity
+     * on the protocol stack. Calling this method just stacks
+     * the message onto the message stack, see _send_error() or _send_notice
+     * to empy the stack and sent the message finally over the wire.
+     */
+    virtual void msg(pgprotocol::PGErrorSeverity severity,
+                     std::string msg,
+                     bool translatable = true);
 
     virtual void set_sqlstate(std::string state);
 
@@ -400,14 +558,27 @@ PGBackupCtlStreamingServer::PGBackupCtlStreamingServer(std::shared_ptr<RecoveryS
   /*
    * Create acceptor handle
    */
-  this->acpt = new ip::tcp::acceptor(*(this->ios),
-                                     ip::tcp::endpoint(ip::tcp::v6(),
-                                                       streamDescr->port));
+  if (streamDescr->listen_on.size() == 1) {
+
+    this->acpt = new ip::tcp::acceptor(*(this->ios),
+                                       ip::tcp::endpoint(ip::address::from_string(streamDescr->listen_on[0]),
+                                                         streamDescr->port));
+  } else {
+
+    this->acpt = new ip::tcp::acceptor(*(this->ios),
+                                       ip::tcp::endpoint(ip::tcp::v6(),
+                                                         streamDescr->port));
+  }
 
   /*
    * Instantiate the socket
    */
   this->soc = new ip::tcp::socket(*(this->ios));
+
+  /* Create and assign runtime configuration */
+
+  server_env->assignRuntimeConfiguration(RuntimeVariableEnvironment::createRuntimeConfiguration());
+  BOOST_LOG_TRIVIAL(debug) << "created runtime configuration";
 
 }
 
@@ -433,7 +604,7 @@ PGBackupCtlStreamingServer::~PGBackupCtlStreamingServer() {
 
 void PGBackupCtlStreamingServer::run() {
 
-  BOOST_LOG_TRIVIAL(debug) << "DEBUG: run PGBackupCtlStreamingServer";
+  BOOST_LOG_TRIVIAL(debug) << "DEBUG: running PGBackupCtlStreamingServer";
 
   start_signal_wait();
   start_accept();
@@ -447,6 +618,8 @@ void PGBackupCtlStreamingServer::run() {
  * (Implements PostgreSQL Streaming protocol)
  * ****************************************************************************/
 
+#define INITIAL_STARTUP_BUFFER_SIZE 8
+
 PGProtoStreamingServer::PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDescr> streamDescr)
   : PGBackupCtlStreamingServer(streamDescr) {
 
@@ -455,19 +628,22 @@ PGProtoStreamingServer::PGProtoStreamingServer(std::shared_ptr<RecoveryStreamDes
    */
   cmd = std::make_shared<pgprotocol::PGProtoCmdDescr>();
 
-  server_env->assignRuntimeConfiguration(RuntimeVariableEnvironment::createRuntimeConfiguration());
-  BOOST_LOG_TRIVIAL(debug) << "created runtime configuration";
-
 }
 
 PGProtoStreamingServer::~PGProtoStreamingServer() {}
-
-#define INITIAL_STARTUP_BUFFER_SIZE 8
 
 void PGProtoStreamingServer::run() {
 
   std::shared_ptr<RuntimeConfiguration> runtime_configuration
     = server_env->getRuntimeConfiguration();
+
+  /*
+   * Attach to worker shared memory area.
+   */
+  worker_shm->attach(streamDescr->catalog_name, false);
+
+  /* initialization stuff */
+  worker_id = streamDescr->worker_id;
 
   /*
    * Create global runtime parameters.
@@ -483,10 +659,12 @@ void PGProtoStreamingServer::run() {
                                 streamDescr->catalog_name,
                                 "");
 
-  BOOST_LOG_TRIVIAL(debug) << "DEBUG: run PGProtoStreamingServer";
+  runtime_configuration->create("recovery_instance.worker_id",
+                                worker_id,
+                                worker_id);
 
   /* Internal startup buffer */
-  this->buf.allocate(INITIAL_STARTUP_BUFFER_SIZE);
+  this->read_header_buffer.allocate(INITIAL_STARTUP_BUFFER_SIZE);
 
   start_signal_wait();
   start_accept();
@@ -532,11 +710,11 @@ void PGProtoStreamingServer::_read_startup_gucs() {
   std::string key = "";
   std::string val = "";
   bool is_key = true;
-  boost::asio::mutable_buffer temp_buf(this->buf.ptr(),
-                                       this->buf.getSize());
+  boost::asio::mutable_buffer temp_buf(this->read_body_buffer.ptr(),
+                                       this->read_body_buffer.getSize());
   const char *start_byte = boost::asio::buffer_cast<const char *>(temp_buf);
 
-  for (size_t i = 1; i < (boost::asio::buffer_size(temp_buf) - 1); i++) {
+  for (size_t i = 0; i < (boost::asio::buffer_size(temp_buf) - 1); i++) {
 
     const char *current_byte = (boost::asio::buffer_cast<const char *>(temp_buf)) + i;
 
@@ -556,10 +734,12 @@ void PGProtoStreamingServer::_read_startup_gucs() {
         key = sbuf.str();
         sbuf.str("");
         sbuf.clear();
-        val = "";
         is_key = false;
 
-        std::cerr << "GUC KEY: " << key << std::endl;
+        /*
+         * Convert key into lower case.
+         */
+        boost::algorithm::to_lower(key);
 
       } else {
 
@@ -567,293 +747,56 @@ void PGProtoStreamingServer::_read_startup_gucs() {
         sbuf.str("");
         sbuf.clear();
 
-        std::cerr << "GUC VALUE: " << val << std::endl;
-
-        if (key.length() > 0)
-          startup_gucs.insert( std::pair<std::string, std::string>(key, val) );
-
-        val = "";
-        key = "";
-
         is_key = true;
 
       }
 
-      /* Next byte offset */
-      start_byte = (boost::asio::buffer_cast<const char *>(temp_buf)) + i;
+      if (is_key) {
 
-    }
-
-  }
-
-}
-
-void PGProtoStreamingServer::handle_read(const boost::system::error_code& ec, std::size_t length) {
-
-  if (ec) {
-    throw TCPServerFailure("error reading on server socket");
-  }
-
-  switch (this->state) {
-
-  case PGPROTO_STARTUP:
-    {
-      /* expected startup message */
-      this->_startup();
-
-      /*
-       * Recheck state machine.
-       *
-       * Iff _startup() has got an SSL negotiation
-       * request, we must sent our intention wether
-       * we want to use SSL or not. _startup() will have changed
-       * the state machine in this case, so recheck.
-       */
-      if ( (this->state == PGPROTO_STARTUP_SSL_OK)
-           || (this->state == PGPROTO_STARTUP_SSL_NO) ) {
-
-           start_write(buf.getSize());
-
-      } else if (this->state == PGPROTO_READ_STARTUP_GUC) {
-
-        BOOST_LOG_TRIVIAL(debug) << "PG PROTO READ STARTUP GUC, buf size=" << this->buf.getSize();
-
-        /* remaining bytes contain client GUCs, so read on */
-        start_read();
-
-      } else {
-        throw TCPServerFailure("unexpected protocol state during startup");
-      }
-
-      break;
-    }
-
-  case PGPROTO_STARTUP_SSL_OK:
-  case PGPROTO_STARTUP_SSL_NO:
-    {
-      /*
-       * Handle SSL Negotiation,
-       * receive startup buffers again
-       */
-      this->_startup();
-
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO reading remaining startup bytes";
-
-      /* Read remaining bytes (GUCs) */
-      start_read();
-      break;
-    }
-
-  case PGPROTO_READ_STARTUP_GUC:
-    {
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO handle read GUCS, size " << this->buf.getSize();
-
-      /* Handle startup GUCs sent by client */
-      this->_read_startup_gucs();
-
-      /*
-       * We try to authenticate now and sent an authentication
-       * message back to the client. This will also set the
-       * next state to the internal protocol state machine.
-       */
-
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO  send auth OK";
-
-      this->_send_AuthenticationOK();
-      start_write(buf.getSize());
-
-      break;
-    }
-
-  case PGPROTO_PROCESS_QUERY_EXECUTE:
-    {
-      std::string query_string = "";
-
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO process query EXECUTE";
-
-      /* read the query string and prepare execution */
-      query_string = _process_query_execute(length);
-
-      if (state == PGPROTO_ERROR_AFTER_QUERY) {
-
-        BOOST_LOG_TRIVIAL(error) << "error processing query";
-        start_write(buf.getSize());
-        break;
+        startup_gucs.insert( std::pair<std::string, std::string>(key, val) );
 
       }
 
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO processed query string: "
-                               << query_string;
+      /* Next byte offset, but skip current null byte */
+      start_byte = current_byte + 1;
 
-      break;
     }
 
-  case PGPROTO_READY_FOR_QUERY_WAIT:
-    {
-      /*
-       * This usually means a ready for query message
-       * was submitted after a command complete message.
-       *
-       * Turn back to normal query processing.
-       */
-      BOOST_LOG_TRIVIAL(debug) << "PGPROTO ready for query wait";
-
-      state = PGPROTO_PROCESS_QUERY_START;
-      start_read();
-      break;
-    }
-
-  case PGPROTO_PROCESS_QUERY_START:
-    {
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO process query START";
-
-      /* prepare to read query string */
-      _process_query_start();
-
-      start_read();
-      break;
-    }
-
-  default:
-    throw TCPServerFailure("unexpected internal protocol state");
   }
+
+#ifdef __DEBUG__
+  for (auto &item : startup_gucs) {
+
+    BOOST_LOG_TRIVIAL(debug) << "startup GUC: \""
+                             << item.first
+                             << "\"=\"" << item.second << "\"";
+
+  }
+#endif
 
 }
 
-void PGProtoStreamingServer::handle_write(const boost::system::error_code& ec) {
+void PGProtoStreamingServer::_startup_header() {
 
-  if (ec) {
-    throw TCPServerFailure("error on writing to server socket");
-  }
-
-  switch (this->state) {
-  case PGPROTO_STARTUP_SSL_NO:
-  case PGPROTO_STARTUP_SSL_OK:
-    {
-      /*
-       * SSL negotiation sent, read startup gucs now
-       * from client. This means we must do the startup
-       * procedure again now. Adjust the receive buffer
-       * to receive the message length and protocolVersion
-       * before going on reading. The client will then send
-       * additional bytes, with its database connection parameters.
-       *
-       * We need the message length to know how large those
-       * connection string is.
-       */
-      this->buf.allocate((size_t) 8);
-      start_read();
-      break;
-    }
-  case PGPROTO_AUTH:
-    {
-      /*
-       * Server has sent an AuthenticationMessage to our client.
-       */
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO sent auth OK";
-
-      /* Sent Parameter status messages to client */
-      this->_send_ParameterStatus();
-      start_write(this->buf.getSize());
-
-      break;
-    }
-  case PGPROTO_COMMAND_COMPLETE:
-    {
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO command complete";
-
-      this->_send_ReadyForQuery();
-      start_write(this->buf.getSize());
-      break;
-
-    }
-  case PGPROTO_SEND_BACKEND_KEY:
-    {
-
-      this->_send_BackendKey();
-      start_write(this->buf.getSize());
-
-      break;
-    }
-
-  case PGPROTO_READY_FOR_QUERY:
-    {
-
-      /* We're ready now, send a ReadyForQuery message */
-      this->_send_ReadyForQuery();
-      start_write(this->buf.getSize());
-
-      break;
-    }
-
-  case PGPROTO_READY_FOR_QUERY_WAIT:
-    {
-      /* Write handler just completed a ReadyForQuery message */
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO ready for query completed";
-
-      state = PGPROTO_PROCESS_QUERY_START;
-      start_read();
-
-      break;
-    }
-
-  case PGPROTO_ERROR_CONDITION:
-    {
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO error condition processed";
-
-      buf.allocate(MESSAGE_HDR_SIZE);
-      start_read();
-
-      break;
-    }
-  case PGPROTO_ERROR_AFTER_QUERY:
-    {
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO error processing query handled";
-
-      _send_ReadyForQuery();
-      start_write(this->buf.getSize());
-
-      break;
-    }
-  case PGPROTO_PROCESS_QUERY_IN_PROGRESS:
-    {
-      /* nothing to do here, we need to proceed until
-       * PGPROTO_COMMAND_COMPLETE */
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO processing query in progress";
-      break;
-    }
-
-  default:
-
-    {
-      std::ostringstream oss;
-
-      oss << "unexpected PostgreSQL protocol state " << state;
-      throw TCPServerFailure(oss.str());
-    }
-
-  }
-
-}
-
-void PGProtoStreamingServer::_startup() {
-
-  int msglen;
+  int msglen = 0;
   int protocolVersion;
 
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO startup buffer size: "
-                           << this->buf.getSize();
+                           << this->read_header_buffer.getSize();
 
   /*
    * Read the message bytes. First four bytes is the startup
    * length indicator followed by the protocol version.
    */
-  buf.read_int(msglen);
-  buf.read_int(protocolVersion);
+  read_header_buffer.read_int(msglen);
+  read_header_buffer.read_int(protocolVersion);
 
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO len " << msglen;
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO ver " << PG_PROTOCOL_MAJOR(protocolVersion);
 
+    /*
+   * XXX: honor use_ssl, wether we are forced to SSL.
+   */
   if (PG_PROTOCOL_MAJOR(protocolVersion) == 1234) {
 
     pgprotocol::PGMessageType nossl = pgprotocol::NoSSLMessage;
@@ -867,13 +810,18 @@ void PGProtoStreamingServer::_startup() {
 
     /* No SSL currently, tell the client
      * we are currently not handling SSL requests */
-    buf.assign(&nossl, sizeof(pgprotocol::PGMessageType));
+    write_buffer.assign(&nossl, sizeof(pgprotocol::PGMessageType));
+
+    /* we're done at this point, send the NoSSL Message */
+    return;
 
   } else if (PG_PROTOCOL_MAJOR(protocolVersion) == 3) {
 
     BOOST_LOG_TRIVIAL(debug) << "PG PROTO version 3, setting up connection";
 
-    this->buf.allocate(msglen - MESSAGE_HDR_LENGTH_SIZE);
+    this->read_body_buffer.allocate(msglen - MESSAGE_HDR_LENGTH_SIZE
+                                    - sizeof(protocolVersion));
+    msglen = read_body_buffer.getSize();
 
     /*
      * We must read all remaining bytes.
@@ -892,12 +840,13 @@ void PGProtoStreamingServer::_send_AuthenticationOK() {
   authreq.hdr.length = 8;
   authreq.auth_type = 0;
 
-  buf.allocate(MESSAGE_HDR_SIZE + sizeof(authreq.auth_type));
-  buf.write_byte(authreq.hdr.type);
-  buf.write_int(authreq.hdr.length);
-  buf.write_int(authreq.auth_type);
+  write_buffer.allocate(MESSAGE_HDR_SIZE + sizeof(authreq.auth_type));
+  write_buffer.write_byte(authreq.hdr.type);
+  write_buffer.write_int(authreq.hdr.length);
+  write_buffer.write_int(authreq.auth_type);
 
   this->state = PGPROTO_AUTH;
+
 }
 
 void PGProtoStreamingServer::_send_BackendKey() {
@@ -907,15 +856,15 @@ void PGProtoStreamingServer::_send_BackendKey() {
   keydata.pid = ::getpid();
   keydata.key = 1234;
 
-  this->buf.allocate(MESSAGE_HDR_SIZE + sizeof(keydata.pid)
-                     + sizeof(keydata.key));
+  this->write_buffer.allocate(MESSAGE_HDR_SIZE + sizeof(keydata.pid)
+                              + sizeof(keydata.key));
 
-  BOOST_LOG_TRIVIAL(debug) << "PG PROTO backend key buf size " << this->buf.getSize();
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO backend key buf size " << this->write_buffer.getSize();
 
-  buf.write_byte(keydata.hdr.type);
-  buf.write_int(keydata.hdr.length);
-  buf.write_int(keydata.pid);
-  buf.write_int(keydata.key);
+  write_buffer.write_byte(keydata.hdr.type);
+  write_buffer.write_int(keydata.hdr.length);
+  write_buffer.write_int(keydata.pid);
+  write_buffer.write_int(keydata.key);
 
   this->state = PGPROTO_READY_FOR_QUERY;
 
@@ -936,8 +885,8 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
    */
   if (qsize > PGPROTO_MAX_QUERY_SIZE) {
 
-    error_msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
-    error_msg(pgprotocol::PG_ERR_DETAIL, "query exceeds maximum query length");
+    msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
+    msg(pgprotocol::PG_ERR_DETAIL, "query exceeds maximum query length");
     set_sqlstate("42601");
     _send_error();
 
@@ -951,7 +900,7 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
   qbuf = new char[qsize + 1];
   memset(qbuf, 0, qsize + 1);
 
-  buf.read_buffer(qbuf, qsize);
+  read_body_buffer.read_buffer(qbuf, qsize);
 
   /**
    * Extract the query length from the buffer and convert it
@@ -969,45 +918,72 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
     pgprotocol::PostgreSQLStreamingParser pgparser(server_env->getRuntimeConfiguration());
     std::shared_ptr<pgprotocol::ProtocolCommandHandler> handler = nullptr;
     std::shared_ptr<pgprotocol::PGProtoStreamingCommand> cmd = nullptr;
+    pgprotocol::PGProtoCommandExecutionQueue execQueue;
 
-    handler = pgparser.parse(query_string);
+    /*
+     * The PostgreSQLStreamingParser::parse() method will
+     * materialize a command execution queue with executable
+     * command handlers.
+     */
+    execQueue = pgparser.parse(query_string);
 
     BOOST_LOG_TRIVIAL(debug) << "parser exited successfully";
 
     /* We're not bothered with a PGProtoCmdFailure, so
      * proceed and execute the successfully parsed command.
      */
-    if (handler != nullptr) {
+    if (!execQueue.empty()) {
 
-      int step;
+      while (!execQueue.empty()) {
 
-      BOOST_LOG_TRIVIAL(debug) << "executing command";
+        int step;
 
-      cmd = handler->getExecutable();
-      cmd->execute();
+        handler = execQueue.front();
+        execQueue.pop();
 
-      while((step = cmd->step(buf)) != -1) {
+        BOOST_LOG_TRIVIAL(debug) << "executing command";
 
-        state = PGPROTO_PROCESS_QUERY_IN_PROGRESS;
+        cmd = handler->getExecutable(worker_shm);
 
-        BOOST_LOG_TRIVIAL(debug) << "PG PROTO sent query message buffer "
-                                 << buf.getSize();
+        /*
+         * If authentication procedure has sucessfully passed, we
+         * send some NOTICE message indicating special startup settings.
+         *
+         * Sent over important NOTICE messages.
+         */
+        if (cmd->needsArchive() && disable_streaming_commands) {
 
-        start_write(buf.getSize());
+          error_string = "connected to catalog only, streaming API commands disabled";
+          state = PGPROTO_ERROR_AFTER_QUERY;
+          break;
 
-        BOOST_LOG_TRIVIAL(debug) << "stepping protocol message "
-                                 << step;
+        }
+
+        cmd->execute();
+
+        while((step = cmd->step(write_buffer)) != -1) {
+
+          state = PGPROTO_PROCESS_QUERY_IN_PROGRESS;
+
+          BOOST_LOG_TRIVIAL(debug) << "PG PROTO sent query message buffer "
+                                   << write_buffer.getSize();
+
+          start_write(write_buffer.getSize());
+
+          BOOST_LOG_TRIVIAL(debug) << "stepping protocol message "
+                                   << step;
+
+        }
+
+        /* Query processing done, prepare a command complete message */
+        _send_command_complete(pgprotocol::SELECT_CMD, 0);
+        start_write(write_buffer.getSize());
 
       }
 
-      /* Query processing done, prepare a command complete message
-       * and leave the rest to handle_write() */
-      _send_command_complete(pgprotocol::SELECT_CMD, 0);
-      start_write(buf.getSize());
-
     } else {
 
-      error_string = "could not execute uninitialized command handle";
+      error_string = "empty command execution queue, nothing to do";
       state = PGPROTO_ERROR_AFTER_QUERY;
 
     }
@@ -1036,10 +1012,11 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
    */
   if (state == PGPROTO_ERROR_AFTER_QUERY) {
 
-    error_msg(pgprotocol::PG_ERR_ERROR, error_string);
-    error_msg(pgprotocol::PG_ERR_DETAIL, "query was: " + query_string);
+    msg(pgprotocol::PG_ERR_ERROR, error_string);
+    msg(pgprotocol::PG_ERR_DETAIL, "query was: " + query_string);
     set_sqlstate("42601");
     _send_error();
+    start_write(write_buffer.getSize());
 
     state = PGPROTO_ERROR_AFTER_QUERY;
 
@@ -1048,60 +1025,27 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
   return query_string;
 }
 
-void PGProtoStreamingServer::_process_query_start() {
-
-  unsigned char msg_type = '\0';
+int PGProtoStreamingServer::_process_query_start(int hdr_len) {
 
   /*
-   * Determine message type.
+   * Read message body length.
    */
-  buf.read_byte(msg_type);
+  int query_str_len = 0;
 
-  switch((pgprotocol::PGMessageType)msg_type) {
+  query_str_len = hdr_len - MESSAGE_HDR_LENGTH_SIZE;
 
-  case pgprotocol::QueryMessage:
-    {
-      /*
-       * Read message body length.
-       */
-      int msg_len       = 0;
-      int query_str_len = 0;
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO query string len: " << query_str_len;
 
-      buf.read_int(msg_len);
-      query_str_len = msg_len - MESSAGE_HDR_LENGTH_SIZE;
+  /*
+   * Check query string length. We don't process
+   * anything which doesn't make sense here...
+   */
 
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO query string len: " << query_str_len;
+  if (query_str_len <= 0) {
 
-      /*
-       * Check query string length. We don't process
-       * anything which doesn't make sense here...
-       */
+    state = PGPROTO_ERROR_AFTER_QUERY;
 
-      if (query_str_len <= 0) {
-        state = PGPROTO_ERROR_AFTER_QUERY;
-        break;
-      }
-
-      buf.allocate(query_str_len);
-
-      /*
-       * NOTE: fall through and set appropiate state machine
-       *       at the end of this method.
-       */
-      break;
-    }
-
-  default:
-    {
-      /*
-       * If reached here, we can't handle the received
-       * message type. Respond with an ErrorMessage.
-       */
-      state = PGPROTO_ERROR_AFTER_QUERY;
-      break;
-    }
-
-  }; /* switch ... case */
+  }
 
   /*
    * If an error condition was met, prepare
@@ -1109,14 +1053,15 @@ void PGProtoStreamingServer::_process_query_start() {
    */
   if (state == PGPROTO_ERROR_AFTER_QUERY) {
 
-    error_msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
+    msg(pgprotocol::PG_ERR_ERROR, "could not process invalid query string");
     set_sqlstate("42601");
     _send_error();
 
-    return;
+    return query_str_len;
   }
 
   state = PGPROTO_PROCESS_QUERY_EXECUTE;
+  return query_str_len;
 
 }
 
@@ -1154,14 +1099,14 @@ void PGProtoStreamingServer::_send_ParameterStatus() {
   status.data_ptr = temp_buf.ptr();
   status.hdr.length = MESSAGE_HDR_LENGTH_SIZE + temp_buf.getSize();
 
-  buf.allocate(MESSAGE_HDR_SIZE + MESSAGE_DATA_LENGTH(status));
+  write_buffer.allocate(MESSAGE_HDR_SIZE + MESSAGE_DATA_LENGTH(status));
 
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO parameter buffer data length: " << status.hdr.length;
 
-  buf.write_byte(status.hdr.type);
-  buf.write_int(status.hdr.length);
-  buf.write_buffer(status.data_ptr,
-                   temp_buf.getSize());
+  write_buffer.write_byte(status.hdr.type);
+  write_buffer.write_int(status.hdr.length);
+  write_buffer.write_buffer(status.data_ptr,
+                            temp_buf.getSize());
 
   this->state = PGPROTO_SEND_BACKEND_KEY;
 
@@ -1177,9 +1122,9 @@ void PGProtoStreamingServer::clearErrorStack() {
 
 }
 
-void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
-                                       std::string msg,
-                                       bool translatable) {
+void PGProtoStreamingServer::msg(pgprotocol::PGErrorSeverity severity,
+                                 std::string msg,
+                                 bool translatable) {
 
   pgprotocol::PGErrorResponseType errtype;
 
@@ -1198,6 +1143,13 @@ void PGProtoStreamingServer::error_msg(pgprotocol::PGErrorSeverity severity,
       break;
     }
 
+  case pgprotocol::PG_ERR_FATAL:
+    {
+      this->errm.push(errtype, "FATAL");
+      this->errm.push('M', msg);
+
+      break;
+    }
   case pgprotocol::PG_ERR_WARNING:
     {
       this->errm.push(errtype, "WARNING");
@@ -1286,15 +1238,19 @@ void PGProtoStreamingServer::_send_command_complete(pgprotocol::PGProtoCmdTag ta
     }
   }
 
-  hdr.length = MESSAGE_HDR_LENGTH_SIZE + message_buffer.str().length();
+  /*
+   * NOTE: We need a extra byte at the end of the command tag!
+   */
+  hdr.length = MESSAGE_HDR_LENGTH_SIZE + message_buffer.str().length() + 1;
 
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO command completion tag " << message_buffer.str();
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO message buffer length " << hdr.length;
 
-  buf.allocate(hdr.length + MESSAGE_HDR_BYTE);
-  buf.write_byte(hdr.type);
-  buf.write_int(hdr.length);
-  buf.write_buffer(message_buffer.str().c_str(), message_buffer.str().length());
+  write_buffer.allocate(hdr.length + MESSAGE_HDR_BYTE);
+  write_buffer.write_byte(hdr.type);
+  write_buffer.write_int(hdr.length);
+  write_buffer.write_buffer(message_buffer.str().c_str(), message_buffer.str().length());
+  write_buffer.write_byte('\0');
 
   state = PGPROTO_COMMAND_COMPLETE;
 }
@@ -1305,13 +1261,29 @@ void PGProtoStreamingServer::_send_error() {
    * Slurp in error stack.
    */
   size_t errm_size = 0;
-  errm.toBuffer(buf,
+  errm.toBuffer(write_buffer,
                 errm_size);
 
-  BOOST_LOG_TRIVIAL(debug) << "toBuffer() buffer size " << buf.getSize();
+  BOOST_LOG_TRIVIAL(debug) << "toBuffer() buffer size " << write_buffer.getSize();
   this->state = PGPROTO_ERROR_CONDITION;
 
 }
+
+void PGProtoStreamingServer::_send_notice() {
+
+  /*
+   * Slurp in error stack.
+   */
+  size_t errm_size = 0;
+  errm.toBuffer(write_buffer,
+                errm_size,
+                false);
+
+  BOOST_LOG_TRIVIAL(debug) << "toBuffer() buffer size " << write_buffer.getSize();
+  this->state = PGPROTO_NOTICE_CONDITION;
+
+}
+
 
 void PGProtoStreamingServer::_send_ReadyForQuery() {
 
@@ -1321,12 +1293,427 @@ void PGProtoStreamingServer::_send_ReadyForQuery() {
   rfq.hdr.length = 5;
   rfq.tx_state = 'I'; /* idle in transaction */
 
-  buf.allocate(MESSAGE_HDR_SIZE + sizeof(rfq.tx_state));
-  buf.write_byte(rfq.hdr.type);
-  buf.write_int(rfq.hdr.length);
-  buf.write_byte(rfq.tx_state);
+  write_buffer.allocate(MESSAGE_HDR_SIZE + sizeof(rfq.tx_state));
+  write_buffer.write_byte(rfq.hdr.type);
+  write_buffer.write_int(rfq.hdr.length);
+  write_buffer.write_byte(rfq.tx_state);
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO ReadyForQuery";
 
   this->state = PGPROTO_READY_FOR_QUERY_WAIT;
+
+}
+
+void PGProtoStreamingServer::startup_msg_in(const boost::system::error_code& ec,
+                                            std::size_t len) {
+
+  if (ec) {
+    throw TCPServerFailure("error reading socket for startup message");
+  }
+
+  /**
+   * Startup message expected, delegate the legwork
+   * to _startup which prepares the necessary steps.
+   */
+  _startup_header();
+
+  /*
+   * In case _startup_header() decided to decline a SSL request,
+   * we must sent a NoSSLMessage back to the client. If SSL
+   * was acknowledged, we must setup SSL.
+   *
+   * Iff _startup_header() encountered a plain (unencrypted) connection
+   * attempt, we can just proceed and read up the upcoming
+   * startup gucs.
+   */
+  if ( (state == PGPROTO_STARTUP_SSL_OK)
+        || (state == PGPROTO_STARTUP_SSL_NO) ) {
+
+    start_write(write_buffer.getSize());
+
+    /* Client responds with a startup message again. */
+    read_header_buffer.allocate(INITIAL_STARTUP_BUFFER_SIZE);
+
+    /* Call initial_read again to re-read final startup
+     * messages to establish SSL/NoSSL */
+    initial_read();
+    _startup_header();
+
+  }
+
+  if (state == PGPROTO_READ_STARTUP_GUC)  {
+
+    /* Read remaining startup GUCs */
+    BOOST_LOG_TRIVIAL(debug) << "PG PROTO startup: read startup contents";
+
+    /* _startup_header() has prepared the receive buffers for
+     * the remaining bytes, so we can just proceed and
+     * read the remaining bytes */
+    initial_read_body();
+
+  }
+
+  // else {
+  //   throw TCPServerFailure("unexpected protocol state during connection establishing");
+  // }
+
+}
+
+void PGProtoStreamingServer::pgproto_header_in(const boost::system::error_code& ec,
+                                               std::size_t len) {
+  if (!ec) {
+
+    BOOST_LOG_TRIVIAL(debug) << "PG PROTO incoming msg header completion handler, transferred "
+                             << len << " bytes";
+
+    /*
+     * Read message header contents.
+     */
+    _read_message_header();
+
+    /*
+     * Schedule body read with message body length
+     * if necessary, else process the plain message header.
+     */
+    if (MESSAGE_HDR_DATA_LENGTH(msghdr) > 0) {
+
+      read_body_buffer.allocate(MESSAGE_HDR_DATA_LENGTH(msghdr));
+      start_read_msg();
+
+    } else {
+
+      switch (msghdr.type) {
+
+      case pgprotocol::CancelMessage:
+
+        {
+
+          BOOST_LOG_TRIVIAL(debug) << "PG PROTO termination message, exiting";
+
+          soc->close();
+          ios->stop();
+
+          std::exit(0);
+
+          /* Equivalent to TerminationMessage */
+          break;
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
+
+  /*
+   * Check if a specific value for the "dbname" parameter was set.
+   *
+   * Currently we allow placeholders (aka reserved) values for specific
+   * kind of basebackups to connect to:
+   *
+   * - "latest": Means the latest create basebackup in the list, if any
+   * - "current": the same as above.
+   * - "oldest": the oldest available basebackup, if any
+   * - "catalog": allows archive related commands, but no streaming API supported
+   *              commands
+   */
+
+  std::map<std::string, std::string>::iterator guc_iter;
+
+  guc_iter = startup_gucs.find("database");
+
+  if (guc_iter == startup_gucs.end()) {
+
+    BOOST_LOG_TRIVIAL(debug) << "no database selected, only archive commands available";
+    disable_streaming_commands = true;
+
+  } else {
+
+    if (guc_iter->second == "catalog") {
+
+      BOOST_LOG_TRIVIAL(debug) << "catalog database selected, only archive commands available";
+      disable_streaming_commands = true;
+
+    } else {
+
+      BOOST_LOG_TRIVIAL(debug) << "basebackup "
+                               << "\""
+                               << guc_iter->second
+                               << "\" requested";
+      /*
+       * Special ident name, see comments above...
+       *
+       * Save the backup identifier within the runtime configuration
+       * environment.
+       */
+      server_env->getRuntimeConfiguration()->create("recovery_instance.basebackup_path",
+                                                    guc_iter->second,
+                                                    guc_iter->second);
+
+      /*
+       * We want to have the backup id we are connected to. This is
+       * registered within our child slot in the worker shared memory
+       * to create a lock on it. Concurrent archive changes will then
+       * recognize that this basebackup is currently in use.
+       */
+
+    }
+
+  }
+
+  return STARTUP_GUC_OK;
+
+}
+
+void PGProtoStreamingServer::resetQueryState() {
+
+  processed_rows = 0;
+  last_cmd_tag = pgprotocol::UNKNOWN_CMD;
+  clearErrorStack();
+
+}
+
+void PGProtoStreamingServer::startup_msg_body(const boost::system::error_code& ec,
+                                         std::size_t len) {
+
+  StartupGUCFailure guc_processing_status;
+
+  _read_startup_gucs();
+
+  /*
+   * Before proceeding, we are going to check if the
+   * client has submitted basebackup name to connect to.
+   *
+   * Within the streaming server context here, this means
+   * a specific basebackup target was requested.
+   */
+  if ((guc_processing_status = process_startup_guc()) != STARTUP_GUC_OK) {
+
+    if (guc_processing_status == BASEBACKUP_DOES_NOT_EXIST) {
+
+      std::string error_str = "requested basebackup does not exist";
+      msg(pgprotocol::PG_ERR_FATAL, error_str);
+      set_sqlstate("");
+      _send_error();
+      start_write(write_buffer.getSize());
+
+      /* Throw here, since we must force our worker to exit hard */
+      throw TCPServerFailure(error_str);
+
+
+    }
+
+  }
+
+  /*
+   * After having read the startup GUCs we enter the
+   * authentication routines.
+   */
+  _send_AuthenticationOK();
+  start_write(write_buffer.getSize());
+
+  if (disable_streaming_commands) {
+
+    msg(pgprotocol::PG_ERR_NOTICE,
+        "streaming API commands disabled");
+    _send_notice();
+    start_write(write_buffer.getSize());
+
+  }
+
+  /*
+   * Sent over ParameterStatus Messages.
+   */
+  _send_ParameterStatus();
+  start_write(write_buffer.getSize());
+
+  /*
+   * Sennt the backend cancellation key....
+   */
+  _send_BackendKey();
+  start_write(write_buffer.getSize());
+
+  /*
+   * ReadyForQuery marks the last message here. We're exiting
+   * here and caller has the chance to enter main processing loop.
+   */
+  _send_ReadyForQuery();
+  start_write(write_buffer.getSize());
+
+  /*
+   * ReadForQuery means the end of the initial
+   * startup processing. The follow up start_read()
+   * will change the incoming message handler to
+   * pgproto_msg_in(), where all remaining protocol
+   * messages will be dispatched.
+   */
+  read_header_buffer.allocate(MESSAGE_HDR_SIZE);
+  start_read_header();
+
+}
+
+void PGProtoStreamingServer::pgproto_msg_in(const boost::system::error_code& ec,
+                                            std::size_t len) {
+
+  if (ec) {
+    BOOST_LOG_TRIVIAL(debug) << "error reading from socket";
+  }
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO incoming message handler complete, transferred "
+                           << len << " bytes";
+
+  process_message();
+
+}
+
+bool PGProtoStreamingServer::process_message() {
+
+  using namespace pgprotocol;
+
+  bool result = true;
+
+  switch( msghdr.type ) {
+
+  case DescribeMessage:
+    break;
+
+  case FlushMessage:
+    break;
+
+  case ExecuteMessage:
+    break;
+
+  case QueryMessage:
+    {
+      int query_str_len;
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO processing QueryMessage";
+
+      query_str_len = _process_query_start(msghdr.length);
+
+      if (state == PGPROTO_ERROR_AFTER_QUERY) {
+
+        start_write(write_buffer.getSize());
+        break;
+
+      }
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO read query string";
+
+      /*
+       * remaining bytes are the query string.
+       */
+      // read_body_buffer.allocate(query_str_len);
+      // start_read_msg();
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO execute query";
+
+      /*
+       * _process_query_start() might have problems to calculate
+       * the correct query length, check...
+       */
+      _process_query_execute(query_str_len);
+
+      if (state == PGPROTO_ERROR_AFTER_QUERY) {
+
+        /* Finalize the request */
+        _send_ReadyForQuery();
+        start_write(write_buffer.getSize());
+
+        break;
+
+      }
+
+      /* Finalize the request */
+      _send_ReadyForQuery();
+      start_write(write_buffer.getSize());
+
+      /* Reset stateful query properties */
+      resetQueryState();
+
+      break;
+
+    }
+
+  case FunctionCallMessage:
+    break;
+
+  case CancelMessage:
+    break;
+
+  case ParseMessageType:
+    break;
+
+  case 'p':
+    /* Covers SASLInitialResponseMessage, SASLResponse. */
+    break;
+
+  case CopyFailMessage:
+    break;
+
+  case '\0':
+    break;
+
+  default:
+    {
+      std::ostringstream oss;
+
+      oss << "message type not recognized: " << msghdr.type;
+      throw TCPServerFailure(oss.str());
+
+    }
+  }
+
+  /* Back to business... */
+  read_header_buffer.allocate(MESSAGE_HDR_SIZE);
+  start_read_header();
+
+  return result;
+
+}
+
+pgprotocol::PGMessageType PGProtoStreamingServer::_read_message_header() {
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO extracting message header values";
+
+  if (read_header_buffer.getSize() < MESSAGE_HDR_SIZE) {
+    throw TCPServerFailure("short read on message buffer size");
+  }
+
+  if (read_header_buffer.pos() > 0) {
+    std::ostringstream oss;
+
+    oss << "cannot extract message header from buffer, pos: " << read_header_buffer.pos();
+    throw TCPServerFailure(oss.str());
+
+  }
+
+  read_header_buffer.read_byte(msghdr.type);
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO message type: \""
+                           << msghdr.type << "\"";
+
+  read_header_buffer.read_int(msghdr.length);
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO message length (including self): "
+                           << msghdr.length;
+
+  return msghdr.type;
+
+}
+
+void PGProtoStreamingServer::pgproto_msg_out(const boost::system::error_code &ec) {
+
+  if (ec) {
+    throw TCPServerFailure("error on writing to server socket");
+  }
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO outgoing message done";
 
 }
 
@@ -1334,16 +1721,58 @@ void PGProtoStreamingServer::start_write(size_t length) {
 
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO start_write with " << length << " bytes";
 
-  this->soc->async_write_some(boost::asio::buffer(this->buf.ptr(), length),
-                              boost::bind(&PGProtoStreamingServer::handle_write,
-                                          this, _1));
+  boost::asio::async_write(SOCKET_P(this), boost::asio::buffer(this->write_buffer.ptr(),
+                                                               this->write_buffer.getSize()),
+                           boost::asio::transfer_exactly(write_buffer.getSize()),
+                           boost::bind(&PGProtoStreamingServer::pgproto_msg_out,
+                                       this, _1));
 
 }
 
-void PGProtoStreamingServer::start_read() {
+void PGProtoStreamingServer::initial_read() {
 
-  this->soc->async_read_some(boost::asio::buffer(this->buf.ptr(), this->buf.getSize()),
-                             boost::bind(&PGProtoStreamingServer::handle_read,
-                                         this, _1, _2));
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO initial_read with " << read_header_buffer.getSize() << " bytes";
+
+  boost::asio::async_read(SOCKET_P(this), boost::asio::buffer(this->read_header_buffer.ptr(),
+                                                              this->read_header_buffer.getSize()),
+                          boost::asio::transfer_exactly(read_header_buffer.getSize()),
+                          boost::bind(&PGProtoStreamingServer::startup_msg_in,
+                                      this, _1, _2));
+
+}
+
+void PGProtoStreamingServer::initial_read_body() {
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO initial_read with " << read_body_buffer.getSize() << " bytes";
+
+  boost::asio::async_read(SOCKET_P(this), boost::asio::buffer(this->read_body_buffer.ptr(),
+                                                              this->read_body_buffer.getSize()),
+                          boost::asio::transfer_exactly(read_body_buffer.getSize()),
+                          boost::bind(&PGProtoStreamingServer::startup_msg_body,
+                                      this, _1, _2));
+
+}
+
+void PGProtoStreamingServer::start_read_msg() {
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO start_read_msg with " << read_body_buffer.getSize() << " bytes";
+
+  boost::asio::async_read(SOCKET_P(this), boost::asio::buffer(this->read_body_buffer.ptr(),
+                                                              this->read_body_buffer.getSize()),
+                          boost::asio::transfer_exactly(read_body_buffer.getSize()),
+                          boost::bind(&PGProtoStreamingServer::pgproto_msg_in,
+                                      this, _1, _2));
+
+}
+
+void PGProtoStreamingServer::start_read_header() {
+
+  BOOST_LOG_TRIVIAL(debug) << "PG PROTO start_read_header with " << read_header_buffer.getSize() << " bytes";
+
+  boost::asio::async_read(SOCKET_P(this), boost::asio::buffer(this->read_header_buffer.ptr(),
+                                                              this->read_header_buffer.getSize()),
+                          boost::asio::transfer_exactly(read_header_buffer.getSize()),
+                          boost::bind(&PGProtoStreamingServer::pgproto_header_in,
+                                      this, _1, _2));
 
 }

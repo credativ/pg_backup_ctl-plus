@@ -402,8 +402,19 @@ namespace credativ {
           >> -( no_case[ lexeme[ lit("NODETACH") ] ]
                 [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
 
-        stream_listen_on = no_case[ lexeme[ lit("LISTEN_ON") ] ] >> ip_address
-          >> -(stream_listen_on);
+        stream_listen_on = no_case[ lexeme[ lit("LISTEN_ON") ] ]
+          >> ip_address_list;
+
+        ip_address_list = lexeme[ lit("(") ]
+          >> ip_address
+          [ boost::bind(&CatalogDescr::setRecoveryStreamAddr, &cmd, ::_1) ]
+          >> -(ip_address_item)
+          >> lexeme[ lit(")") ];
+
+        ip_address_item = lexeme[ lit(",") ]
+          >> ip_address
+          [ boost::bind(&CatalogDescr::setRecoveryStreamAddr, &cmd, ::_1) ]
+          >> -(ip_address_item);
 
         ip_address = +char_("0-9a-zA-Z.:");
 
@@ -912,6 +923,8 @@ namespace credativ {
         variable_value.name("<variable value>");
         cmd_drop_basebackup.name("BASEBACKUP");
         ip_address.name("<IP>");
+        ip_address_list.name("(<IP>[, <IP>, ...])");
+        ip_address_item.name(", <IP>");
         stream_listen_on.name("LISTEN_ON");
       }
 
@@ -964,7 +977,9 @@ namespace credativ {
                           retention_datetime_spec,
                           retention_cleanup_basebackups,
                           force_systemid_update,
-                          stream_listen_on;
+                          stream_listen_on,
+                          ip_address_list,
+                          ip_address_item;
 
       qi::rule<Iterator, std::string(), ascii::space_type> identifier;
       qi::rule<Iterator, std::string(), ascii::space_type> hostname,
@@ -1032,6 +1047,12 @@ CatalogTag PGBackupCtlCommand::getCommandTag() {
     return this->catalogDescr->tag;
   else
     return EMPTY_DESCR;
+
+}
+
+void PGBackupCtlCommand::setWorkerID(int worker_id) {
+
+  this->worker_id = worker_id;
 
 }
 
@@ -1104,6 +1125,7 @@ CatalogTag PGBackupCtlCommand::execute(std::string catalogDir) {
     /* Also assign runtime configuration */
     execCmd->assignRuntimeConfiguration(this->runtime_config);
 
+    execCmd->setWorkerID(worker_id);
     execCmd->setCatalog(catalog);
     execCmd->execute(false);
 

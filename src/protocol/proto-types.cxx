@@ -1,6 +1,7 @@
-#include <ostream>
+#include <sstream>
 #include <boost/log/trivial.hpp>
 #include <pgsql-proto.hxx>
+#include <server.hxx>
 
 using namespace credativ;
 using namespace credativ::pgprotocol;
@@ -13,28 +14,9 @@ PGProtoResultSet::PGProtoResultSet() {}
 
 PGProtoResultSet::~PGProtoResultSet() {}
 
-void PGProtoResultSet::addColumn(PGProtoColumnDescr col,
-                                 std::vector<PGProtoColumnDataDescr> data) {
-
-  PGProtoColumns columns;
-
-  for (auto &colval : data) {
-
-    columns.row_size += (sizeof(colval.length) + colval.length);
-    columns.values.push_back(colval);
-
-  }
-
-  row_descr.column_list.push_back(col);
-  row_descr.count++;
-
-  data_descr.row_values.push_back(columns);
-
-}
-
 int PGProtoResultSet::calculateRowDescrSize() {
 
-  return MESSAGE_HDR_SIZE + sizeof(short) + row_descr_size;
+  return MESSAGE_HDR_LENGTH_SIZE + sizeof(short) + row_descr_size;
 
 }
 
@@ -78,7 +60,8 @@ int PGProtoResultSet::prepareSend(ProtocolBuffer &buffer,
 
       }
 
-      message_size = MESSAGE_HDR_SIZE + row_iterator->row_size;
+      message_size = MESSAGE_HDR_SIZE + sizeof(short)
+        + row_iterator->row_size;
       buffer.allocate(message_size);
 
       BOOST_LOG_TRIVIAL(debug) << "PG PROTO write data row size "
@@ -90,8 +73,14 @@ int PGProtoResultSet::prepareSend(ProtocolBuffer &buffer,
        * Prepare message header.
        */
       buffer.write_byte(DescribeMessage);
-      buffer.write_int(message_size);
-      buffer.write_int(data_descr.row_values.size());
+      buffer.write_int(message_size - MESSAGE_HDR_BYTE);
+
+      /* Number of columns */
+      buffer.write_short(row_iterator->fieldCount());
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message has "
+                               << row_iterator->values.size()
+                               << " columns";
 
       /*
        * NOTE: on the very first call to data(), we will
@@ -104,6 +93,9 @@ int PGProtoResultSet::prepareSend(ProtocolBuffer &buffer,
 
       /* Loop through the column values list */
       for (auto &colval : row_iterator->values) {
+
+        BOOST_LOG_TRIVIAL(debug) << "PG PROTO write col data len "
+                                 << colval.length << " bytes";
 
         buffer.write_int(colval.length);
         buffer.write_buffer(colval.data.c_str(), colval.length);
@@ -120,17 +112,23 @@ int PGProtoResultSet::prepareSend(ProtocolBuffer &buffer,
 
   case PGPROTO_ROW_DESCR_MESSAGE:
     {
-      message_size = calculateRowDescrSize();
-      buffer.allocate(message_size);
 
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO buffer allocated " << message_size << " bytes";
+      message_size = calculateRowDescrSize();
+      buffer.allocate(message_size + MESSAGE_HDR_BYTE);
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO buffer allocated "
+                               << buffer.getSize() << " bytes";
 
       /*
        * Prepare the message header.
        */
       buffer.write_byte(RowDescriptionMessage);
       buffer.write_int(message_size);
-      buffer.write_short(row_descr.count);
+      buffer.write_short(row_descr.fieldCount());
+
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO row descriptor has "
+                               << row_descr.count
+                               << " fields";
 
       /* The header is prepared now, write the message contents */
       for (auto &it : row_descr.column_list) {
@@ -146,6 +144,7 @@ int PGProtoResultSet::prepareSend(ProtocolBuffer &buffer,
 
       }
 
+      BOOST_LOG_TRIVIAL(debug) << "PG PROTO row descriptor buffer pos " << buffer.pos();
       break;
     }
   }
@@ -190,7 +189,6 @@ void PGProtoResultSet::addColumn(std::string colname,
   row_descr_size += sizeof(format);
 
   row_descr.column_list.push_back(coldef);
-  row_descr.count++;
 
 }
 
@@ -202,9 +200,18 @@ void PGProtoResultSet::addRow(std::vector<PGProtoColumnDataDescr> column_values)
    * Sanity check, number of column values should be identical to
    * number of column descriptors.
    */
-  if (row_descr.column_list.size() != column_values.size()) {
-    //throw PGProtoCmdFailure("number of columns do not match row descriptor");
-    return;
+  if (row_descr.fieldCount() != column_values.size()) {
+
+    std::ostringstream oss;
+
+    oss << "number of colums("
+        << column_values.size()
+        << ") do not match number in row  descriptor("
+        << row_descr.fieldCount()
+        << ")";
+
+    throw TCPServerFailure(oss.str());
+
   }
 
   /*
@@ -221,13 +228,17 @@ void PGProtoResultSet::addRow(std::vector<PGProtoColumnDataDescr> column_values)
 
   }
 
+  /* increase row counter */
+  row_descr.count++;
+
+  /* save columns to internal list */
   data_descr.row_values.push_back(columns);
 
 }
 
 unsigned int PGProtoResultSet::rowCount() {
 
-  return data_descr.row_values.size();
+  return row_descr.count;
 
 }
 
@@ -238,5 +249,7 @@ unsigned int PGProtoResultSet::rowCount() {
 void PGProtoCmdDescr::setCommandTag(ProtocolCommandTag const& tag) {
 
   this->tag = tag;
+
+  BOOST_LOG_TRIVIAL(debug) << "PGProtoCmdDescr command tag";
 
 }

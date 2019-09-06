@@ -38,6 +38,11 @@ namespace credativ {
     int archive_id = -1;
 
     /**
+     * The worker id this recovery stream was registered to.
+     */
+    int worker_id = -1;
+
+    /**
      * Catalog this streaming instance is attached to.
      * This usually means the path to the SQLite database.
      */

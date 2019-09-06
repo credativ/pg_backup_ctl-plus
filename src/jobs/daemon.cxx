@@ -22,6 +22,7 @@ extern "C" {
 #include <daemon.hxx>
 #include <parser.hxx>
 #include <commands.hxx>
+#include <reaper.hxx>
 #include <server.hxx>
 
 #define MSG_QUEUE_MAX_TOKEN_SZ 255
@@ -482,75 +483,6 @@ std::string ProcessSHM::getIdent() {
 }
 
 /******************************************************************************
- * background_worker_shm_reaper & objects implementation start
- ******************************************************************************/
-
-background_worker_shm_reaper::background_worker_shm_reaper()
-  : background_reaper() {
-
-  this->shm = nullptr;
-
-}
-
-background_worker_shm_reaper::~background_worker_shm_reaper() {
-
-  /* nothing special to do here */
-
-}
-
-void background_worker_shm_reaper::set_shm_handle(WorkerSHM *shm) {
-
-  this->shm = shm;
-
-}
-
-void background_worker_shm_reaper::reap() {
-
-  /*
-   * Nothing to do if we have no SHM pointer.
-   */
-  if (this->shm == nullptr)
-    return;
-
-  while(!this->dead_pids.empty()) {
-
-    pid_t deadpid = this->dead_pids.top();
-    this->dead_pids.pop();
-
-#ifdef __DEBUG__
-    BOOST_LOG_TRIVIAL(debug) << "WARN: reaping dead PID "
-                             << deadpid
-                             << " from shared memory";
-#endif
-
-    /*
-     * Ugly, but we need to loop through the shared memory
-     * area to find the PID we need to drop.
-     *
-     * NOTE: We do this without interlocking, since
-     *       we believe to reset the PID to 0 atomically.
-     *
-     *       This might by racy, but in the worst case we'll
-     *       miss this potential free slot and won't find a
-     *       remaining one. In this case the worker will
-     *       fail and exit.
-     */
-    for (unsigned int i = 0 ; i < this->shm->getMaxWorkers(); i++) {
-
-      shm_worker_area *ptr = (shm_worker_area *) (this->shm->shm_mem_ptr + i);
-
-      if (ptr != NULL && ptr->pid == deadpid) {
-
-        ptr->pid = 0;
-
-      }
-
-    }
-  }
-
-}
-
-/******************************************************************************
  * WorkerSHM & objects implementation start
  ******************************************************************************/
 
@@ -717,10 +649,107 @@ void WorkerSHM::write(unsigned int slot_index,
   ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
 
   if (ptr != NULL) {
+
     ptr->pid = item.pid;
     ptr->cmdType = item.cmdType;
     ptr->archive_id = item.archive_id;
     ptr->started = item.started;
+
+  }
+
+}
+
+void WorkerSHM::write(unsigned int slot_index,
+                      int &child_index,
+                      sub_worker_info &child_info) {
+
+  shm_worker_area *ptr = NULL;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to write worker slot from uninitialized shared memory");
+  }
+
+  /*
+   * Reference the worker slot at the
+   * specified slot_index. If slot_index is larger
+   * than our upper index, throw.
+   */
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index " << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  /*
+   * Check if child_index is a valid new index. If set to -1, we treat
+   * it as a new entry.
+   */
+  if (child_index < 0) {
+
+    /*
+     * Search free child worker slot. We do this
+     * in a small plain loop, MAX_WORKER_CHILDS isn't
+     * so large....
+     */
+    for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+      if (ptr->child_info[idx].pid <= 0) {
+
+        child_index = idx;
+        break;
+
+      }
+
+    }
+
+    /*
+     * Check wether we've found one.
+     */
+    if (child_index < 0) {
+
+      std::ostringstream oss;
+
+      oss << "could not register sub worker child: out of slots";
+      throw SHMFailure(oss.str());
+
+    }
+
+    /* Store child information into slot */
+    ptr->child_info[child_index].pid = child_info.pid;
+    ptr->child_info[child_index].backup_id = child_info.backup_id;
+
+    /* Adjust parent slot information, and we're done */
+    if (ptr->child_info[child_index].backup_id != -1)
+      ptr->basebackup_in_use = true;
+
+  } else {
+
+    /* We want to modify an existing one, check the index */
+    if ( (child_index < 0)
+         || (child_index >= MAX_WORKER_CHILDS) ) {
+
+      std::ostringstream oss;
+
+      oss << "child slot index "
+          << child_index
+          << " exceeds allowed number of MAX_WORKER_CHILDS="
+          << MAX_WORKER_CHILDS;
+      throw SHMFailure(oss.str());
+
+    }
+
+    /* Everything looks sane, modify the entry. */
+    ptr->child_info[child_index].pid = child_info.pid;
+    ptr->child_info[child_index].backup_id = child_info.backup_id;
+
+    if (child_info.backup_id != -1)
+      ptr->basebackup_in_use = true;
+
   }
 
 }
@@ -762,13 +791,143 @@ void WorkerSHM::reset() {
     ptr = (shm_worker_area *)(this->shm_mem_ptr + i);
 
     if (ptr != NULL) {
+
       ptr->pid = 0;
       ptr->cmdType = EMPTY_DESCR;
       ptr->archive_id = -1;
       ptr->started = boost::posix_time::ptime();
+      ptr->basebackup_in_use = false;
+
+      for (int child_index = 0; child_index < MAX_WORKER_CHILDS; child_index++) {
+
+        ptr->child_info[child_index].pid = -1;
+        ptr->child_info[child_index].backup_id = -1;
+
+      }
+
     }
 
   }
+
+}
+
+void WorkerSHM::free_child_by_pid(unsigned int slot_index,
+                                  pid_t child_pid) {
+
+  shm_worker_area *ptr = nullptr;
+  unsigned int free_idx;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  /* PID <= 0 means no-op */
+  if (child_pid <= 0)
+    return;
+
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index "
+        << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  /* Get the worker slot */
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  /*
+   * We need to search the child_pid
+   * within our child_info array. Since the array
+   * isn't considered to grow very large, just use
+   * plain stupid for loop.
+   *
+   * We don't free the child slot directly here, since
+   * we are going to call free_child(), which would mean
+   * to have to indirectly iterate over the child_info
+   * array again. So just remember the pid and do the
+   * call afterwards.
+   */
+  for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+    if (ptr->child_info[idx].pid == child_pid) {
+
+      free_idx = idx;
+      break;
+
+    }
+
+  }
+
+  if (free_idx >= 0)
+    free_child(slot_index, free_idx);
+
+}
+
+void WorkerSHM::free_child(unsigned int slot_index,
+                           unsigned int child_index) {
+
+  unsigned int free_child_index = child_index;
+  shm_worker_area *ptr = nullptr;
+  bool basebackup_in_use = false;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to read worker slot from uninitialized shared memory");
+  }
+
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index "
+        << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  if (free_child_index >= MAX_WORKER_CHILDS) {
+
+    std::ostringstream oss;
+
+    oss << "cannot free child index "
+        << child_index
+        << ", exceeding MAX_WORKER_CHILDS="
+        << MAX_WORKER_CHILDS;
+
+    throw SHMFailure(oss.str());
+
+  }
+
+  /* Get the worker slot */
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  /*
+   * Since we might call this method lockless,
+   * make sure the pid stays the first modification here.
+   */
+  ptr->child_info[free_child_index].pid = 0;
+
+  ptr->child_info[free_child_index].backup_id = -1;
+
+  /*
+   * We need to check wether any backup ID is still registered
+   * within the current child slots. Loop through the list (which
+   * is small, so this isn't a caveat here).
+   */
+  for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+    if (ptr->child_info[idx].backup_id >= 0) {
+      ptr->basebackup_in_use = true;
+
+      /* exit, since we have the info we need */
+      break;
+    }
+
+  }
+
+  ptr->basebackup_in_use = basebackup_in_use;
 
 }
 
@@ -796,6 +955,14 @@ void WorkerSHM::free(unsigned int slot_index) {
   ptr->cmdType = EMPTY_DESCR;
   ptr->archive_id = -1;
   ptr->started = boost::posix_time::ptime();
+  ptr->basebackup_in_use = false;
+
+  for (int child_index = 0; child_index < MAX_WORKER_CHILDS; child_index++) {
+
+    ptr->child_info[child_index].pid = -1;
+    ptr->child_info[child_index].backup_id = -1;
+
+  }
 
   this->allocated--;
 
@@ -840,6 +1007,59 @@ unsigned int WorkerSHM::getFreeIndex() {
 
 }
 
+sub_worker_info WorkerSHM::read(unsigned int slot_index,
+                                unsigned int child_index) {
+  shm_worker_area *ptr = NULL;
+  sub_worker_info result;
+
+  if ( (this->shm == nullptr)
+       || (this->shm_mem_ptr == nullptr)) {
+    throw SHMFailure("attempt to write worker slot from uninitialized shared memory");
+  }
+
+  /*
+   * Reference the worker slot at the
+   * specified slot_index. If slot_index is larger
+   * than our upper index, throw.
+   */
+  if (slot_index > this->upper) {
+    ostringstream oss;
+
+    oss << "requested slot index " << slot_index
+        << " exceeds shared memory upper limit";
+    throw SHMFailure(oss.str());
+  }
+
+  ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
+
+  /**
+   * Extract child info slot information, if valid
+   * child_index present.
+   */
+  if (ptr != NULL) {
+
+    if (child_index >= 0 || child_index < MAX_WORKER_CHILDS) {
+
+      /* Copy information and we're done */
+      result = ptr->child_info[child_index];
+
+    } else {
+
+      std::ostringstream oss;
+
+      oss << "child slot index("
+          << child_index
+          << ") out of bounds";
+      SHMFailure(oss.str());
+
+    }
+
+  }
+
+  return result;
+
+}
+
 shm_worker_area WorkerSHM::read(unsigned int slot_index) {
 
   shm_worker_area result;
@@ -860,10 +1080,7 @@ shm_worker_area WorkerSHM::read(unsigned int slot_index) {
   }
 
   ptr = (shm_worker_area *)(this->shm_mem_ptr + slot_index);
-  result.pid = ptr->pid;
-  result.started = ptr->started;
-  result.archive_id = ptr->archive_id;
-  result.cmdType = ptr->cmdType;
+  result = (*ptr);
 
   return result;
 
@@ -1764,6 +1981,9 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
 #ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug) << "WORKER SLOT " << worker_slot_index;
 #endif
+
+    /* Save worker slot index as its worker ID to command handler */
+    bgrnd_cmd_handler->setWorkerID(worker_slot_index);
 
     try {
       bgrnd_cmd_handler->execute(info.cmdHandle->getCatalog()->fullname());
