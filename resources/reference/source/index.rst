@@ -11,6 +11,7 @@ Welcome to pg_backup_ctl++'s documentation!
    :caption: Contents:
 
    commandref
+   protocolref
 
 Indices and tables
 ==================
