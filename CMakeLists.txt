@@ -82,9 +82,9 @@ add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/recovery/restore.cxx src/main/memorybuffer.cxx)
 
 IF(APPLE)
-   target_link_libraries (pg_backup_ctl++ pgbckctl-proto pgbckctl-common)
+   target_link_libraries (pg_backup_ctl++ pthread pgbckctl-proto pgbckctl-common)
 ELSE()
-   target_link_libraries (pg_backup_ctl++ rt pgbckctl-proto pgbckctl-common)
+   target_link_libraries (pg_backup_ctl++ rt pthread pgbckctl-proto pgbckctl-common)
 ENDIF()
 
 # Detect if the "port" command is valid on this system; if so, return full path
