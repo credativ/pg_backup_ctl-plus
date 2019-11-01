@@ -3,6 +3,8 @@
 
 #include <common.hxx>
 #include <BackupCatalog.hxx>
+#include <shm.hxx>
+#include <backuplockinfo.hxx>
 
 namespace credativ {
 
@@ -22,7 +24,7 @@ namespace credativ {
    * Retention is the base class for retention
    * rules.
    */
-  class Retention {
+  class Retention : public BackupLockInfoAggregator {
   protected:
 
     /**

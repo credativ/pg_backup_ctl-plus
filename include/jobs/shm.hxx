@@ -45,6 +45,8 @@ namespace credativ {
   typedef struct {
 
     int backup_id = -1;
+
+    /* Child PID. PID <= 0 means empty slot. */
     volatile pid_t pid;
 
   } sub_worker_info;

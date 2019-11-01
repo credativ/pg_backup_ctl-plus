@@ -387,6 +387,7 @@ namespace credativ {
               >> variable_name
               [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ] );
 
+        /* START RECOVERY command */
 
         cmd_start_recovery_stream = no_case[ lexeme[ lit("RECOVERY") ] ]
           [ boost::bind(&CatalogDescr::makeRecoveryStreamDescr, &cmd) ]

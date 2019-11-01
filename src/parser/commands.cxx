@@ -1,5 +1,6 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
 #include <commands.hxx>
 #include <daemon.hxx>
 #include <stream.hxx>
@@ -1233,7 +1234,9 @@ void StartLauncherCatalogCommand::execute(bool flag) {
      */
     nattach = 0;
 
-    cerr << "WARNING: catalog shm id " << procInfo->shm_id << " is orphaned" << endl;
+    BOOST_LOG_TRIVIAL(warning) << "WARNING: catalog shm id "
+                               << procInfo->shm_id << " is orphaned"
+                               << endl;
   }
 
   if (nattach > 0) {
@@ -3339,6 +3342,34 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
                                                        this->catalog);
 
   /*
+   * Create lock info objects for the retention object. We must synchronize
+   * against pinning, invalid (or in-progress) basebackups and
+   * shared memory locks. The latter is only true if there's a background
+   * launcher running which maintains the worker shared memory area.
+   */
+  shared_ptr<BackupPinnedValidLockInfo> pinLockInfo = make_shared<BackupPinnedValidLockInfo>();
+  shared_ptr<SHMBackupLockInfo> shmLockInfo = nullptr;
+
+  /*
+   * Attach to background worker shared memory segment. We need this
+   * below for basebackup locking synchronization.
+   *
+   * NOTE: worker SHM might not yet be initialized, so we are careful
+   *       to check for a running launcher process.
+   */
+  shared_ptr<CatalogProc> procInfo = catalog->getProc(-1,
+                                                      CatalogProc::PROC_TYPE_LAUNCHER);
+
+  if (launcher_is_running(procInfo)) {
+
+    shared_ptr<WorkerSHM> worker_shm = make_shared<WorkerSHM>();
+
+    worker_shm->attach(this->catalog->fullname(), true);
+    shmLockInfo = make_shared<SHMBackupLockInfo>(worker_shm);
+
+  }
+
+  /*
    * WAL cleanup descr gets initialized during retention rule
    * validation.
    */
@@ -3365,6 +3396,16 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
    *      one rule per APPLY run.
    */
   for(auto &retention_rule : rules) {
+
+    /*
+     * Add lock info requests to the retention object. We must synchronize
+     * against pinning, invalid (or in-progress) basebackups and
+     * shared memory locks.
+     */
+    retention_rule->addLockInfo(pinLockInfo);
+
+    if (shmLockInfo != nullptr)
+      retention_rule->addLockInfo(shmLockInfo);
 
     /*
      * Check if the cleanupDescr was not yet

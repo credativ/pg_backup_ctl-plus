@@ -76,8 +76,8 @@ add_library (pgbckctl-proto SHARED src/protocol/proto-buffer.cxx src/protocol/pr
   src/protocol/proto-catalog.cxx src/jobs/server.cxx)
 add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
   src/jobs/reaper.cxx src/jobs/signalhandler.cxx src/jobs/daemon.cxx src/jobs/server.cxx
-  src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/retention.cxx
-  src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
+  src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/backuplockinfo.cxx
+  src/catalog/retention.cxx src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
   src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx
   src/recovery/restore.cxx src/main/memorybuffer.cxx)
 

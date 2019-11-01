@@ -574,8 +574,7 @@ unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDesc
      * XXX: This situation is unlikely anyways, since parts of the
      *      implemention for PIN prevents pinning invalid basebackups...
      */
-    if ( (bbdescr->status != BaseBackupDescr::BASEBACKUP_STATUS_READY)
-         || (bbdescr->pinned) ) {
+    if (locked(bbdescr) != NOT_LOCKED) {
 
       continue;
 
@@ -631,12 +630,7 @@ unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDesc
      * Check if this basebackup descriptor is valid.
      * Ignore pinned, aborted or basebackups "in-progress".
      */
-    if (bbdescr->pinned) {
-      continue;
-    }
-
-    if ( (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)
-         || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED) ) {
+    if (locked(bbdescr) != NOT_LOCKED) {
       continue;
     }
 
@@ -734,9 +728,7 @@ unsigned int CountRetention::keep_num(std::vector<std::shared_ptr<BaseBackupDesc
      * We skip pinned and basebackups with state "in progress".
      * Aborted basebackups aren't considered either.
      */
-    if ( (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS)
-         || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_ABORTED)
-         || (bbdescr->pinned) ) {
+    if (locked(bbdescr) != NOT_LOCKED) {
 
       /*
        * Identify the XLogRecPtr where the cleanup thresholds starts.
@@ -755,6 +747,7 @@ unsigned int CountRetention::keep_num(std::vector<std::shared_ptr<BaseBackupDesc
 
       /* And next iteration, since this basebackups needs to be kept. */
       continue;
+
     }
 
     /* Increase counter and check wether we have reached desired
@@ -929,13 +922,14 @@ unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr
      * XLogRecPtr stores the current XLOG cleanup threshold.
      */
     XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
+    BackupLockInfoType lockType = NOT_LOCKED;
 
     /*
      * Check if the basebackup is pinned. If true, we are forced
      * to keep it, even if it is aborted. But if the latter is the case,
      * print a warning.
      */
-    if (bbdescr->pinned) {
+    if ((lockType = locked(bbdescr)) == LOCKED_BY_PIN) {
 
       BOOST_LOG_TRIVIAL(info) << "ignoring PINNED basebackup " << bbdescr->fsentry;
 
@@ -949,9 +943,12 @@ unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr
        * it's not pinned. In case of the latter, print a warning
        * but keep the basebackup
        */
-      if (bbdescr->pinned) {
+      if (lockType == LOCKED_BY_PIN) {
 
-        BOOST_LOG_TRIVIAL(warning) << "ABORTED basebackup " << bbdescr->fsentry << " is pinned but WAL will be removed";
+        BOOST_LOG_TRIVIAL(warning)
+          << "ABORTED basebackup "
+          << bbdescr->fsentry
+          << " is pinned but WAL will be removed";
 
         /*
          * Since an ABORTED basebackup doesn't have a trustable xlogposend location,
@@ -1140,6 +1137,21 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
 
     XLogRecPtr cleanup_recptr = InvalidXLogRecPtr;
 
+    /*
+     * Get locking state of this basebackup.
+     *
+     * Please note that the lock is just checked here for
+     * concurrent basebackup streams. We don't apply any
+     * lock ourselves here.
+     *
+     * This might be racy in case a basebackup stream wants
+     * to use a basebackup which is concurrently deleted. In the
+     * normale case though the client will get an error that either
+     * the basebackup disappeared or something during the initialization
+     * went wrong.
+     */
+    BackupLockInfoType lockType = locked(bbdescr);
+
     /* Check wether retention policy is exceeded */
     this->catalog->exceedsRetention(bbdescr,
                                     this->ruleType,
@@ -1162,9 +1174,10 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
 
       } else {
 
-        if (bbdescr->pinned) {
+        if ( (lockType == LOCKED_BY_PIN)
+             || (lockType == LOCKED_BY_SHM) ) {
 
-          BOOST_LOG_TRIVIAL(info) << "basebackup is pinned, ignoring";
+          BOOST_LOG_TRIVIAL(info) << "basebackup is pinned or concurrently in use, ignoring";
 
           cleanup_recptr = PGStream::XLOGPrevSegmentStartPosition(PGStream::decodeXLOGPos(bbdescr->xlogpos),
                                                                   bbdescr->wal_segment_size);
@@ -1476,8 +1489,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
            * If we detect a PIN, we keep this backup. The same
            * applies to a basebackup currently "in progress"...
            */
-          if ( (bbdescr->pinned)
-               || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
+          if (locked(bbdescr) != NOT_LOCKED) {
 
             BOOST_LOG_TRIVIAL(info) << "keeping basebackup \""
                                     << bbdescr->fsentry
@@ -1559,8 +1571,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
            * No match, but we are told to keep matches. So push
            * this basebackup into the cleanupdescr if not pinned.
            */
-          if ( (bbdescr->pinned)
-               || (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) ) {
+          if (locked(bbdescr) != NOT_LOCKED) {
 
             BOOST_LOG_TRIVIAL(info) << "keeping pinned basebackup \""
                                     << bbdescr->fsentry

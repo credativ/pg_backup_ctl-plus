@@ -184,6 +184,12 @@ namespace credativ {
   pid_t worker_command(BackgroundWorker &worker, std::string command);
 
   /**
+   * Returns true in case a background launcher process
+   * for the given catalog instance is really running.
+   */
+  bool launcher_is_running(std::shared_ptr<CatalogProc> procInfo);
+
+  /**
    * Runs a blocking child subprocess.
    */
   pid_t run_process(job_info &info);

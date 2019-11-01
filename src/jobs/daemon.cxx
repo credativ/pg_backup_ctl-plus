@@ -750,6 +750,8 @@ void WorkerSHM::write(unsigned int slot_index,
     if (child_info.backup_id != -1)
       ptr->basebackup_in_use = true;
 
+    BOOST_LOG_TRIVIAL(debug) << "write child info done";
+
   }
 
 }
@@ -1715,6 +1717,40 @@ static pid_t daemonize(job_info &info) {
 
   info.pid = pid;
   return pid;
+
+}
+
+bool credativ::launcher_is_running(std::shared_ptr<CatalogProc> procInfo) {
+
+  shmatt_t nattach;
+
+  try {
+    if (procInfo != nullptr && procInfo->pid > 0) {
+
+      /*
+       * If we get a SHMFailure exception here, then the shmid
+       * stored in the catalog doesn't exist anymore. In this case
+       * just go further and start the launcher.
+       */
+      nattach = LauncherSHM::getNumberOfAttached(procInfo->shm_id);
+
+    }
+  } catch(SHMFailure &e) {
+
+    /*
+     * A SHMFailure here usually means the request shmid
+     * doesn't exist or isn't readable anymore. This
+     * indicates a crashed launcher instance, since the
+     * catalog entry is orphaned.
+     */
+    nattach = 0;
+
+    BOOST_LOG_TRIVIAL(warning) << "WARNING: catalog shm id "
+                               << procInfo->shm_id
+                               << " is orphaned";
+  }
+
+  return ((nattach > 0) ? true : false);
 
 }
 
