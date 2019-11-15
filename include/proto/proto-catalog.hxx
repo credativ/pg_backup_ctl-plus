@@ -32,6 +32,19 @@ namespace credativ {
      */
     std::shared_ptr<BaseBackupDescr> attached_basebackup = nullptr;
 
+    /**
+     * Stored worker ID. This is the ID identifying
+     * a potential background worker instance using this
+     * catalog handler. -1 means no background worker.
+     */
+    int worker_id =- 1;
+
+    /**
+     * The child ID identifying this catalog handler as referenced
+     * by a background worker child. Might be -1 if undefined.
+     */
+    int child_id = -1;
+
   public:
 
     PGProtoCatalogHandler(std::string catalog_name,
@@ -65,7 +78,7 @@ namespace credativ {
     virtual std::shared_ptr<BaseBackupDescr> attach(std::string basebackup_fqfn,
                                                     int archive_id,
                                                     int worker_id,
-                                                    int child_id,
+                                                    int &child_id,
                                                     std::shared_ptr<WorkerSHM> shm);
 
     /**
@@ -77,7 +90,9 @@ namespace credativ {
     /**
      * Detaches the internal basebackup reference.
      */
-    void detach();
+    void detach(unsigned int worker_id,
+                unsigned int child_id,
+                std::shared_ptr<WorkerSHM> shm);
 
     /**
      * Materializes a protocol level result set to
@@ -87,6 +102,18 @@ namespace credativ {
      * be sent over the wire.
      */
     virtual void queryIdentifySystem(std::shared_ptr<pgprotocol::PGProtoResultSet> set);
+
+    /**
+     * Handler to materialize a TIMELINE_HISTORY
+     * result set, suitable to be sent over the wire.
+     */
+    virtual void queryTimelineHistory(std::shared_ptr<pgprotocol::PGProtoResultSet> set,
+                                      unsigned int tli);
+
+    /**
+     * Returns the identifier string of the used backup catalog
+     */
+    virtual string getCatalogFullname();
 
   };
 

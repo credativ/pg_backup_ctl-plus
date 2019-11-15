@@ -33,6 +33,12 @@
  * parser, implementing the Streaming Replication command
  * syntax.
  *
+ * The PGProtoStreamingParser can parse a multi statement
+ * string, where the queries are separated by a ';' terminator.
+ *
+ * The cmd_queue property is a std::queue property, holding
+ * a shared pointer to an instantiated command in the same order
+ * as parsed from the multi command string.
  */
 namespace credativ {
 
@@ -54,12 +60,21 @@ namespace credativ {
        * Current streaming Protocol command descriptor. This points
        * to the current active cmd instance.
        */
-      std::shared_ptr<PGProtoCmdDescr> cmd;
+      std::shared_ptr<PGProtoCmdDescr> cmd = nullptr;
 
       /**
        * Queued command instances, filled by the parser.
        */
       std::queue<std::shared_ptr<PGProtoCmdDescr>> cmd_queue;
+
+      void storeTimelineID(unsigned int tli) {
+
+        if (cmd == nullptr)
+          throw PGProtoCmdFailure("could not reference undefined cmd handle in parser");
+
+        cmd->tli = tli;
+
+      }
 
       void newCommand(ProtocolCommandTag const& tag) {
 
@@ -86,6 +101,7 @@ namespace credativ {
       qi::rule<Iterator, ascii::space_type> start;
       qi::rule<Iterator, ascii::space_type> cmd_identify_system;
       qi::rule<Iterator, ascii::space_type> cmd_list_basebackups;
+      qi::rule<Iterator, ascii::space_type> cmd_timeline_history;
 
     public:
 
@@ -150,12 +166,24 @@ namespace credativ {
         cmd_identify_system = no_case[ lexeme[ lit("IDENTIFY_SYSTEM") ] ]
           [ boost::bind(&PGProtoStreamingParser::newCommand, this, IDENTIFY_SYSTEM) ];
 
+        /*
+         * TIMELINE_HISTORY command
+         */
+        cmd_timeline_history = no_case[ lexeme[ lit("TIMELINE_HISTORY") ] ]
+          [ boost::bind(&PGProtoStreamingParser::newCommand, this, TIMELINE_HISTORY) ]
+          >> boost::spirit::qi::uint_
+          [ boost::bind(&PGProtoStreamingParser::storeTimelineID, this, ::_1) ];
+
         start %= eps >> (
                          cmd_identify_system
 
                          |
 
                          cmd_list_basebackups
+
+                         |
+
+                         cmd_timeline_history
 
                          ) >> lit(";")
                      >> -(start);
@@ -178,6 +206,7 @@ namespace credativ {
         start.name("command");
         cmd_identify_system.name("IDENTIFY_SYSTEM");
         cmd_list_basebackups.name("LIST_BASEBACKUPS");
+        cmd_timeline_history.name("TIMELINE_HISTORY");
 
       }
 
@@ -198,7 +227,8 @@ PostgreSQLStreamingParser::PostgreSQLStreamingParser(std::shared_ptr<RuntimeConf
 
 PostgreSQLStreamingParser::~PostgreSQLStreamingParser() {}
 
-PGProtoCommandExecutionQueue PostgreSQLStreamingParser::parse(std::string cmdstr) {
+PGProtoCommandExecutionQueue PostgreSQLStreamingParser::parse(std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
+                                                              std::string cmdstr) {
 
   using boost::spirit::ascii::space;
   typedef std::string::iterator iterator_type;
@@ -231,7 +261,9 @@ PGProtoCommandExecutionQueue PostgreSQLStreamingParser::parse(std::string cmdstr
     while ( (cmd = myparser.getCommand()) != nullptr) {
 
       std::shared_ptr<ProtocolCommandHandler> command_handler
-        = std::make_shared<ProtocolCommandHandler>(cmd, runtime_configuration);
+        = std::make_shared<ProtocolCommandHandler>(cmd,
+                                                   catalogHandler,
+                                                   runtime_configuration);
 
       /* Save in command execution queue */
       cmd_exec_queue.push(command_handler);

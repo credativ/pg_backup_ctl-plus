@@ -1,6 +1,7 @@
 #ifndef __HAVE_PGPROTO_PARSER__
 #define __HAVE_PGPROTO_PARSER__
 
+#include <proto-catalog.hxx>
 #include <pgproto-commands.hxx>
 
 namespace credativ {
@@ -43,7 +44,8 @@ namespace credativ {
        * Throws a PGProtoCmdFailure exception in case a parsing
        * error occured.
        */
-      virtual PGProtoCommandExecutionQueue parse(std::string cmdstr);
+      virtual PGProtoCommandExecutionQueue parse(std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
+                                                 std::string cmdstr);
 
       /**
        * Clears internal command execution queues.

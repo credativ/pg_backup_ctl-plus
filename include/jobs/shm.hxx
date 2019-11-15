@@ -301,6 +301,16 @@ namespace credativ {
     virtual ~WorkerSHM();
 
     /**
+     * Helper method to detach a basebackup in use from
+     * a given sub child process.
+     *
+     * Returns TRUE in case a basebackup is still in use by any
+     * child spawned by the given worker.
+     */
+    virtual bool detach_basebackup(unsigned int slot_index,
+                                   int child_index);
+
+    /**
      * Maximum worker processes allowed to attach
      * to this shared memory segment.
      */

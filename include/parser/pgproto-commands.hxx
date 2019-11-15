@@ -8,7 +8,8 @@
 #include <descr.hxx>
 #include <shm.hxx>
 #include <pgsql-proto.hxx>
-#include <BackupCatalog.hxx>
+#include <proto-descr.hxx>
+#include <proto-catalog.hxx>
 
 namespace credativ {
 
@@ -68,9 +69,15 @@ namespace credativ {
        */
       std::shared_ptr<RuntimeConfiguration> runtime_configuration = nullptr;
 
+      /**
+       * Reference to global catalog access handler.
+       */
+      std::shared_ptr<PGProtoCatalogHandler> catalogHandler = nullptr;
+
     public:
 
       ProtocolCommandHandler(std::shared_ptr<PGProtoCmdDescr> descr,
+                             std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                              std::shared_ptr<RuntimeConfiguration> rtc);
       virtual ~ProtocolCommandHandler();
 
@@ -96,6 +103,11 @@ namespace credativ {
        * command instance.
        */
       std::shared_ptr<PGProtoCmdDescr> command_handle = nullptr;
+
+      /**
+       * Catalog handler for database access routines.
+       */
+      std::shared_ptr<PGProtoCatalogHandler> catalogHandler = nullptr;
 
       /**
        * Handle to runtime configuration settings.
@@ -144,11 +156,14 @@ namespace credativ {
     public:
 
       PGProtoStreamingCommand(std::shared_ptr<PGProtoCmdDescr> descr,
+                              std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                               std::shared_ptr<RuntimeConfiguration> rtc,
                               std::shared_ptr<WorkerSHM> worker_shm);
       virtual ~PGProtoStreamingCommand();
 
       virtual void execute() = 0;
+
+      virtual int step(ProtocolBuffer &buffer);
 
       virtual bool needsArchive();
 
@@ -163,6 +178,7 @@ namespace credativ {
     public:
 
       PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> descr,
+                            std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                             std::shared_ptr<RuntimeConfiguration> rtc,
                             std::shared_ptr<WorkerSHM> worker_shm);
 
@@ -170,9 +186,26 @@ namespace credativ {
 
       virtual void execute();
 
-      virtual int step(ProtocolBuffer &buffer);
+      virtual void reset();
+    };
+
+    /**
+     * Implements the TIMELINE_HISTORY streaming command.
+     */
+    class PGProtoTimelineHistory : public PGProtoStreamingCommand {
+    public:
+
+      PGProtoTimelineHistory(std::shared_ptr<PGProtoCmdDescr> descr,
+                             std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
+                             std::shared_ptr<RuntimeConfiguration> rtc,
+                             std::shared_ptr<WorkerSHM> worker_shm);
+
+      virtual ~PGProtoTimelineHistory();
+
+      virtual void execute();
 
       virtual void reset();
+
     };
 
     /**
@@ -200,14 +233,13 @@ namespace credativ {
     public:
 
       PGProtoListBasebackups(std::shared_ptr<PGProtoCmdDescr> descr,
+                             std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                              std::shared_ptr<RuntimeConfiguration> rtc,
                              std::shared_ptr<WorkerSHM> worker_shm);
 
       virtual ~PGProtoListBasebackups();
 
       virtual void execute();
-
-      virtual int step(ProtocolBuffer &buffer);
 
       virtual void reset();
     };

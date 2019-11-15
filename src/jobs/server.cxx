@@ -316,6 +316,12 @@ namespace credativ {
     PostgreSQLProtocolState state = PGPROTO_STARTUP;
 
     /**
+     * A handler instance to manage catalog database access. This also means
+     * that this is the workhorse for various Streaming Replication commands.
+     */
+    shared_ptr<PGProtoCatalogHandler> catalogHandler = nullptr;
+
+    /**
      * Current message header. Defines the current
      * message processing context. Initialized by the pgproto_header_in()
      * completion handler.
@@ -663,6 +669,11 @@ void PGProtoStreamingServer::run() {
                                 worker_id,
                                 worker_id);
 
+  /*
+   * Handler for catalog database access.
+   */
+  catalogHandler = make_shared<PGProtoCatalogHandler>(streamDescr->catalog_name);
+
   /* Internal startup buffer */
   this->read_header_buffer.allocate(INITIAL_STARTUP_BUFFER_SIZE);
 
@@ -870,6 +881,27 @@ void PGProtoStreamingServer::_send_BackendKey() {
 
 }
 
+/*
+ * _process_query_execute() is the main entry point for query processing.
+ *
+ * This method is called once a PostgreSQL message is dispatched as a
+ * query(Q) protocol message, the query is extracted and passed over to
+ * the PostgreSQLStreamingParser which is responsible to parse the query.
+ *
+ * If the query is valid, the parser would have generated an executable
+ * command object instance (derived from ProtocolCommandHandler),
+ * which will finally execute the corresponding actions.
+ *
+ * Since the PostgreSQLStreamingParser can parse and execute multi statement
+ * command strings (separated by ';'), we must do the execution within a
+ * loop.
+ *
+ * Please note that an executable command object (a descendant of class
+ * PGProtoStreamingCommand) never does I/O itself. Instead, it calls
+ * the protocol interface method PGProtoStreamingCommand::step(), which
+ * fills the specified ProtocolBuffer and leaves the I/O to the response
+ * handler itself. This is in normal cases the StreamingServer instance.
+ */
 std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
 
   char *qbuf;
@@ -925,7 +957,8 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
      * materialize a command execution queue with executable
      * command handlers.
      */
-    execQueue = pgparser.parse(query_string);
+    execQueue = pgparser.parse(catalogHandler,
+                               query_string);
 
     BOOST_LOG_TRIVIAL(debug) << "parser exited successfully";
 
@@ -948,8 +981,6 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
         /*
          * If authentication procedure has sucessfully passed, we
          * send some NOTICE message indicating special startup settings.
-         *
-         * Sent over important NOTICE messages.
          */
         if (cmd->needsArchive() && disable_streaming_commands) {
 
@@ -991,6 +1022,12 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
   } catch(pgprotocol::PGProtoCmdFailure &failure) {
 
     /* protocol specific exception handling */
+
+    BOOST_LOG_TRIVIAL(fatal) << failure.what();
+    state = PGPROTO_ERROR_AFTER_QUERY;
+    error_string = failure.what();
+
+  } catch(CPGBackupCtlFailure &failure) {
 
     BOOST_LOG_TRIVIAL(fatal) << failure.what();
     state = PGPROTO_ERROR_AFTER_QUERY;
@@ -1441,9 +1478,14 @@ StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
 
     } else {
 
+      shared_ptr<RuntimeConfiguration> rtconfig = server_env->getRuntimeConfiguration();
+      int archive_id = -1;
+      string basebackup_fqfn = guc_iter->second;
+      string catalog_name;
+
       BOOST_LOG_TRIVIAL(debug) << "basebackup "
                                << "\""
-                               << guc_iter->second
+                               << basebackup_fqfn
                                << "\" requested";
       /*
        * Special ident name, see comments above...
@@ -1451,16 +1493,35 @@ StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
        * Save the backup identifier within the runtime configuration
        * environment.
        */
-      server_env->getRuntimeConfiguration()->create("recovery_instance.basebackup_path",
-                                                    guc_iter->second,
-                                                    guc_iter->second);
+      rtconfig->create("recovery_instance.basebackup_path",
+                       basebackup_fqfn,
+                       basebackup_fqfn);
 
       /*
        * We want to have the backup id we are connected to. This is
        * registered within our child slot in the worker shared memory
        * to create a lock on it. Concurrent archive changes will then
        * recognize that this basebackup is currently in use.
+       *
+       * To accomplish this, we have a PGProtoCatalogHandler within
+       * our server context (creating during the startup phase in the run()
+       * method, which does all the catalog access. This will
+       * register the requested base backup in our child shared memory
+       * structure.
+       *
+       * worker_id (ID of our background parent process) and our child_id
+       * should already been registered via handle_accept().
+       *
+       * Our child is already serving a specific archive, it's ID
+       * can be found in the runtime_configuration object, like the catalog
+       * name we're using.
        */
+      rtconfig->get("recovery_instance.archive_id")->getValue(archive_id);
+      catalogHandler->attach(basebackup_fqfn,
+                             archive_id,
+                             worker_id,
+                             child_id,
+                             worker_shm);
 
     }
 

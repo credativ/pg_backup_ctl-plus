@@ -579,11 +579,30 @@ namespace credativ {
                                                             bool compressed);
 
     /**
+     * Opens a timeline history file for reading and returns its contents
+     * as a stringstream. If the file doesn't
+     * exist or an error occurs, this method will throw.
+     *
+     * NOTE:
+     *
+     * The file is opened by the method itself, but *not* closed! This is left
+     * to caller.
+     */
+    virtual std::stringstream readHistoryFile(int timeline,
+                                              bool compressed);
+
+    /**
      * Checks if the specified history file is already allocated
      * in the log directory.
      */
     virtual bool historyFileExists(int timeline,
                                    bool compression);
+
+    /**
+     * Returns the timeline history filename for the specified TLI.
+     */
+    static std::string timelineHistoryFilename(unsigned int tli,
+                                               bool compressed);
 
   };
 

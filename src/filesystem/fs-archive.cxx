@@ -277,6 +277,25 @@ std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
 }
 
 
+string ArchiveLogDirectory::timelineHistoryFilename(unsigned int tli,
+                                                    bool compressed) {
+
+  string tli_hist_filename = "";
+
+  if (compressed) {
+
+    tli_hist_filename = (boost::format("%08X.history.gz") % tli).str();
+
+  } else {
+
+    tli_hist_filename = (boost::format("%08X.history") % tli).str();
+
+  }
+
+  return tli_hist_filename;
+
+}
+
 string ArchiveLogDirectory::XLogFileByRecPtr(XLogRecPtr recptr,
                                              unsigned int timeline,
                                              unsigned long long wal_segment_size) {
@@ -834,6 +853,66 @@ bool ArchiveLogDirectory::historyFileExists(int timeline,
 
 }
 
+std::stringstream ArchiveLogDirectory::readHistoryFile(int timeline,
+                                                        bool compressed) {
+
+  char buffer[1];
+  stringstream result;
+
+  shared_ptr<BackupFile> file = nullptr;
+  string tli_history_filename = "";
+
+  /*
+   * We don't operate on TLI smaller than 2 (indeed,
+   * in PostgreSQL there's never a timeline < 2).
+   */
+  if (timeline < 2) {
+    throw CArchiveIssue("cannot read a timeline history file with TLI=" + timeline);
+  }
+
+  /* TLI History filename, see PG's src/include/access/xlog_internal.h */
+
+  /*
+   * Allocate a ordinary ArchiveFile handle (or CompressedArchiveFile).
+   * Write the formatted contents and return the opened file handle.
+   */
+  if (compressed) {
+
+    tli_history_filename = (boost::format("%08X.history.gz") % timeline).str();
+    file = make_shared<CompressedArchiveFile>(this->getPath() / tli_history_filename);
+
+  } else {
+
+    tli_history_filename = (boost::format("%08X.history") % timeline).str();
+    file = make_shared<ArchiveFile>(this->getPath() / tli_history_filename);
+
+  }
+
+  file->setOpenMode("rb");
+  file->open();
+
+  try {
+
+    while(file->read(buffer, 1) != 0) {
+      result << buffer;
+    }
+
+  } catch(CArchiveIssue &a) {
+
+    /* Don't leak file handles */
+    file->close();
+
+    /* ... and re-throw */
+    throw a;
+
+  }
+
+  file->close();
+
+  return result;
+
+}
+
 std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timeline,
                                                                      bool compressed) {
 
@@ -842,10 +921,10 @@ std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timelin
   string tli_history_filename = "";
 
   /*
-   * We don't operate on TLI smaller than 1 (indeed,
-   * in PostgreSQL there's never a timeline < 1).
+   * We don't operate on TLI smaller than 2 (indeed,
+   * in PostgreSQL there's never a timeline < 2).
    */
-  if (timeline < 1) {
+  if (timeline < 2) {
     throw CArchiveIssue("cannot allocate a timeline history file with TLI=" + timeline);
   }
 
@@ -1995,14 +2074,20 @@ size_t ArchiveFile::read(char *buf, size_t len) {
 
   if ((result = fread(buf, len, 1, this->fp)) != 1) {
 
-    std::ostringstream oss;
-    oss << "read error for file (size="
-        << len
-        << ")"
-        << this->handle.string()
-        << ": "
-        << strerror(errno);
-    throw CArchiveIssue(oss.str());
+    /* end of file reached? */
+    if (feof(this->fp) != 0)
+      return 0;
+
+    if (ferror(this->fp) != 0) {
+      std::ostringstream oss;
+      oss << "read error for file (size="
+          << len
+          << ")"
+          << this->handle.string()
+          << ": "
+          << strerror(errno);
+      throw CArchiveIssue(oss.str());
+    }
 
 
   }
@@ -2406,14 +2491,23 @@ size_t ZSTDArchiveFile::read(char *buf, size_t len) {
 
   /* Read frame */
   if ((rc = fread(in, inBufSize, 1, this->fp)) != 1) {
-    std::ostringstream oss;
-    oss << "read error for ZSTD file (size="
-        << len
-        << ")"
-        << this->handle.string()
-        << ": "
-        << strerror(errno);
-    throw CArchiveIssue(oss.str());
+
+    /* end of file reached? */
+    if (::feof(this->fp) != 0)
+      return 0;
+
+    if (::ferror(this->fp) != 0) {
+
+      std::ostringstream oss;
+      oss << "read error for ZSTD file (size="
+          << len
+          << ")"
+          << this->handle.string()
+          << ": "
+          << strerror(errno);
+      throw CArchiveIssue(oss.str());
+
+    }
   }
 
   /*

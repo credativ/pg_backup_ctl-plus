@@ -1,6 +1,7 @@
 #include <sstream>
 #include <boost/log/trivial.hpp>
 #include <pgsql-proto.hxx>
+#include <proto-descr.hxx>
 #include <server.hxx>
 
 using namespace credativ;
@@ -250,6 +251,5 @@ void PGProtoCmdDescr::setCommandTag(ProtocolCommandTag const& tag) {
 
   this->tag = tag;
 
-  BOOST_LOG_TRIVIAL(debug) << "PGProtoCmdDescr command tag";
-
 }
+

@@ -1511,8 +1511,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
 
             BOOST_LOG_TRIVIAL(info) << "selected basebackup \""
                                     << bbdescr->fsentry
-                                    << "\" for deletion"
-                                    << endl;
+                                    << "\" for deletion";
 
             this->move(this->cleanupDescr->basebackups,
                        deleteList,

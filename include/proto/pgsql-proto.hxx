@@ -195,29 +195,10 @@ namespace credativ {
 
                   INVALID_COMMAND,
                   IDENTIFY_SYSTEM,
-                  LIST_BASEBACKUPS
+                  LIST_BASEBACKUPS,
+                  TIMELINE_HISTORY
 
     } ProtocolCommandTag;
-
-    /*************************************************************************
-     * Handles and definitions to process
-     * queries in the recovery instance.
-     *************************************************************************/
-
-    /**
-     * Command descriptor populated by the streaming protocol parser.
-     */
-    class PGProtoCmdDescr {
-    public:
-
-      ProtocolCommandTag tag = INVALID_COMMAND;
-
-      std::vector<std::string> cmd_arguments;
-      std::string query;
-
-      void setCommandTag(ProtocolCommandTag const& tag);
-
-    };
 
     /**
      * Protocol Buffer Aggregator interface class.
@@ -297,6 +278,7 @@ namespace credativ {
       static const int PG_TYPEMOD_VARLENA = -1;
       static const int PG_TYPEOID_TEXT    = 25;
       static const int PG_TYPEOID_INT4    = 23;
+      static const int PG_TYPEOID_BYTEA   = 17;
 
       std::string name = "";
       int   tableoid   = 0;

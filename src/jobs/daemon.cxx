@@ -659,6 +659,44 @@ void WorkerSHM::write(unsigned int slot_index,
 
 }
 
+bool WorkerSHM::detach_basebackup(unsigned int slot_index,
+                                  int child_index) {
+
+  sub_worker_info child_info;
+  shm_worker_area *ptr;
+  bool shortcut_still_valid = false;
+
+  child_info = this->read(slot_index, child_index);
+  child_info.backup_id = -1;
+  this->write(slot_index, child_index, child_info);
+
+  /*
+   * We have to check wether the shortcut basebackup_in_use
+   * is still valid.
+   *
+   * This means we need to loop through our child slots, checking wether
+   * there are still basebackups attached. We modify the
+   * basebackup_is_use flag in place.
+   */
+  ptr = (shm_worker_area *) (this->shm_mem_ptr + slot_index);
+
+  for(unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+    /* As soon as we found an active basebackup, we're done */
+    if (ptr->child_info[idx].backup_id > 0) {
+
+      shortcut_still_valid = true;
+      break;
+
+    }
+
+  }
+
+  ptr->basebackup_in_use = shortcut_still_valid;
+  return ptr->basebackup_in_use;
+
+}
+
 void WorkerSHM::write(unsigned int slot_index,
                       int &child_index,
                       sub_worker_info &child_info) {

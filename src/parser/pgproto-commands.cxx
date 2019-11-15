@@ -13,17 +13,26 @@ using namespace credativ::pgprotocol;
  * ***************************************************************************/
 
 PGProtoStreamingCommand::PGProtoStreamingCommand(std::shared_ptr<PGProtoCmdDescr> descr,
+                                                 std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                                                  std::shared_ptr<RuntimeConfiguration> rtc,
                                                  std::shared_ptr<WorkerSHM> worker_shm) {
 
   if (descr != nullptr) {
     this->command_handle = descr;
+  } else {
+    throw PGProtoCmdFailure("could not execute command with undefined command descriptor");
   }
 
   if (rtc != nullptr) {
     runtime_configuration = rtc;
   } else {
     runtime_configuration = std::make_shared<RuntimeConfiguration>();
+  }
+
+  if (descr != nullptr) {
+    this->catalogHandler = catalogHandler;
+  } else {
+    throw PGProtoCmdFailure("could not execute command with undefined catalog handler");
   }
 
   this->worker_shm = worker_shm;
@@ -67,91 +76,7 @@ bool PGProtoStreamingCommand::needsArchive() {
 
 }
 
-/* ****************************************************************************
- * PGProtoIdentifySystem command ... IDENTIFY_SYSTEM
- * ***************************************************************************/
-
-PGProtoIdentifySystem::PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> descr,
-                                             std::shared_ptr<RuntimeConfiguration> rtc,
-                                             std::shared_ptr<WorkerSHM> worker_shm)
-  : PGProtoStreamingCommand(descr, rtc, worker_shm) {
-
-  command_tag = "IDENTIFY_SYSTEM";
-
-  current_step = 0;
-  needs_archive_access = true;
-
-}
-
-PGProtoIdentifySystem::~PGProtoIdentifySystem() {}
-
-void PGProtoIdentifySystem::execute() {
-
-
-  int archive_id;
-  std::string basebackup_fqfn;
-  std::string catalog_name;
-  int worker_id;
-  int child_id;
-
-  /*
-   * Prepare backup catalog access...
-   */
-  runtime_configuration->get("recovery_instance.catalog_name")->getValue(catalog_name);
-
-  BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using catalog \""
-                           << catalog_name
-                           << "\"";
-
-  /*
-   * Runtime configuration tells us the
-   * archive we are connected to.
-   */
-  runtime_configuration->get("recovery_instance.archive_id")->getValue(archive_id);
-
-  BOOST_LOG_TRIVIAL(debug) << "requesting basebackups from archive ID=" << archive_id;
-
-  /*
-   * The same with the basebackup we are connected to.
-   */
-  runtime_configuration->get("recovery_instance.basebackup_path")->getValue(basebackup_fqfn);
-
-  BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using basebackup in path \""
-                           << basebackup_fqfn
-                           << "\"";
-
-  /*
-   * Get worker and child id for shared memory access.
-   */
-  runtime_configuration->get("recovery_instance.worker_id")->getValue(worker_id);
-  runtime_configuration->get("recovery_instance.child_id")->getValue(child_id);
-
-  /*
-   * Create the catalog handler
-   */
-  PGProtoCatalogHandler ch(catalog_name,
-                           basebackup_fqfn,
-                           archive_id,
-                           worker_id,
-                           child_id,
-                           worker_shm);
-
-  resultSet = std::make_shared<PGProtoResultSet>();
-
-  /*
-   * Finally execute the query and materialize the result set.
-   */
-  ch.queryIdentifySystem(resultSet);
-
-}
-
-void PGProtoIdentifySystem::reset() {
-
-  current_step = 0;
-
-}
-
-int PGProtoIdentifySystem::step(ProtocolBuffer &buffer) {
+int PGProtoStreamingCommand::step(ProtocolBuffer &buffer) {
 
   switch(current_step) {
 
@@ -180,7 +105,7 @@ int PGProtoIdentifySystem::step(ProtocolBuffer &buffer) {
         /* no more data, we're done */
         current_step = -1;
 
-                BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message end";
+        BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message end";
         break;
       }
 
@@ -198,13 +123,94 @@ int PGProtoIdentifySystem::step(ProtocolBuffer &buffer) {
 }
 
 /* ****************************************************************************
+ * PGProtoIdentifySystem command ... IDENTIFY_SYSTEM
+ * ***************************************************************************/
+
+PGProtoIdentifySystem::PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> descr,
+                                             std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
+                                             std::shared_ptr<RuntimeConfiguration> rtc,
+                                             std::shared_ptr<WorkerSHM> worker_shm)
+  : PGProtoStreamingCommand(descr, catalogHandler, rtc, worker_shm) {
+
+  command_tag = "IDENTIFY_SYSTEM";
+
+  current_step = 0;
+  needs_archive_access = true;
+
+}
+
+PGProtoIdentifySystem::~PGProtoIdentifySystem() {}
+
+void PGProtoIdentifySystem::execute() {
+
+  BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using catalog \""
+                           << catalogHandler->getCatalogFullname()
+                           << "\"";
+
+  resultSet = std::make_shared<PGProtoResultSet>();
+
+  /*
+   * Finally execute the query and materialize the result set.
+   */
+  catalogHandler->queryIdentifySystem(resultSet);
+
+}
+
+void PGProtoIdentifySystem::reset() {
+
+  current_step = 0;
+
+}
+
+/* ****************************************************************************
+ * PGProtoTimelineHistory command ... TIMELINE_HISTORY tli
+ * ***************************************************************************/
+
+PGProtoTimelineHistory::PGProtoTimelineHistory(std::shared_ptr<PGProtoCmdDescr> descr,
+                                               std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
+                                               std::shared_ptr<RuntimeConfiguration> rtc,
+                                               std::shared_ptr<WorkerSHM> worker_shm)
+  : PGProtoStreamingCommand(descr, catalogHandler, rtc, worker_shm) {
+
+  command_tag = "TIMELINE_HISTORY";
+  needs_archive_access = true;
+  current_step = 0;
+
+}
+
+PGProtoTimelineHistory::~PGProtoTimelineHistory() {}
+
+void PGProtoTimelineHistory::execute() {
+
+  BOOST_LOG_TRIVIAL(debug) << "requesting timeline history file for tli="
+                           << command_handle->tli;
+
+  resultSet = make_shared<PGProtoResultSet>();
+
+  /*
+   * Catalog handler is responsible to materialize the query result.
+   */
+  catalogHandler->queryTimelineHistory(resultSet,
+                                       command_handle->tli);
+
+}
+
+void PGProtoTimelineHistory::reset() {
+
+  current_step = 0;
+  resultSet    = nullptr;
+
+}
+
+/* ****************************************************************************
  * PGProtoListBasebackups command ... LIST_BASEBACKUPS
  * ***************************************************************************/
 
 PGProtoListBasebackups::PGProtoListBasebackups(std::shared_ptr<PGProtoCmdDescr> descr,
+                                               std::shared_ptr<PGProtoCatalogHandler> catalogHandler,
                                                std::shared_ptr<RuntimeConfiguration> rtc,
                                                std::shared_ptr<WorkerSHM> worker_shm)
-  : PGProtoStreamingCommand(descr, rtc, worker_shm) {
+  : PGProtoStreamingCommand(descr, catalogHandler, rtc, worker_shm) {
 
   command_tag = "LIST_BASEBACKUPS";
   needs_archive_access = false;
@@ -217,57 +223,7 @@ PGProtoListBasebackups::~PGProtoListBasebackups() {}
 void PGProtoListBasebackups::reset() {
 
   current_step = 0;
-  resultSet = nullptr;
-
-}
-
-int PGProtoListBasebackups::step(ProtocolBuffer &buffer) {
-
-  switch(current_step) {
-
-  case 0:
-    {
-
-      /*
-       * First call, aggregate the RowDescription message
-       * into the buffer
-       */
-      resultSet->descriptor(buffer);
-      current_step = PGProtoResultSet::PGPROTO_ROW_DESCR_MESSAGE;
-
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO row descriptor message created";
-      break;
-
-    }
-
-  case PGProtoResultSet::PGPROTO_ROW_DESCR_MESSAGE:
-  case PGProtoResultSet::PGPROTO_DATA_DESCR_MESSAGE:
-    {
-
-      /*
-       * Row descriptor already stacked, aggregate
-       * the DataRow message.
-       */
-      if (resultSet->data(buffer) <= 0) {
-
-        /* No data row, we're done */
-        current_step = -1;
-
-        BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message end";
-        break;
-
-      }
-
-      current_step = PGProtoResultSet::PGPROTO_DATA_DESCR_MESSAGE;
-
-      BOOST_LOG_TRIVIAL(debug) << "PG PROTO data row message sent";
-      break;
-
-    }
-
-  }
-
-  return current_step;
+  resultSet    = nullptr;
 
 }
 

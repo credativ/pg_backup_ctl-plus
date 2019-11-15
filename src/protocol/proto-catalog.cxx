@@ -1,3 +1,5 @@
+#include <boost/log/trivial.hpp>
+
 #include <proto-catalog.hxx>
 #include <memory>
 
@@ -34,6 +36,9 @@ PGProtoCatalogHandler::PGProtoCatalogHandler(std::string catalog_name,
    */
   attach(basebackup_fqfn, archive_id, worker_id, child_id, shm);
 
+  this->worker_id = worker_id;
+  this->child_id  = child_id;
+
 }
 
 PGProtoCatalogHandler::~PGProtoCatalogHandler() {
@@ -46,10 +51,16 @@ PGProtoCatalogHandler::~PGProtoCatalogHandler() {
 
 }
 
+string PGProtoCatalogHandler::getCatalogFullname() {
+
+  return catalog->fullname();
+
+}
+
 std::shared_ptr<BaseBackupDescr> PGProtoCatalogHandler::attach(std::string basebackup_fqfn,
                                                                int archive_id,
                                                                int worker_id,
-                                                               int child_id,
+                                                               int &child_id,
                                                                std::shared_ptr<WorkerSHM> shm) {
 
   if (archive_id < 0) {
@@ -112,13 +123,39 @@ std::shared_ptr<BaseBackupDescr> PGProtoCatalogHandler::attach(std::string baseb
 
   }
 
+  /*
+   * Remember worker and child ID.
+   */
+  this->worker_id = worker_id;
+  this->child_id  = child_id;
+
   return attached_basebackup;
 
 }
 
-void PGProtoCatalogHandler::detach() {
+void PGProtoCatalogHandler::detach(unsigned int worker_id,
+                                   unsigned int child_id,
+                                   std::shared_ptr<WorkerSHM> shm) {
 
-  attached_basebackup = nullptr;
+  /* Fast exit in case nothing attached to */
+  if (shm == nullptr || !isAttached()) return;
+
+  /*
+   * Erase locked backup_id from shared memory.
+   */
+  if (isAttached()) {
+
+    sub_worker_info child_info;
+
+    WORKER_SHM_CRITICAL_SECTION_START_P(shm);
+
+    shm->detach_basebackup(worker_id, child_id);
+
+    WORKER_SHM_CRITICAL_SECTION_END;
+
+    attached_basebackup = nullptr;
+
+  }
 
 }
 
@@ -130,11 +167,103 @@ bool PGProtoCatalogHandler::isAttached() {
 
 }
 
+void PGProtoCatalogHandler::queryTimelineHistory(std::shared_ptr<PGProtoResultSet> set,
+                                                 unsigned int tli) {
+
+  shared_ptr<BackupDirectory> backupDir      = nullptr;
+  shared_ptr<ArchiveLogDirectory> archiveDir = nullptr;
+  shared_ptr<CatalogDescr> catalogDescr      = nullptr;
+  stringstream history_content;
+  vector<PGProtoColumnDataDescr> row_data;
+  PGProtoColumnDataDescr colvalue[2];
+
+  if (!isAttached()) {
+    throw CCatalogIssue("uninitialized catalog handler without a basebackup");
+  }
+
+  /* TLI <= 1 makes no sense here, so guard against them. */
+  if (tli <= 1) {
+    throw CArchiveIssue("timeline history id <= 1 doesn't allocate history files");
+  }
+
+  /*
+   * Get a backup directory handle.
+   */
+  backupDir = make_shared<BackupDirectory>(catalog->fullname());
+  archiveDir = backupDir->logdirectory();
+
+  /*
+   * Archive our basebackup is attached to. We need this to
+   * get the catalog parent directory for basebackups.
+   */
+  catalogDescr = catalog->existsById(attached_basebackup->archive_id);
+
+  /*
+   * We got a valid descriptor?
+   */
+  if (catalogDescr->id < 0) {
+    throw CCatalogIssue("could not get a valid catalog descriptor for attached basebackup");
+  }
+
+  /*
+   * Make a backup directory handle. This handle gives access
+   * to the underlying archive log directory.
+   */
+  backupDir = make_shared<BackupDirectory>(path(catalogDescr->directory));
+  archiveDir =  backupDir->logdirectory();
+
+  /*
+   * Open the TLI history file.
+   */
+  history_content= archiveDir->readHistoryFile(tli,
+                                               catalogDescr->compression);
+
+  BOOST_LOG_TRIVIAL(debug) << "reading history file for tli="
+                           << tli
+                           << " done";
+
+  /*
+   * Get an archive log directory handle.
+   */
+  /*
+   * The TIMELINE_HISTORY PostgreSQL Streaming Replication command
+   * returns the filename and the content of the requested timeline
+   * history file in one single row.
+   */
+  set->addColumn("filename",
+                 0,
+                 0,
+                 PGProtoColumnDescr::PG_TYPEOID_TEXT,
+                 -1,
+                 0);
+
+  set->addColumn("content",
+                 0,
+                 0,
+                 PGProtoColumnDescr::PG_TYPEOID_BYTEA,
+                 -1,
+                 0);
+
+  colvalue[0].data
+    = ArchiveLogDirectory::timelineHistoryFilename(tli,
+                                                   catalogDescr->compression);
+  colvalue[0].length = colvalue[0].data.length();
+
+  colvalue[1].data = history_content.str();
+  colvalue[1].length = colvalue[1].data.length();
+
+  row_data.push_back(colvalue[0]);
+  row_data.push_back(colvalue[1]);
+
+  set->addRow(row_data);
+
+}
+
 void PGProtoCatalogHandler::queryIdentifySystem(std::shared_ptr<PGProtoResultSet> set) {
 
-  std::vector<PGProtoColumnDataDescr> row_data;
+  vector<PGProtoColumnDataDescr> row_data;
   PGProtoColumnDataDescr colvalue[4];
-  std::ostringstream converter;
+  ostringstream converter;
 
   if (!isAttached()) {
     throw CCatalogIssue("uninitialized catalog handler without a basebackup");
