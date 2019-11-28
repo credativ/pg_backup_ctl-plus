@@ -26,7 +26,7 @@ easiest way is to install the boost-devel package (at least on Fedora).
 - postgresql-devel
 
 pg_backup_ctl++ links against PostgreSQL 9.6, though
-the newest upstream version 10 is recommended. Version below
+the newest upstream version 12 is recommended. Version below
 9.6 might work, but aren't officially supported.
 
 If everything is present, type
@@ -52,9 +52,8 @@ Preparation steps:
 
 You need a sqlite3 database for the pg_backup_ctl++ catalog. If you don't
 want to use --catalog everytime, you can rely on a compiled-in default.
-Currently this is hardwired to /home/bernd/.pg_backup_ctl.sqlite, which
-obviously won't work on other dev machines. To override this default, just
-pass your favorite path to cmake like this:
+Currently this is hardwired to ~/.pg_backup_ctl.sqlite. To override this default,
+just pass your favorite path to cmake like this:
 
     $ cmake -DPG_BACKUP_CTL_SQLITE:FILEPATH=/Users/bernd/.pg_backup_ctl.sqlite ..
     $ make
@@ -88,3 +87,20 @@ Another requirement is cmake version >= 3.
 
       $ CXX="ccache g++" CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake3 ..
       $ BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 CXX="ccache g++" cmake3 ..
+
+Special compile macros
+----------------------
+
+Some macros can be used to enable some additional binary features:
+
+__DEBUG__ : Enables debug output at compile time
+            These are additional log message usually only
+            necessary for development builds.
+
+__DEBUG_XLOG__ : Enables debug additional log messages
+                 in WAL related code (e.g. walstreamer)
+
+PG_BACKUP_CTL_SQLITE: Path to sqlite backup catalog database.  Default
+                      is ~/.pg_backup_ctl.sqlite
+
+SYSTEMD_SERVICE_FILE: Installs systemd service files if requested.
