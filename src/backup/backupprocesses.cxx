@@ -137,7 +137,7 @@ ArchiverState WALStreamerProcess::sendStatusUpdate() {
 
   ReceiverStatusUpdateMessage rsum(this->pgconn);
 
-  #ifdef __DEBUG_XLOG__
+#ifdef __DEBUG_XLOG__
   BOOST_LOG_TRIVIAL(debug) << " ... sending status update to primary ";
   BOOST_LOG_TRIVIAL(debug) << "     -> write position: "
                            << PGStream::encodeXLOGPos(this->streamident.write_position);
@@ -698,7 +698,7 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
   PGresult *result = NULL;
 
   if (this->current_state != ARCHIVER_END_POSITION) {
-    throw CPGBackupCtlFailure("could not call endOfStream() on unterminated WAL stream");
+    throw CPGBackupCtlFailure("could not call handleEndOfStream() on unterminated WAL stream");
   }
 
   result = PQgetResult(this->pgconn);

@@ -2035,7 +2035,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         if (reason == ARCHIVER_TIMELINE_SWITCH) {
 
 #ifdef __DEBUG_XLOG_
-          std::cerr << "timeline switch detected" << std::endl;
+          BOOST_LOG_TRIVIAL(debug) << "timeline switch detected";
 #endif
           /*
            * The walstreamer already did all the necessary legwork
@@ -2054,8 +2054,9 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
           StreamIdentification currentIdent;
 
 #ifdef __DEBUG_XLOG__
-          std::cerr << "preparing WAL streamer for shutdown" << std::endl;
+          BOOST_LOG_TRIVIAL(debug) << "preparing WAL streamer for shutdown";
 #endif
+
           currentIdent = walstreamer->identification();
           this->updateStreamCatalogStatus(currentIdent);
           break;
@@ -2071,7 +2072,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
     }
 
-    cerr << "recv aborted, WAL streamer state " << walstreamer->reason() << endl;
+    BOOST_LOG_TRIVIAL(warning) <<  "recv aborted, WAL streamer state: " << walstreamer->reason();
 
     /*
      * Usually receive() above will catch us in a loop,
