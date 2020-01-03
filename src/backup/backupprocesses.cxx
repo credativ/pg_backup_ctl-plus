@@ -612,6 +612,8 @@ bool WALStreamerProcess::receive() {
 
     PGresult *pgres = this->handleEndOfStream();
 
+    BOOST_LOG_TRIVIAL(info) << "end of archive stream because of timeline switch";
+
     if (this->current_state == ARCHIVER_TIMELINE_SWITCH) {
 
       /*
@@ -796,7 +798,7 @@ StreamIdentification WALStreamerProcess::identification() {
 
 void WALStreamerProcess::end() {
 
-   if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
+  if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
 
     std::ostringstream oss;
 
