@@ -215,8 +215,9 @@ void PGProtoCatalogHandler::queryTimelineHistory(std::shared_ptr<PGProtoResultSe
   /*
    * Open the TLI history file.
    */
-  history_content= archiveDir->readHistoryFile(tli,
-                                               catalogDescr->compression);
+  archiveDir->readHistoryFile(tli,
+                              catalogDescr->compression,
+                              history_content);
 
   BOOST_LOG_TRIVIAL(debug) << "reading history file for tli="
                            << tli

@@ -853,12 +853,11 @@ bool ArchiveLogDirectory::historyFileExists(int timeline,
 
 }
 
-std::stringstream ArchiveLogDirectory::readHistoryFile(int timeline,
-                                                        bool compressed) {
+void ArchiveLogDirectory::readHistoryFile(int timeline,
+                                          bool compressed,
+                                          std::stringstream &history_content) {
 
   char buffer[1];
-  stringstream result;
-
   shared_ptr<BackupFile> file = nullptr;
   string tli_history_filename = "";
 
@@ -894,7 +893,7 @@ std::stringstream ArchiveLogDirectory::readHistoryFile(int timeline,
   try {
 
     while(file->read(buffer, 1) != 0) {
-      result << buffer;
+      history_content << buffer;
     }
 
   } catch(CArchiveIssue &a) {
@@ -908,8 +907,6 @@ std::stringstream ArchiveLogDirectory::readHistoryFile(int timeline,
   }
 
   file->close();
-
-  return result;
 
 }
 

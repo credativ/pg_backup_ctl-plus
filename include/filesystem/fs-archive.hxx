@@ -588,8 +588,9 @@ namespace credativ {
      * The file is opened by the method itself, but *not* closed! This is left
      * to caller.
      */
-    virtual std::stringstream readHistoryFile(int timeline,
-                                              bool compressed);
+    virtual void readHistoryFile(int timeline,
+                                 bool compressed,
+                                 std::stringstream &history_content);
 
     /**
      * Checks if the specified history file is already allocated

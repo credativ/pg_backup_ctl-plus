@@ -1,4 +1,4 @@
-%define upstream_pgdg_version 11
+%define upstream_pgdg_version 12
 %define major_version 0.1
 %define patchlevel 5
 
@@ -9,7 +9,7 @@ Summary: An advanced streaming backup tool for PostgreSQL written in C++
 License: GPLv3
 Source:  pg_backup_ctl-plus-%{version}.tar.gz
 BuildArch: i686 x86_64
-Provides: pg_backup_ctl-plus libpgbckctl-common
+Provides: pg_backup_ctl-plus libpgbckctl-common libpgbckctl-proto
 
 %description
 
@@ -76,8 +76,10 @@ chmod 0600 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.s
 %build
 mkdir build
 cd build
+# NOTE: on RHEL7, we require a newer boost library version, usually installed from EPEL
 CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" \
         CXX="ccache g++" \
+        BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 \
         cmake3 -DPG_BACKUP_CTL_SQLITE:FILEPATH=/var/lib/pg_backup_ctl-plus/pg_backup_ctl.sqlite \
         -DPG_CONFIG=/usr/pgsql-%{upstream_pgdg_version}/bin/pg_config \
         -DCMAKE_INSTALL_PREFIX:PATH=/usr \
@@ -96,8 +98,8 @@ Release: %{patchlevel}%{?dist}
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, core library
 Group:   Application/Databases
 License: GPLv3
-BuildRequires: cmake3 gcc-c++ make ccache boost-devel libzstd-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
-Requires: boost-regex boost-filesystem boost-iostreams boost-date-time boost-chrono pbzip2 libzstd sqlite postgresql%{upstream_pgdg_version}-libs
+BuildRequires: cmake3 gcc-c++ make ccache boost169-devel libzstd-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
+Requires: boost169-regex boost169-filesystem boost169-iostreams boost169-date-time boost169-chrono pbzip2 libzstd sqlite postgresql%{upstream_pgdg_version}-libs
 Provides: libpgbckctl-common.so()(64bit)
 
 %description -n libpgbckctl-common
@@ -113,9 +115,36 @@ library, implementing all infrastructure for PostgreSQL streaming backups.
 %post -n libpgbckctl-common
 ldconfig -v
 
+%package -n libpgbckctl-proto
+Version: %{major_version}
+Release: %{patchlevel}%{?dist}
+Summary: An advanced streaming backup tool for PostgreSQL written in C++, protocol support
+Group:   Application/Databases
+License: GPLv3
+BuildRequires: cmake3 gcc-c++ make ccache boost169-devel libzstd-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
+Requires: boost169-regex boost169-filesystem boost169-iostreams boost169-date-time boost169-chrono pbzip2 libzstd sqlite postgresql%{upstream_pgdg_version}-libs
+Requires: libpgbckctl-common
+Provides: libpgbckctl-proto.so
+
+%description -n libpgbckctl-proto
+
+pg_backup_ctl-plus is a streaming backup tool dedicated to take physical backups
+from a PostgreSQL instance starting with version 9.6. libpgbckctl-proto provides the streaming
+API implementation.
+
+%files -n libpgbckctl-proto
+%defattr(-,root,root,-)
+%attr(644,root,root) %{_libdir}/libpgbckctl-proto.so
+
+%post -n libpgbckctl-proto
+ldconfig -v
+
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %changelog
-* Wed Apr 25 2018 - Bernd Helmle <bernd.helmle@credativ.de> 0.1-1
+* Mon Dec 30 2019 - Bernd Helmle <bernd.helmle@credativ.de> 0.1-2
+- Subpackage for libpgbckctl-proto.so
+
+* Wed Apr 25 2018 - Bernd Helmle <bernd.helmle@credativ.de> 0.1-2
 - Initial testing release
