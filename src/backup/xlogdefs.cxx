@@ -313,13 +313,34 @@ ReceiverStatusUpdateMessage::setStatus(XLogRecPtr written,
                                        XLogRecPtr flushed,
                                        XLogRecPtr applied) {
 
+  std::tm epoch_ts = {};
+  time_t t = time(NULL);
+
+  /* current time value */
+  std::tm current_ts = *localtime(&t);
+
+  /*
+   * NOTE:
+   *
+   * can't use std::get_time() here, since this is not supported by
+   * older g++ versions < 5 (CentOS 7, i'm looking at you)
+   *
+   * PostgreSQL's day 0 is 2000-01-01, and this is also
+   * expected in the streaming protocol messages.
+   */
+  strptime("2000-01-01 00:00:00+02", "%Y-%m-%d %H:%M:%S%z", &epoch_ts);
+
   this->xlogPos_written = written;
   this->xlogPos_flushed = flushed;
   this->xlogPos_applied = applied;
 
+  auto epoch_us
+    = std::chrono::high_resolution_clock::from_time_t(std::mktime(&epoch_ts));
   auto current_us
-    = std::chrono::duration_cast<std::chrono::microseconds>(CPGBackupCtlBase::current_hires_time_point().time_since_epoch());
-  this->current_time_us = current_us.count();
+    = std::chrono::high_resolution_clock::from_time_t(std::mktime(&current_ts));
+  auto diff_us
+    = std::chrono::duration_cast<std::chrono::microseconds>(current_us - epoch_us);
+  this->current_time_us = diff_us.count();
 
 }
 
