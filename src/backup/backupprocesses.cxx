@@ -612,9 +612,9 @@ bool WALStreamerProcess::receive() {
 
     PGresult *pgres = this->handleEndOfStream();
 
-    BOOST_LOG_TRIVIAL(info) << "end of archive stream because of timeline switch";
-
     if (this->current_state == ARCHIVER_TIMELINE_SWITCH) {
+
+      BOOST_LOG_TRIVIAL(info) << "end of archive stream because of timeline switch";
 
       /*
        * This is a timeline switch. Handle it accordingly.
@@ -622,11 +622,18 @@ bool WALStreamerProcess::receive() {
       this->endOfStreamTimelineSwitch(pgres,
                                       this->streamident.timeline,
                                       this->streamident.xlogpos);
+
+      BOOST_LOG_TRIVIAL(debug) << "timeline switch to TLI="
+                               << this->streamident.timeline
+                               << ", XLOGPOS="
+                               << this->streamident.xlogpos;
+
       PQclear(pgres);
       can_continue = true;
 
     } else if (this->current_state == ARCHIVER_SHUTDOWN) {
 
+      BOOST_LOG_TRIVIAL(info) << "end of archive stream, shutting down";
       /*
        * Server side has terminated, schedule own shutdown accordingly.
        */
@@ -635,11 +642,17 @@ bool WALStreamerProcess::receive() {
 
   } else if (this->current_state == ARCHIVER_SHUTDOWN) {
 
+    PGresult *res = NULL;
+
+    BOOST_LOG_TRIVIAL(info) << "forced archive stream shutdown";
+
     /*
      * Inner loop recognized a shutdown request and set the
      * current state to ARCHIVER_SHUTDOWN.
      */
-    this->end();
+    if ((res != NULL) && (PQresultStatus(res) == PGRES_COPY_IN))
+        this->end();
+
     can_continue = false;
 
   }
@@ -709,6 +722,9 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
    * Check wether we are still in COPY IN mode.
    */
   if (result != NULL && (PQresultStatus(result) == PGRES_COPY_IN)) {
+
+    PQclear(result);
+
     /*
      * Finalize the COPY IN mode on our side. Iff the server is
      * still alive this will succeed.
@@ -736,45 +752,26 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
      */
     try {
 
-      this->end();
+      BOOST_LOG_TRIVIAL(debug) << "end of COPY mode, telling upstream to quit";
 
-      if (this->current_state != ARCHIVER_SHUTDOWN) {
-
-        /*
-         * end() should have send a successful end of stream
-         * message to the connected server. If not succeeded, we
-         * will be in an undetermined state, so die the hard way
-         */
-        throw StreamingFailure("unrecognized status after shutdown attempt, giving up");
-
-      }
-      if (PQresultStatus(result) == PGRES_TUPLES_OK) {
-        this->current_state = ARCHIVER_TIMELINE_SWITCH;
-        return result;
-      }
-      else if (PQresultStatus(result) == PGRES_COMMAND_OK) {
-        this->current_state = ARCHIVER_SHUTDOWN;
-        return result;
-      }
-      else {
-        /* This means we have on error, so terminate
-         * the stream nevertheless.
-         */
-        std::ostringstream oss;
-        oss << "error during end of stream condition: "
-            << PQresultErrorMessage(result);
-        PQclear(result);
-        result = NULL;
-        this->current_state = ARCHIVER_STREAMING_ERROR;
-        throw StreamingFailure(oss.str());
-      }
+      result = this->end();
 
     } catch(StreamingFailure &e) {
-      PQclear(result);
+
+      /*
+       * WALStreamer::end() might throw, make sure we don't leak
+       * PQresult references
+       */
+      if (result != NULL)
+        PQclear(result);
+
       result = NULL;
+
       this->current_state = ARCHIVER_STREAMING_ERROR;
       throw e;
+
     }
+
   } else {
 
     /*
@@ -796,7 +793,9 @@ StreamIdentification WALStreamerProcess::identification() {
   return this->streamident;
 }
 
-void WALStreamerProcess::end() {
+PGresult *WALStreamerProcess::end() {
+
+  PGresult *result = NULL;
 
   if (PQputCopyEnd(this->pgconn, NULL) <= 0 || PQflush(this->pgconn)) {
 
@@ -809,8 +808,37 @@ void WALStreamerProcess::end() {
 
   }
 
-  this->current_state = ARCHIVER_SHUTDOWN;
-  this->streamident.status = StreamIdentification::STREAM_PROGRESS_SHUTDOWN;
+  /*
+   * Make sure we indicate success
+   *
+   * We must tell the caller wether this was a graceful shutdown
+   * or a timeline switch.
+   */
+
+  result = PQgetResult(this->pgconn);
+
+  if (result != NULL && ((PQresultStatus(result) == PGRES_TUPLES_OK))) {
+
+    this->current_state = ARCHIVER_TIMELINE_SWITCH;
+    this->streamident.status = StreamIdentification::STREAM_PROGRESS_TIMELINE_SWITCH;
+
+  } else if (result != NULL && ((PQresultStatus(result) == PGRES_COMMAND_OK))) {
+
+    this->current_state = ARCHIVER_SHUTDOWN;
+    this->streamident.status = StreamIdentification::STREAM_PROGRESS_SHUTDOWN;
+
+  } else {
+
+    std::ostringstream oss;
+
+    oss << "could not terminate COPY in progress: "
+        << PQerrorMessage(this->pgconn);
+    this->current_state = ARCHIVER_STREAMING_ERROR;
+    throw StreamingFailure(oss.str());
+
+  }
+
+  return result;
 
 }
 

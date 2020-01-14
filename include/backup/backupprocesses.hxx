@@ -270,7 +270,7 @@ namespace credativ {
      * This sends a end-of-copy message to the connected
      * streaming server.
      */
-    virtual void end();
+    virtual PGresult *end();
 
     /**
      * sendStatusUpdate() sends a ReceiverStatusUpdateMessage to the

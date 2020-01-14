@@ -336,6 +336,7 @@ namespace credativ {
     static constexpr const char * STREAM_PROGRESS_STREAMING = "STREAMING";
     static constexpr const char * STREAM_PROGRESS_SHUTDOWN = "SHUTDOWN";
     static constexpr const char * STREAM_PROGRESS_FAILED = "FAILED";
+    static constexpr const char * STREAM_PROGRESS_TIMELINE_SWITCH = "TIMELINE_SWITCH";
 
     unsigned long long id = -1; /* internal catalog stream id */
     int archive_id = -1; /* used to reflect assigned archive */

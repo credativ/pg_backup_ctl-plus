@@ -1901,6 +1901,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      * Before calling prepareStream() we need to
      * set the archive_id to the Stream Identification. This
      * will engage the stream with the archive information.
+     *
+     * After having instantiated the walstreamer, we don't rely anymore
+     * on the information there, since the walstreamer stream identification
+     * is maintained by the streaming instance itself.
+     *
+     * This is just here to setup the initial stream.
      */
     pgstream->streamident.stype = ConnectionDescr::CONNECTION_TYPE_STREAMER;
     pgstream->streamident.archive_id = temp_descr->coninfo->archive_id;
@@ -1951,7 +1957,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
        * by prepareStream(), but check if we had missed
        * a switch by upstream.
        */
-      if (pgstream->streamident.timeline > 1) {
+      if (walstreamer->getCurrentTimeline() > 1) {
 
         /* physical TLI history file handle */
         shared_ptr<BackupFile> tli_history_file = nullptr;
@@ -1961,7 +1967,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
 
 #ifdef __DEBUG_XLOG__
         cerr << "DEBUG: checking timeline "
-             << pgstream->streamident.timeline
+             << walstreamer->getCurrentTimeline()
              << " history"
              << endl;
 #endif
@@ -1970,12 +1976,12 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
          * If the requested timeline history file already exists,
          * we move forward.
          */
-        if (!this->logdir->historyFileExists(pgstream->streamident.timeline,
+        if (!this->logdir->historyFileExists(walstreamer->getCurrentTimeline(),
                                              temp_descr->compression)) {
 
           pgstream->timelineHistoryFileContent(timelineHistory,
                                                historyFilename,
-                                               pgstream->streamident.timeline);
+                                               walstreamer->getCurrentTimeline());
 
           /*
            * Okay, ready to write TLI history content to disk.
@@ -2017,7 +2023,14 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
       walstreamerIdent = walstreamer->identification();
       this->updateStreamCatalogStatus(walstreamerIdent);
 
-      if (!walstreamer->receive()) {
+      /*
+       * Now everything is set up, start receiving data
+       * from the stream.
+       *
+       * receive() will tell us (by returning false) if the
+       * stream can be continued or we are required to shut down.
+       */
+      if (walstreamer->receive()) {
 
         ArchiverState reason = walstreamer->reason();
 
@@ -2049,7 +2062,19 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
            */
           continue;
 
-        } else if (reason == ARCHIVER_SHUTDOWN) {
+        } else {
+
+          /* oops, this is unexpected here */
+          std::cerr << "unexpected WAL streamer state: " << reason << std::endl;
+          break;
+
+        }
+
+      } else {
+
+        ArchiverState reason = walstreamer->reason();
+
+        if (reason == ARCHIVER_SHUTDOWN) {
 
           StreamIdentification currentIdent;
 
@@ -2068,6 +2093,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
           break;
 
         }
+
       }
 
     }
