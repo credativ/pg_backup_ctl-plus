@@ -625,6 +625,12 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
 
         if ((it == cleanupDescr->off_list.end()) && (lowest_tli > xlog_tli)) {
 
+          BOOST_LOG_TRIVIAL(warning) << "TLI=" << xlog_tli
+                                     << " older and not reachable anymore (treshold TLI="
+                                     << "lowest_tli";
+          BOOST_LOG_TRIVIAL(info) << "TLI not reachable, deleting file "
+                                  << direntname;
+
           /*
            * TLI not seen in basebackup list and current segment
            * has older TLI.
@@ -634,12 +640,11 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
         } else if ( (it->first == xlog_tli)
                     && (recptr <= (it->second)->wal_cleanup_start_pos) ) {
 
-#ifdef __DEBUG__
-          BOOST_LOG_TRIVIAL(debug) << "XLogRecPtr is older than requested position("
+          BOOST_LOG_TRIVIAL(info) << "XLogRecPtr is older than requested position("
                                    << PGStream::encodeXLOGPos(recptr)
                                    << "), deleting file "
                                    << direntname;
-#endif
+
           remove(entry.path());
 
         }
