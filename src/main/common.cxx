@@ -20,8 +20,6 @@ using namespace boost::posix_time;
 using namespace boost::iostreams;
 using namespace std::chrono;
 
-
-
 Range::Range(int start, int end) {
 
   if (start > end)
@@ -42,6 +40,46 @@ CPGBackupCtlBase::CPGBackupCtlBase() {
 
 CPGBackupCtlBase::~CPGBackupCtlBase() {
   /* nothing special */
+}
+
+void CPGBackupCtlBase::set_log_severity(std::string severity_ident) {
+
+  namespace logging = boost::log;
+
+  logging::trivial::severity_level severity = logging::trivial::info;
+
+  if (severity_ident == "trace")
+    severity = logging::trivial::trace;
+
+  else if (severity_ident == "debug")
+    severity = logging::trivial::debug;
+
+  else if (severity_ident == "info")
+    severity = logging::trivial::info;
+
+  else if (severity_ident == "warning")
+    severity = logging::trivial::warning;
+
+  else if (severity_ident == "error")
+    severity = logging::trivial::error;
+
+  else if (severity_ident == "fatal")
+    severity = logging::trivial::fatal;
+
+  else {
+
+    std::ostringstream oss;
+
+    oss << "\"" << severity_ident << "\" is not a valid log_level identifier";
+    throw CPGBackupCtlFailure(oss.str());
+
+  }
+
+  logging::core::get()->set_filter
+  (
+   logging::trivial::severity >= severity
+  );
+
 }
 
 string CPGBackupCtlBase::getVersionString() {

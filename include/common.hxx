@@ -68,6 +68,9 @@ extern "C" {
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/format.hpp>
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/expressions.hpp>
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -271,6 +274,11 @@ namespace credativ {
      * object wether it can be found in PATH.
      */
     static bool resolve_file_path(std::string filename);
+
+    /**
+     * Controls log level severity via boost::log interface
+     */
+    static void set_log_severity(std::string severity);
   };
 
 }

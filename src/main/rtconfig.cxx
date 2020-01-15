@@ -11,6 +11,27 @@ string ConfigVariable::getName() {
   return this->name;
 }
 
+void ConfigVariable::set_assign_hook(config_variable_assign_hook ahook) {
+
+  if (ahook != NULL) {
+    assign_hook = ahook;
+  }
+
+}
+
+void ConfigVariable::reassign() {
+
+  if (this->assign_hook != NULL) {
+
+    string value;
+
+    this->getValue(value);
+    this->assign_hook(value);
+
+  }
+
+}
+
 void ConfigVariable::setValue(string value) {
   throw CPGBackupCtlFailure("cannot use runtime variable assignment in default implementation");
 }
@@ -97,7 +118,16 @@ BoolConfigVariable::BoolConfigVariable(string name,
 }
 
 void BoolConfigVariable::setValue(bool value) {
+
   this->value = value;
+
+  if (this->assign_hook != NULL) {
+    string valstr;
+
+    this->getValue(valstr);
+    this->assign_hook(valstr);
+  }
+
 }
 
 void BoolConfigVariable::setDefault(bool value) {
@@ -151,6 +181,15 @@ StringConfigVariable::StringConfigVariable() {}
 void StringConfigVariable::setValue(string value) {
 
   this->value = value;
+
+  if (this->assign_hook != NULL) {
+
+    string valstr;
+
+    this->getValue(valstr);
+    this->assign_hook(valstr);
+
+  }
 
 }
 
@@ -246,6 +285,16 @@ void EnumConfigVariable::setValue(string value) {
    */
   this->check_value(value);
   this->value = value;
+
+  /* call assign_hook if available */
+  if (this->assign_hook != NULL) {
+
+    string valstr;
+
+    this->getValue(valstr);
+    this->assign_hook(valstr);
+
+  }
 
 }
 
@@ -367,6 +416,16 @@ void IntegerConfigVariable::setValue(int value) {
 
   this->check(value);
   this->value = value;
+
+    /* call assign_hook if available */
+  if (this->assign_hook != NULL) {
+
+    string valstr;
+
+    this->getValue(valstr);
+    this->assign_hook(valstr);
+
+  }
 
 }
 

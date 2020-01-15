@@ -329,7 +329,7 @@ namespace credativ {
           >> identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
-        /* SET <class.variable name> TO <variable value> */
+        /* SET <class.variable name> = <variable value> */
         cmd_set = no_case[ lexeme[ lit("SET") ]]
           >> no_case[ lexeme[ lit("VARIABLE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, SET_VARIABLE) ]
@@ -338,7 +338,13 @@ namespace credativ {
         cmd_set_variable = variable_name
           [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ]
           >> no_case[ lexeme[ lit("=") ] ]
-          >> variable_value;
+          >> (
+              ( variable_value )
+              | ( no_case[ lexeme[ lit("\"") ] ]
+                  >> variable_value_string
+                  [ boost::bind(&CatalogDescr::setVariableValueString, &cmd, ::_1) ]
+                  >> no_case[ lexeme[ lit("\"") ] ] )
+              );
 
         variable_name = repeat(1, boost::spirit::inf)[char_("0-9A-Za-z_")]
           >> char_(".")
@@ -355,8 +361,6 @@ namespace credativ {
                              |
                              no_case[ lexeme[ lit("false") ] ]
                              [ boost::bind(&CatalogDescr::setVariableValueBool, &cmd, false) ] )
-                           | ( variable_value_string
-                               [ boost::bind(&CatalogDescr::setVariableValueString, &cmd, ::_1) ] )
                            | ( number_ID
                                [ boost::bind(&CatalogDescr::setVariableValueInteger, &cmd, ::_1) ] ) );
 

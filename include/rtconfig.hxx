@@ -7,12 +7,21 @@
 
 namespace credativ {
 
+  typedef void (*config_variable_assign_hook)(std::string val);
+
   /**
    * Base class for config runtime variables.
    */
   class ConfigVariable {
   protected:
     std::string name = "unknown";
+
+    /*
+     * Assign hook function pointer. Only valid
+     * if an assign function was specified by set_assign_hook()
+     */
+    config_variable_assign_hook assign_hook = NULL;
+
   public:
 
     virtual ~ConfigVariable() {};
@@ -37,6 +46,11 @@ namespace credativ {
     virtual void getDefault(std::string &value);
     virtual void getDefault(int &value);
     virtual void getDefault(bool &value);
+
+    virtual void set_assign_hook(config_variable_assign_hook ahook);
+
+    /** Recalls the assign hook if available. */
+    virtual void reassign();
 
     virtual void reset();
   };

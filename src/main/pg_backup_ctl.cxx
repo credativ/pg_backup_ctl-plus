@@ -205,6 +205,29 @@ void init_RtCfg() {
    */
   RtCfg->create("interactive.on_error_exit", false, false);
 
+  /*
+   * The log_level parameter tells pg_backup_ctl++ what to log.
+   */
+
+  std::shared_ptr<ConfigVariable> log_level
+    = RtCfg->create("logging.level",
+#ifdef __DEBUG__
+                    std::string("debug"),
+#else
+                    "info",
+#endif
+#ifdef __DEBUG__
+                    std::string("debug")
+#else
+                    "info"
+#endif
+                    );
+
+  /* RuntimeConfiguration::create() doesn't have the assign hook available,
+   * so recall after assigning the hook */
+  log_level->set_assign_hook(CPGBackupCtlBase::set_log_severity);
+  log_level->reassign();
+
 }
 
 /*
