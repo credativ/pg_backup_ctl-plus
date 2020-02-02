@@ -19,14 +19,6 @@
 #include <zlib.h>
 #endif
 
-#ifdef PG_BACKUP_CTL_HAS_ZSTD
-/*
- * must stay after common.hxx, since cmake defines
- * availability of zlib there.
- */
-#include <zstd.h>
-#endif
-
 using namespace credativ;
 using namespace std;
 using namespace boost::filesystem;
@@ -202,84 +194,6 @@ namespace credativ {
     virtual off_t lseek(off_t offset, int whence);
 
   };
-
-#ifdef PG_BACKUP_CTL_HAS_ZSTD
-
-  /*
-   * Implementation for archive files compressed
-   * with ZSTD library.
-   *
-   * NOTE: The current implementation uses ZStream
-   *       API calls and in its current form doesn't
-   *       support read and writing compressed files
-   *       at the same time! When used this way, the
-   *       behavior of ZSTDArchiveFile object instances
-   *       are undefined!
-   */
-  class ZSTDArchiveFile : public BackupFile {
-  private:
-
-    /*
-     * Internal file descriptor
-     */
-    FILE *fp = NULL;
-
-    /*
-     * ZSTD compression/decompression context.
-     */
-    ZSTD_DCtx *decompressCtx = NULL;
-    ZSTD_CCtx *compressCtx = NULL;
-
-    /*
-     * Indicates if the file was already opened
-     * successfully.
-     */
-    bool opened = false;
-
-    /*
-     * Sets the mode the file is opened. The default
-     * is binary read only.
-     */
-    std::string mode = "rb";
-
-    /*
-     * zstd compression level (1-19), default 10
-     */
-    int compression_level = 10;
-
-  public:
-    ZSTDArchiveFile(path pathHandle);
-    virtual ~ZSTDArchiveFile();
-
-    virtual bool isCompressed();
-    virtual void setCompressed(bool compressed);
-    virtual bool isOpen();
-
-    /*
-     * Set open mode for this file. The default is "rb".
-     */
-    virtual void setOpenMode(std::string mode);
-
-    /*
-     * Opens a file for ZSTD compression/decompression.
-     */
-    virtual void open();
-    virtual void close();
-    virtual size_t write(const char *buf, size_t len);
-    virtual size_t read(char *buf, size_t len);
-    virtual void fsync();
-    virtual FILE *getFileHandle();
-    virtual void remove();
-    virtual void rename(path& newname);
-    virtual off_t lseek(off_t offset, int whence);
-
-    /*
-     * Extended methods.
-     */
-    virtual void setCompressionLevel(int level);
-  };
-
-#endif
 
 #ifdef PG_BACKUP_CTL_HAS_ZLIB
 

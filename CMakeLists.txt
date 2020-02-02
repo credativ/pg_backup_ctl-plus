@@ -224,18 +224,10 @@ else()
 endif()
 
 ##
-## Checkout, if zstandard compression library is available
+## per default assume zstandard compression is available
 ##
-find_package(zstd OPTIONAL_COMPONENTS)
-if(ZSTD_FOUND)
-  message("using zstandard compression support")
-  set(PG_BACKUP_CTL_HAS_ZSTD "#define PG_BACKUP_CTL_HAS_ZSTD 1")
-  include_directories(${zstd_INCLUDE_DIRS})
-  target_link_libraries(pgbckctl-common ${zstd_LIBRARIES})
-else()
-  message("no zstd library found, zstandard compression unavailable")
-  set(PG_BACKUP_CTL_HAS_ZSTD "#undef PG_BACKUP_CTL_HAS_ZSTD")
-endif()
+message("using zstandard compression support")
+set(PG_BACKUP_CTL_HAS_ZSTD "#define PG_BACKUP_CTL_HAS_ZSTD 1")
 
 ##
 ## Configure doxygen and a custom target "doc"
