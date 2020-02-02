@@ -2,6 +2,7 @@
 #define __RECOVERY_HXX__
 
 #include <common.hxx>
+#include <descr.hxx>
 
 namespace credativ {
 
@@ -14,6 +15,7 @@ namespace credativ {
   public:
 
     Recovery();
+    Recovery(std::shared_ptr<RestoreStreamDescr> restoreDescr);
     virtual ~Recovery();
 
     /*
@@ -31,7 +33,7 @@ namespace credativ {
   class TarRecovery : public Recovery {
   public:
 
-    TarRecovery();
+    TarRecovery(std::shared_ptr<RestoreStreamDescr> restoreDescr);
     virtual ~TarRecovery();
 
     /*

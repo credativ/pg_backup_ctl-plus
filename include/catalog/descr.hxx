@@ -1192,6 +1192,22 @@ namespace credativ {
                 ARCHIVE_INVALID_XLOG_EXISTS
 
   } BackupCatalogErrorCode;
+
+  /**
+   * A Basebackup restore descriptor.
+   *
+   * Holds all necessary information to restore a
+   * specific basebackup from storage over the streaming protocol
+   */
+  class RestoreStreamDescr {
+  public:
+
+    std::shared_ptr<CatalogDescr> catalog = nullptr;
+    std::shared_ptr<BaseBackupDescr> basebackup = nullptr;
+    std::shared_ptr<BackupProfileDescr> profile = nullptr;
+
+  };
+
 }
 
 #endif

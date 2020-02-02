@@ -4,10 +4,11 @@
 using namespace credativ;
 
 Recovery::Recovery() {}
+Recovery::Recovery(std::shared_ptr<RestoreStreamDescr> restoreDescr) {}
 
 Recovery::~Recovery() {}
 
-TarRecovery::TarRecovery() {}
+TarRecovery::TarRecovery(std::shared_ptr<RestoreStreamDescr> restoreDescr) {}
 
 TarRecovery::~TarRecovery() {}
 

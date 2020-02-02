@@ -476,10 +476,22 @@ std::shared_ptr<BackupFile> TransactionLogBackup::stackFile(std::string name) {
 
 }
 
-StreamBaseBackup::StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr) : Backup(descr) {
+StreamBaseBackup::StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr)
+  : Backup(descr) {
 
   this->descr = descr;
   this->identifier = this->createMyIdentifier();
+  this->mode = SB_NOT_SET;
+
+}
+
+StreamBaseBackup::StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr,
+                                   StreamDirectoryOperationMode mode)
+  : Backup(descr) {
+
+  this->descr = descr;
+  this->identifier = this->createMyIdentifier();
+  this->mode = mode;
 
 }
 
@@ -500,6 +512,25 @@ StreamBaseBackup::~StreamBaseBackup() {
 
 };
 
+void StreamBaseBackup::setMode(StreamDirectoryOperationMode mode) {
+
+  /*
+   * We allow changing operation mode on
+   * uninitialized instances!
+   */
+  if (this->isInitialized())
+    throw CArchiveIssue("cannot change stream directory operation mode if already initialized");
+
+  this->mode = mode;
+
+}
+
+StreamDirectoryOperationMode StreamBaseBackup::getMode() {
+
+  return this->mode;
+
+}
+
 std::string StreamBaseBackup::backupDirectoryString() {
 
   if (this->isInitialized()) {
@@ -519,6 +550,10 @@ std::string StreamBaseBackup::createMyIdentifier() {
 
 void StreamBaseBackup::create() {
 
+  if (this->mode == SB_READ) {
+    CArchiveIssue("stream backup is in read-only mode");
+  }
+
   if (this->isInitialized()) {
     /*
      * A streamed base backup is hosted within a
@@ -533,34 +568,53 @@ void StreamBaseBackup::create() {
 
 }
 
+std::string StreamBaseBackup::read() {
+  return string("");
+}
+
 void StreamBaseBackup::finalize() {
 
-  /*
-   * Sync file handles and their contents.
-   */
-  for(auto& item : this->fileList) {
-    item->fsync();
-    item->close();
+  if (this->mode == SB_WRITE) {
+
+    /*
+     * Sync file handles and their contents.
+     */
+    for(auto& item : this->fileList) {
+      item->fsync();
+      item->close();
+    }
+
+    /*
+     * Sync directory handle
+     */
+    this->directory->fsync();
+
+    /*
+     * Clear internal handles.
+     */
+    this->file = nullptr;
+    this->fileList.clear();
+
+
+  } else {
+
+    /* SB_READ: nothing to do here yet */
+
   }
 
-  /*
-   * Sync directory handle
-   */
-  this->directory->fsync();
-
-  /*
-   * Clear internal handles.
-   */
-  this->file = nullptr;
-  this->fileList.clear();
+  this->mode = SB_NOT_SET;
 
 }
 
 bool StreamBaseBackup::isInitialized() {
-  return this->initialized;
+  return (this->initialized && (this->mode != SB_NOT_SET));
 }
 
 void StreamBaseBackup::initialize() {
+
+  if (this->mode == SB_NOT_SET) {
+    throw CArchiveIssue("cannot initialize stream basebackup handler without operation mode");
+  }
 
   if (!this->isInitialized()) {
     this->directory = new StreamingBaseBackupDirectory(this->identifier,

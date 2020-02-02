@@ -2644,7 +2644,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * Create base backup stream handler.
      */
     std::shared_ptr<StreamBaseBackup> backupHandle
-      = std::make_shared<StreamBaseBackup>(temp_descr);
+      = std::make_shared<StreamBaseBackup>(temp_descr, SB_WRITE);
 
     /*
      * Meta information handle for streamed tablespace.

@@ -217,11 +217,19 @@ namespace credativ {
     virtual uint64 countSynced();
   };
 
+  typedef enum {
+
+                SB_NOT_SET,
+                SB_WRITE,
+                SB_READ
+
+  } StreamDirectoryOperationMode;
+
   /*
    * Streamed basebackup object representation.
    *
    * This class shouldn't be instantiated directly, but within
-   * BaseBackupProcess() objects to encapsulate filesystem access
+   * BaseBackupProcess() and related objects to encapsulate filesystem access
    *
    * Thus, StreamBaseBackup is the connection between catalog
    * and filesystem basebackup representation during the streaming
@@ -233,10 +241,15 @@ namespace credativ {
    * to sync all outstanding filesystem buffers.
    *
    * StreamBaseBackup objects are not designed to be reused. For new streamed
-   * base backups create a new object instance instead.
+   * base backups create a new object instance instead. An StreamBaseBackup is either
+   * read- or writable, but not both at the same time.
    */
   class StreamBaseBackup: public Backup {
   private:
+
+    /* Read or write operation mode */
+    StreamDirectoryOperationMode mode = SB_NOT_SET;
+
     /*
      * Stack of internal allocated file handles
      * representing this instance of StreamBaseBackup.
@@ -268,6 +281,8 @@ namespace credativ {
     std::string createMyIdentifier();
   public:
     StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr);
+    StreamBaseBackup(const std::shared_ptr<CatalogDescr>& descr,
+                     StreamDirectoryOperationMode mode);
     ~StreamBaseBackup();
 
     virtual bool isInitialized();
@@ -278,6 +293,15 @@ namespace credativ {
     virtual BackupProfileCompressType getCompression();
     virtual void create();
     virtual std::string backupDirectoryString();
+    virtual void setMode(StreamDirectoryOperationMode mode);
+    virtual StreamDirectoryOperationMode getMode();
+
+    /**
+     * Read file information from the stream backup directory.
+     * If nothing left, an empty string is returned, indicating
+     * end of file list.
+     */
+    virtual std::string read();
   };
 
 }
