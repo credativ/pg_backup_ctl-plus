@@ -344,7 +344,7 @@ completion_word create_bck_prof_compr_type[]
 = { { "GZIP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "NONE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "ZSTD", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
-    { "PBZIP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "XZ", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "PLAIN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 

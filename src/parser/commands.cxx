@@ -3018,8 +3018,8 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
       case BACKUP_COMPRESS_TYPE_ZSTD:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "ZSTD" << endl;
         break;
-      case BACKUP_COMPRESS_TYPE_PBZIP:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PBZIP" << endl;
+      case BACKUP_COMPRESS_TYPE_XZ:
+        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "XZ" << endl;
         break;
       case BACKUP_COMPRESS_TYPE_PLAIN:
         cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PLAIN" << endl;
@@ -3834,7 +3834,8 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
    * since they are backed by command line tools. Atm
    * these are:
    *
-   * PBZIP - requires pbzip2 command line tool
+   * XZ - requires XZ command line tool
+   * ZSTD - requires the ZSTD command line tool
    * PLAIN - requires the tar command line tool
    */
   switch(this->profileDescr->compress_type) {
@@ -3862,17 +3863,41 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       break;
     }
 
-  case BACKUP_COMPRESS_TYPE_PBZIP:
+  case BACKUP_COMPRESS_TYPE_ZSTD:
     {
-      path pbzip("pbzip2");
-      ArchivePipedProcess app(pbzip);
+      path zstd("zstd");
+      ArchivePipedProcess app(zstd);
       char buf[4];
 
-      if (!CPGBackupCtlBase::resolve_file_path(pbzip.string())) {
-        throw CArchiveIssue("cannot resolve path for binary pbzip2");
+      if (!CPGBackupCtlBase::resolve_file_path(zstd.string())) {
+        throw CArchiveIssue("cannot resolve path for binary zstd");
       }
 
-      app.setExecutable(pbzip);
+      app.setExecutable(zstd);
+      app.pushExecArgument("--version");
+
+      app.setOpenMode("r");
+      app.open();
+
+      while(app.read(buf, 1) >= 1)
+        cout << buf;
+
+      app.close();
+      break;
+
+    }
+
+  case BACKUP_COMPRESS_TYPE_XZ:
+    {
+      path xz("xz");
+      ArchivePipedProcess app(xz);
+      char buf[4];
+
+      if (!CPGBackupCtlBase::resolve_file_path(xz.string())) {
+        throw CArchiveIssue("cannot resolve path for binary xz");
+      }
+
+      app.setExecutable(xz);
       app.pushExecArgument("--version");
 
       app.setOpenMode("r");

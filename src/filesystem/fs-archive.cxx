@@ -188,21 +188,20 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       break;
     }
 
-  case BACKUP_COMPRESS_TYPE_PBZIP:
+  case BACKUP_COMPRESS_TYPE_XZ:
     {
       std::shared_ptr<ArchivePipedProcess> myfile
-        = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".bz2"));
+        = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".xz"));
       std::string filename = myfile->getFilePath();
 
-      /*
-       * Check if pbzip2 is available
-       */
-      if (!CPGBackupCtlBase::resolve_file_path("pbzip2"))
-        throw CArchiveIssue("cannot resolve path for binary pbzip2");
+      if (!CPGBackupCtlBase::resolve_file_path("xz"))
+        throw CArchiveIssue("cannot resolve path for binary xz");
 
-      myfile->setExecutable("pbzip2");
-      myfile->pushExecArgument("-l");
+      myfile->setExecutable("xz");
+      myfile->pushExecArgument("-z");
+      myfile->pushExecArgument("-0");
       myfile->pushExecArgument("-c");
+      myfile->pushExecArgument("-T0");
       myfile->pushExecArgument(">");
       myfile->pushExecArgument(filename);
 
@@ -223,7 +222,7 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       std::string directory = myfile->getFilePath();
 
       /*
-       * Check if pbzip2 is available
+       * Check if tar is available
        */
       if (!CPGBackupCtlBase::resolve_file_path("tar"))
         throw CArchiveIssue("cannot resolve path for binary tar");
