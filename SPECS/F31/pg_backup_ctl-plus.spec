@@ -1,6 +1,6 @@
 %define upstream_pgdg_version 12
 %define major_version 0.1
-%define patchlevel 5
+%define patchlevel 6
 
 Name: pg_backup_ctl-plus
 Version: %{major_version}
@@ -79,7 +79,6 @@ cd build
 # NOTE: on RHEL7, we require a newer boost library version, usually installed from EPEL
 CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" \
         CXX="ccache g++" \
-        BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 \
         cmake3 -DPG_BACKUP_CTL_SQLITE:FILEPATH=/var/lib/pg_backup_ctl-plus/pg_backup_ctl.sqlite \
         -DPG_CONFIG=/usr/pgsql-%{upstream_pgdg_version}/bin/pg_config \
         -DCMAKE_INSTALL_PREFIX:PATH=/usr \
@@ -98,8 +97,8 @@ Release: %{patchlevel}%{?dist}
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, core library
 Group:   Application/Databases
 License: GPLv3
-BuildRequires: cmake3 gcc-c++ make ccache boost169-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
-Requires: boost169-regex boost169-filesystem boost169-iostreams boost169-date-time boost169-chrono sqlite postgresql%{upstream_pgdg_version}-libs
+BuildRequires: cmake3 gcc-c++ make ccache boost-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
+Requires: boost-regex boost-filesystem boost-iostreams boost-date-time boost-chrono sqlite postgresql%{upstream_pgdg_version}-libs
 Provides: libpgbckctl-common.so()(64bit)
 
 %description -n libpgbckctl-common
@@ -120,8 +119,8 @@ Release: %{patchlevel}%{?dist}
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, protocol support
 Group:   Application/Databases
 License: GPLv3
-BuildRequires: cmake3 gcc-c++ make ccache boost169-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
-Requires: boost169-regex boost169-filesystem boost169-iostreams boost169-date-time boost169-chrono sqlite postgresql%{upstream_pgdg_version}-libs
+BuildRequires: cmake3 gcc-c++ make ccache boost-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel
+Requires: boost-regex boost-filesystem boost-iostreams boost-date-time boost-chrono sqlite postgresql%{upstream_pgdg_version}-libs
 Requires: libpgbckctl-common
 Provides: libpgbckctl-proto.so()(64bit)
 
