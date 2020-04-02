@@ -140,6 +140,9 @@ API implementation.
 rm -rf $RPM_BUILD_ROOT
 
 %changelog
+* Mon Dec 30 2019 - Bernd Helmle <bernd.helmle@credativ.de> 0.1-6
+- Packaging for Fedora 31
+
 * Mon Dec 30 2019 - Bernd Helmle <bernd.helmle@credativ.de> 0.1-2
 - Subpackage for libpgbckctl-proto.so
 
