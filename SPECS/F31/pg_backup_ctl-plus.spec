@@ -21,7 +21,7 @@ interface for easy use.
 %package cli
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, command line tool
 Group:   Application/Databases
-BuildRequires: popt-devel readline-devel gcc-c++ ccache cmake3 make
+BuildRequires: systemd-rpm-macros popt-devel readline-devel gcc-c++ ccache cmake3 make
 Requires: libpgbckctl-common libpgbckctl-proto zstd xz
 Provides: pg_backup_ctl-plus
 
