@@ -59,8 +59,7 @@ chmod 0600 $RPM_BUILD_ROOT/%{_sharedstatedir}/pg_backup_ctl-plus/pg_backup_ctl.s
 %systemd_post pgbckctl-walstreamer@
 
 ## create the temp file directories for systemd
-%tmpfiles_create
-%tmpfiles_create
+%tmpfiles_create %{_tmpfilesdir}/pg_backup_ctl-plus-tempfiles.conf
 
 %files cli
 %defattr(-,root,root,-)
