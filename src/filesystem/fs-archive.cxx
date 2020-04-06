@@ -893,8 +893,12 @@ void ArchiveLogDirectory::readHistoryFile(int timeline,
    */
   if (compressed) {
 
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
     tli_history_filename = (boost::format("%08X.history.gz") % timeline).str();
     file = make_shared<CompressedArchiveFile>(this->getPath() / tli_history_filename);
+#else
+    throw CArchiveIssue("zlib compression support not compiled in");
+#endif
 
   } else {
 
@@ -949,8 +953,13 @@ std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timelin
    */
   if (compressed) {
 
+#ifdef PG_BACKUP_CTL_HAS_ZLIB
     tli_history_filename = (boost::format("%08X.history.gz") % timeline).str();
     file = make_shared<CompressedArchiveFile>(this->getPath() / tli_history_filename);
+#else
+    throw CArchiveIssue("zlib compression support not compiled in");
+#endif
+
 
   } else {
 
