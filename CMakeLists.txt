@@ -290,6 +290,46 @@ install(FILES resources/systemd/pgbckctl-walstreamer@.service DESTINATION ${SYST
 install(FILES resources/systemd/pg_backup_ctl-plus-tempfiles.conf DESTINATION /usr/lib/tmpfiles.d/)
 endif()
 
+if(DEFINED BUILD_UNIT_TESTS)
+
+  # Unit Tests
+  enable_testing ()
+
+  ## We need a SQLite database for testing with 'test', so we are
+  ## create a custom target createdb with a custom command which
+  ## creates the test database in the build directory.
+  ##
+  ## The unit tests later will use that generated database afterwards.
+  ## Please note that the dependency is on our pgbckctl-common library,
+  ## which is the main part for the unit tests against the sqlite database.
+
+  add_custom_command(OUTPUT .pg_backup_ctl.sqlite
+    COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql"
+    DEPENDS ../src/sql/catalog.sql)
+
+  add_custom_target(createdb
+    DEPENDS .pg_backup_ctl.sqlite)
+
+  add_dependencies(pgbckctl-common createdb)
+
+  find_package (Boost COMPONENTS system filesystem unit_test_framework REQUIRED)
+
+  add_definitions (-DBOOST_TEST_DYN_LINK)
+  add_executable (test_catalog test/src/test_catalog.cxx)
+  target_link_libraries (test_catalog
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+    )
+
+  # message("creating test SQLite database")
+  # add_test(NAME SQLite COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql" )
+  add_test(NAME TestCatalog COMMAND test_catalog)
+
+endif()
+
 ##
 ## Get current git revision.
 ##
@@ -306,3 +346,4 @@ configure_file (
    "${PROJECT_SOURCE_DIR}/include/pg_backup_ctl.hxx.in"
    "${PROJECT_SOURCE_DIR}/include/pg_backup_ctl.hxx"
 )
+

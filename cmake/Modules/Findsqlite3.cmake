@@ -5,7 +5,14 @@
 # - sqlite3_FOUND: libsqlite3 was found
 # - sqlite3_INCLUDE_DIRS: Include directories for libsqlite3
 # - sqlite3_LIBRARIES: Library directories for libsqlite3
+# - SQLITE3: Full path to sqlite3 command line utility
 #
+find_program(SQLITE3 NAMES sqlite3
+                     DOCS "Path to sqlite3 command line utility")
+
+if (SQLITE3)
+  message("sqlite3 cmdline utility in ${SQLITE3}")
+endif()
 
 find_path(sqlite3_INCLUDE_DIR
   NAMES "sqlite3.h"
