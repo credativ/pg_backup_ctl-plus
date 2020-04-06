@@ -51,7 +51,7 @@ else()
 endif()
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(PostgreSQL
+find_package_handle_standard_args(libpq
    DEFAULT_MSG
    libpq_INCLUDE_DIRS
    pgsql_INCLUDE_SERVER
