@@ -106,7 +106,8 @@ BOOST_AUTO_TEST_CASE(TestParser)
 
   if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
 
-  /* IMPORTANT: Keep that check in sync with the number of successful parser checks */
+  /* IMPORTANT: Keep that check in sync with the number of
+     successful parser checks NUM_SUCCESSFUL_PARSER_COMMANDS */
   BOOST_TEST( count_parser_checks == NUM_SUCCESSFUL_PARSER_COMMANDS );
 
 }
