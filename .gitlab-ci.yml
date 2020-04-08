@@ -1,4 +1,4 @@
-image: "fedora:30"
+image: "fedora:31"
 
 before_script:
         - dnf -y install which gcc-c++ make cmake
@@ -25,5 +25,6 @@ pg_backup_ctl-plus:
         script:
                 - mkdir build
                 - cd build
-                - CXXFLAGS="-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__" cmake -GNinja ..
+                - CXXFLAGS="-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__" cmake -DBUILD_UNIT_TESTS=ON -GNinja ..
                 - ninja
+                - ninja test
