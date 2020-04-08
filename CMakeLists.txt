@@ -318,6 +318,8 @@ if(BUILD_UNIT_TESTS)
 
   add_definitions (-DBOOST_TEST_DYN_LINK)
   add_executable (test_catalog test/src/test_catalog.cxx)
+  add_executable(test_parser test/src/test_parser.cxx)
+
   target_link_libraries (test_catalog
     pgbckctl-proto
     pgbckctl-common
@@ -326,9 +328,16 @@ if(BUILD_UNIT_TESTS)
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
     )
 
-  # message("creating test SQLite database")
-  # add_test(NAME SQLite COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql" )
+  target_link_libraries (test_parser
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+    )
+
   add_test(NAME TestCatalog COMMAND test_catalog)
+  add_test(NAME TestParser COMMAND test_parser)
 
 endif()
 
