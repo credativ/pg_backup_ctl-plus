@@ -44,7 +44,38 @@ BOOST_AUTO_TEST_CASE(TestBackupCatalogManip)
   /* 3 Backup catalog should be available */
   BOOST_CHECK( catalog->available() );
 
-  /* 4 Close works */
+  /* 4 Create archive "test" */
+  {
+    std::shared_ptr<CatalogDescr> desc = std::make_shared<CatalogDescr>();
+    std::shared_ptr<CatalogDescr> check_desc;
+
+    /*
+     * Set connection type. this is important since BackupCatalog::createArchive()
+     * insists this to be set!
+     */
+    desc->coninfo->type = ConnectionDescr::CONNECTION_TYPE_BASEBACKUP;
+    desc->archive_name = "test";
+    desc->directory = "/tmp";
+    desc->compression = false;
+
+    BOOST_REQUIRE_NO_THROW( catalog->startTransaction() );
+
+    BOOST_REQUIRE_NO_THROW( catalog->createArchive(desc) );
+
+    /* Check whether archive exists */
+    BOOST_REQUIRE_NO_THROW( check_desc = catalog->existsByName("test") );
+    BOOST_CHECK( check_desc->id != -1 );
+
+    /* Drop archive and recheck */
+    BOOST_REQUIRE_NO_THROW( catalog->dropArchive("test") );
+
+    BOOST_REQUIRE_NO_THROW( check_desc = catalog->existsByName("test") );
+    BOOST_CHECK( check_desc->id == -1 );
+
+    BOOST_REQUIRE_NO_THROW( catalog->commitTransaction() );
+  }
+
+  /* 5 Close works */
   BOOST_REQUIRE_NO_THROW( catalog->close() );
 
   /* 5 Catalog not available anymore */
