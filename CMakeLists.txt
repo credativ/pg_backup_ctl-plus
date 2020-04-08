@@ -290,12 +290,14 @@ install(FILES resources/systemd/pgbckctl-walstreamer@.service DESTINATION ${SYST
 install(FILES resources/systemd/pg_backup_ctl-plus-tempfiles.conf DESTINATION /usr/lib/tmpfiles.d/)
 endif()
 
-if(DEFINED BUILD_UNIT_TESTS)
+if(BUILD_UNIT_TESTS)
+
+  message("unit tests enabled")
 
   # Unit Tests
   enable_testing ()
 
-  ## We need a SQLite database for testing with 'test', so we are
+  ## We need a SQLite database for testing with 'test', so we
   ## create a custom target createdb with a custom command which
   ## creates the test database in the build directory.
   ##
