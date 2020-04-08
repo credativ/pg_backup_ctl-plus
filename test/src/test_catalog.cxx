@@ -24,5 +24,30 @@ BOOST_AUTO_TEST_CASE(TestBackupCatalogSetup)
   /* 4 Open backup catalog for read/write */
   BOOST_REQUIRE_NO_THROW( catalog->open_rw() );
 
+  /* 6 Close backup catalog database */
+  BOOST_REQUIRE_NO_THROW( catalog->close() );
+
 }
 
+BOOST_AUTO_TEST_CASE(TestBackupCatalogManip)
+{
+
+  std::shared_ptr<BackupCatalog> catalog = nullptr;
+
+  /* 1 should not throw */
+  BOOST_REQUIRE_NO_THROW( catalog
+                          = std::make_shared<BackupCatalog>(".pg_backup_ctl.sqlite") );
+
+  /* 2 Open backup catalog for read/write */
+  BOOST_REQUIRE_NO_THROW( catalog->open_rw() );
+
+  /* 3 Backup catalog should be available */
+  BOOST_CHECK( catalog->available() );
+
+  /* 4 Close works */
+  BOOST_REQUIRE_NO_THROW( catalog->close() );
+
+  /* 5 Catalog not available anymore */
+  BOOST_TEST( !catalog->available() );
+
+}
