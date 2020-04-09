@@ -185,7 +185,7 @@ void DropBasebackupCatalogCommand::execute(bool flag) {
     has_tx = true;
 
     /*
-     * Check wether the basebackup or archive exists. We can
+     * Check whether the basebackup or archive exists. We can
      * do this within one API call to our BackupCatalog, but we want
      * to have specific describing error messages for what's missing.
      *
@@ -203,7 +203,7 @@ void DropBasebackupCatalogCommand::execute(bool flag) {
     }
 
     /*
-     * Check wether the basebackup exists.
+     * Check whether the basebackup exists.
      */
     cout << "checking for basebackup ID \"" << this->basebackup_id << "\"" << endl;
 
@@ -1195,7 +1195,7 @@ void StartLauncherCatalogCommand::execute(bool flag) {
    *   If a launcher is active, there's an entry for it (or if it
    *   has crashed earlier).
    *
-   * - Retrieve the SHMID and check wether the launcher is already
+   * - Retrieve the SHMID and check whether the launcher is already
    *   attached.
    *
    *   A catalog entry would also be present in case a launcher has crashed.
@@ -4053,7 +4053,7 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
 
     /*
      * There is an archive with the specified identifier registered.
-     * Get an archive directory handle and check wether its directory structure
+     * Get an archive directory handle and check whether its directory structure
      * is intact.
      */
     shared_ptr<BackupDirectory> archivedir = CPGBackupCtlFS::getArchiveDirectoryDescr(temp_descr->directory);
@@ -4359,7 +4359,7 @@ void DropArchiveCatalogCommand::execute(bool existsOk) {
 
   try {
     /*
-     * existsOk means in this case we check wether
+     * existsOk means in this case we check whether
      * the archive exists. If false, raise an error, otherwise
      * just pass which turns this method into a no-op.
      */

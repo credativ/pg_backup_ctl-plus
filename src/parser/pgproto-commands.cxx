@@ -314,7 +314,7 @@ void PGProtoListBasebackups::execute() {
 
   BOOST_LOG_TRIVIAL(debug) << "requesting basebackups from archive ID=" << archive_id;
 
-  /* Check wether we're having a valid archive id...   */
+  /* Check whether we're having a valid archive id...   */
   if (archive_id < 0) {
 
     std::ostringstream oss;

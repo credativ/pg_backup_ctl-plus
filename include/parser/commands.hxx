@@ -295,7 +295,7 @@ namespace credativ {
     /**
      * This is a helper method, performing various checks before starting
      * a basebackup. Returns a BackupCatalogErrorCode flag, telling the
-     * current state wether START BASEBACKUP is allowed to proceed.
+     * current state whether START BASEBACKUP is allowed to proceed.
      *
      * check() expects a StreamIdentification structure initialized
      * by a PGStream::identify() call.

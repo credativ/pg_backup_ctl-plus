@@ -46,7 +46,7 @@ namespace credativ {
   /**
    * BackupPinnedValidLockInfo
    *
-   * Checks wether a basebackup is either pinned or in an invalid
+   * Checks whether a basebackup is either pinned or in an invalid
    * state.
    *
    * Locked means here, that the basebackup is not valid or explicitely

@@ -160,7 +160,7 @@ namespace credativ {
      * flushed, renamed into its final backup segment filename and the
      * flush position saved in the called-by-reference
      * argument flush_position. If no switch has occured, flush_position
-     * is set to InvalidXLogRecPtr. This can be used to check wether
+     * is set to InvalidXLogRecPtr. This can be used to check whether
      * a new segment was created during write().
      */
     virtual XLogRecPtr write(XLOGDataStreamMessage *message,

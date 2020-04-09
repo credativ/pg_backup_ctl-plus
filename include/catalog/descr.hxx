@@ -106,7 +106,7 @@ namespace credativ {
    *
    * The following are specific retention types used during
    * parser states. They don't describe a materialized retention
-   * policy with its rule(s), but describe wether a DROP or KEEP
+   * policy with its rule(s), but describe whether a DROP or KEEP
    * action was specified in e.g. the CREATE RETENTION POLICY
    * command and more.
    *

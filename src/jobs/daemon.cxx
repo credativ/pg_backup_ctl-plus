@@ -212,7 +212,7 @@ void BackgroundWorker::registerMe() {
    *
    * - If a former worker crashed or did an emergency exit,
    *   we'll find an orphaned running state of this worker.
-   *   We need to try hard to check, wether this process is
+   *   We need to try hard to check, whether this process is
    *   still alive. The current procedure for this is as
    *   follows:
    *
@@ -433,7 +433,7 @@ boost::interprocess::interprocess_mutex *ProcessSHM::check_and_get_mutex() {
   /*
    * Die immediately if the SHM area wasn't initialized
    *
-   * This means here that we just check wether the mutex was initialized.
+   * This means here that we just check whether the mutex was initialized.
    * If not, we will find a nullptr, thus we throw a SHMFailure exception
    * telling the caller something went terribly wrong.
    */
@@ -671,10 +671,10 @@ bool WorkerSHM::detach_basebackup(unsigned int slot_index,
   this->write(slot_index, child_index, child_info);
 
   /*
-   * We have to check wether the shortcut basebackup_in_use
+   * We have to check whether the shortcut basebackup_in_use
    * is still valid.
    *
-   * This means we need to loop through our child slots, checking wether
+   * This means we need to loop through our child slots, checking whether
    * there are still basebackups attached. We modify the
    * basebackup_is_use flag in place.
    */
@@ -746,7 +746,7 @@ void WorkerSHM::write(unsigned int slot_index,
     }
 
     /*
-     * Check wether we've found one.
+     * Check whether we've found one.
      */
     if (child_index < 0) {
 
@@ -952,7 +952,7 @@ void WorkerSHM::free_child(unsigned int slot_index,
   ptr->child_info[free_child_index].backup_id = -1;
 
   /*
-   * We need to check wether any backup ID is still registered
+   * We need to check whether any backup ID is still registered
    * within the current child slots. Loop through the list (which
    * is small, so this isn't a caveat here).
    */
@@ -1377,7 +1377,7 @@ static void _pgbckctl_sigchld_handler(int sig) {
 static void _pgbckctl_sighandler(int sig) {
 
   /*
-   * Check wether we are called recursively. Reraise
+   * Check whether we are called recursively. Reraise
    * the signal again, if true.
    */
   if (_pgbckctl_shutdown_mode != DAEMON_RUN) {
@@ -1680,7 +1680,7 @@ static pid_t daemonize(job_info &info) {
       }
 
       /*
-       * Check message queue wether there is something to do.
+       * Check message queue whether there is something to do.
        */
       std::string command = recv_launcher_cmd(info, cmd_ok);
 

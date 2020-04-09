@@ -269,7 +269,7 @@ namespace credativ {
     virtual std::string fullname();
 
     /*
-     * Returns true wether the catalog is available.
+     * Returns true whether the catalog is available.
      */
     virtual bool available();
 
@@ -279,7 +279,7 @@ namespace credativ {
     virtual void checkCatalog();
 
     /*
-     * Checks wether the specified table exists
+     * Checks whether the specified table exists
      * in the catalog database.
      */
     virtual bool tableExists(std::string tableName);
@@ -397,7 +397,7 @@ namespace credativ {
     virtual void open_ro();
 
     /**
-     * Returns wether the database was successfully opened.
+     * Returns whether the database was successfully opened.
      */
     virtual bool opened();
 
@@ -647,7 +647,7 @@ namespace credativ {
      *
      * In addition to the other overloaded getBackupList() method,
      * this is called with a RetentionIntervalDescr descriptor, flagging
-     * each BaseBackupDescr wether it exceeds the requested retention
+     * each BaseBackupDescr whether it exceeds the requested retention
      * interval.
      */
     virtual std::vector<std::shared_ptr<BaseBackupDescr>>
@@ -659,7 +659,7 @@ namespace credativ {
      * Returns a specific basebackup in the catalog for an archive,
      * identified by the BaseBackupRetrieveMode mode.
      *
-     * valid_only specified wether the method should only
+     * valid_only specified whether the method should only
      * consider basebackups in state "ready". If set to false,
      * getLatestBaseBackup() will also consider "in progress" or
      * "aborted" basebackups.
@@ -669,7 +669,7 @@ namespace credativ {
                                                            bool valid_only);
 
     /**
-     * Checks wether the given retention interval would be
+     * Checks whether the given retention interval would be
      * exceeded for the specified basebackup. The specified
      * BaseBackupDescr flag (BaseBackupDescr::exceeds_retention_rule)
      * is initialized accordingly and must already be a valid

@@ -489,7 +489,7 @@ bool WALStreamerProcess::receive() {
     XLOGStreamMessage *message = nullptr;
 
     /**
-     * Before doing anything, check wether our stop
+     * Before doing anything, check whether our stop
      * handler wants to exit.
      */
     if (this->stopHandlerWantsExit()) {
@@ -499,7 +499,7 @@ bool WALStreamerProcess::receive() {
     }
 
     /*
-     * Next we check wether we should send a status update message
+     * Next we check whether we should send a status update message
      * to upstream. This is always the case if our internal
      * timeout value forces us to do.
      *
@@ -719,7 +719,7 @@ PGresult *WALStreamerProcess::handleEndOfStream() {
   result = PQgetResult(this->pgconn);
 
   /*
-   * Check wether we are still in COPY IN mode.
+   * Check whether we are still in COPY IN mode.
    */
   if (result != NULL && (PQresultStatus(result) == PGRES_COPY_IN)) {
 
@@ -811,7 +811,7 @@ PGresult *WALStreamerProcess::end() {
   /*
    * Make sure we indicate success
    *
-   * We must tell the caller wether this was a graceful shutdown
+   * We must tell the caller whether this was a graceful shutdown
    * or a timeline switch.
    */
 

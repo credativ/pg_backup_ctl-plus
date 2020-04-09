@@ -64,7 +64,7 @@ namespace credativ {
      * segment which safes some of its properties.
      *
      * The LauncherSHM shared memory area is to
-     * control wether a launcher instance is already started
+     * control whether a launcher instance is already started
      * and to safe operation states. Only one launcher
      * shared memory segment exists per catalog and
      * only the launcher itself should be attached to it.

@@ -34,7 +34,7 @@ namespace credativ {
     std::shared_ptr<BackupCleanupDescr> cleanupDescr = nullptr;
 
     /**
-     * Internal rule action specifier. Determines wether
+     * Internal rule action specifier. Determines whether
      * we are instructed to keep or drop the basebackups meeting
      * the label regular expression.
      */

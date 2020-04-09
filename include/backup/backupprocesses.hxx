@@ -81,7 +81,7 @@ namespace credativ {
   private:
 
     /**
-     * Internal method to check wether a specified
+     * Internal method to check whether a specified
      * stop handler was set.
      */
     virtual bool stopHandlerWantsExit();
@@ -180,7 +180,7 @@ namespace credativ {
 
     /**
      * Assign a stop signal handler to a WALStreamerProcess
-     * instance. This handler is used to check wether we
+     * instance. This handler is used to check whether we
      * received an asynchronous stop signal somehow.
      */
     virtual void assignStopHandler(JobSignalHandler *handler);
@@ -225,7 +225,7 @@ namespace credativ {
      * XLOG streaming. Returns FALSE if the WAL stream stopped,
      * otherwise will enter a receive loop.
      *
-     * The caller can check by the method reason(), wether
+     * The caller can check by the method reason(), whether
      * the XLOG stream terminated somehow or we need to create a new log
      * segment or et al. See reason() for more information.
      */
@@ -300,7 +300,7 @@ namespace credativ {
   private:
 
     /**
-     * Internal method to check wether a specified
+     * Internal method to check whether a specified
      * stop handler was set.
      */
     virtual bool stopHandlerWantsExit();
@@ -413,7 +413,7 @@ namespace credativ {
 
     /**
      * Assign a stop signal handler to a WALStreamerProcess
-     * instance. This handler is used to check wether we
+     * instance. This handler is used to check whether we
      * received an asynchronous stop signal somehow.
      */
     virtual void assignStopHandler(JobSignalHandler *handler);

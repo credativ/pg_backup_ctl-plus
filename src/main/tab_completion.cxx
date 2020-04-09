@@ -835,7 +835,7 @@ void recognize_previous_words(std::vector<std::string> previous_words) {
       }
 
       /*
-       * We didn't match a keyword, examine wether
+       * We didn't match a keyword, examine whether
        * we expect an identifier for completion.
        */
       if (c_word.type == COMPL_IDENTIFIER) {

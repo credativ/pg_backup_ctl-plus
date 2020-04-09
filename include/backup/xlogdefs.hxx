@@ -86,7 +86,7 @@ namespace credativ {
     virtual void wantsResponse();
 
     /**
-     * Tells wether message has a response flag set.
+     * Tells whether message has a response flag set.
      */
     virtual bool responseRequested();
 

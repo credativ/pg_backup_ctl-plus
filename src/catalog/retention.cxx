@@ -288,7 +288,7 @@ bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDesc
     return result;
 
   /*
-   * Check wether the current timeline is already initialized.
+   * Check whether the current timeline is already initialized.
    */
   it = cleanupDescr->off_list.find(timeline);
 
@@ -306,7 +306,7 @@ bool Retention::XLogCleanupOffsetKeep(shared_ptr<BackupCleanupDescr> cleanupDesc
                                                                                       cleanup_offset)).second) {
 
       /*
-       * This is unexpected. We have checked wether the timeline
+       * This is unexpected. We have checked whether the timeline
        * already has a cleanup offset attached. If we're landing here,
        * this means something went terribly wrong.
        */
@@ -607,7 +607,7 @@ unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDesc
    * Start again at the end of the list, move <count> basebackups
    * upwards until we've reached the requested threshold.
    *
-   * This way the caller has a chance to check wether the retention
+   * This way the caller has a chance to check whether the retention
    * could be successfully applied.
    *
    * Since we traverse the list from the oldest to the newest
@@ -637,7 +637,7 @@ unsigned int CountRetention::drop_num(std::vector<std::shared_ptr<BaseBackupDesc
     /*
      * Be paranoid:
      *
-     * This is an additional check wether we would
+     * This is an additional check whether we would
      * violate the number of valid basebackups currently
      * in the archive by deleting the current basebackup.
      *
@@ -713,7 +713,7 @@ unsigned int CountRetention::keep_num(std::vector<std::shared_ptr<BaseBackupDesc
    *
    * If the list ends *before* we can satisfy the retention policy,
    * we abort.
-   * This way the caller has a chance to check wether the retention
+   * This way the caller has a chance to check whether the retention
    * could be successfully applied.
    */
   for (it = list.begin(); it != list.end(); ++it) {
@@ -750,7 +750,7 @@ unsigned int CountRetention::keep_num(std::vector<std::shared_ptr<BaseBackupDesc
 
     }
 
-    /* Increase counter and check wether we have reached desired
+    /* Increase counter and check whether we have reached desired
      * retention count. If still not there, keep the basebackup in any case. */
     bbcounted++;
 
@@ -979,7 +979,7 @@ unsigned int CleanupRetention::apply(std::vector<std::shared_ptr<BaseBackupDescr
     if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) {
 
       /*
-       * Okay, this is hard, we need to know wether any other
+       * Okay, this is hard, we need to know whether any other
        * streaming worker is currently responsible for this
        * basebackup. Since we can't reliable do this here, we print
        * a WARNING and skip this basebackup for now.
@@ -1129,7 +1129,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
 
   /*
    * Loop through the list of basebackups. We need to check
-   * wether the stopped timestamp exceeds the specified datetime
+   * whether the stopped timestamp exceeds the specified datetime
    * threshold. We true, move the basebackup into the deletion candidates
    * list, but only if it is not pinned.
    */
@@ -1152,7 +1152,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
      */
     BackupLockInfoType lockType = locked(bbdescr);
 
-    /* Check wether retention policy is exceeded */
+    /* Check whether retention policy is exceeded */
     this->catalog->exceedsRetention(bbdescr,
                                     this->ruleType,
                                     this->interval);
@@ -1160,7 +1160,7 @@ unsigned int DateTimeRetention::apply(std::vector<std::shared_ptr<BaseBackupDesc
     if (bbdescr->exceeds_retention_rule) {
 
 
-      /* Check wether this basebackup is "in-progress" */
+      /* Check whether this basebackup is "in-progress" */
       if (bbdescr->status == BaseBackupDescr::BASEBACKUP_STATUS_IN_PROGRESS) {
 
         BOOST_LOG_TRIVIAL(warning) << "basebackup can be deleted, but is in-progress, ignoring";
@@ -1444,7 +1444,7 @@ unsigned int LabelRetention::apply(vector<shared_ptr<BaseBackupDescr>> deleteLis
      * Apply regex to label.
      *
      * The outcoming action here depends on the RetentionRuleId
-     * flag set within ruleType. This tells us wether we want to keep
+     * flag set within ruleType. This tells us whether we want to keep
      * (RETENTION_KEEP_WITH_LABEL) or drop (RETENTION_DROP_WITH_LABEL)
      * the scanned basebackups.
      */
@@ -1721,7 +1721,7 @@ unsigned int PinRetention::action_Pinned(vector<shared_ptr<BaseBackupDescr>> &li
    * we are instructed to unpin all currently pinned basebackups.
    *
    * The algorithm is simple: Loop through the list of
-   * BaseBackupDescr, examing each wether it its pinned or not.
+   * BaseBackupDescr, examing each whether it its pinned or not.
    * If true, stack it into the basebackupIds vector and
    * call the unpin action.
    */

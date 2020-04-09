@@ -78,7 +78,7 @@ namespace credativ {
                                bool error_if_not_exists = false);
 
     /**
-     * Determines wether the underlying pipe
+     * Determines whether the underlying pipe
      * was opened in read or write-only mode.
      */
     virtual bool writeable();

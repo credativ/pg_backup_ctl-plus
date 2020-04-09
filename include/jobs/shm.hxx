@@ -426,7 +426,7 @@ namespace credativ {
     virtual void reset();
 
     /**
-     * Tells wether the specified slot index
+     * Tells whether the specified slot index
      * is empty.
      */
     virtual bool isEmpty(unsigned int slot_index);

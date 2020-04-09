@@ -89,7 +89,7 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
 
     /*
      * We need to allocate a new WAL segment file. Before, we
-     * do a sanity check, wether the current waloffset really
+     * do a sanity check, whether the current waloffset really
      * starts at the beginning of a WAL segment.
      *
      * This is the same approach, pg_receivewal does during streaming
@@ -112,7 +112,7 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
 
     /*
      * Initialize the item pointer to the current
-     * WAL segment file. Check wether it's position is
+     * WAL segment file. Check whether it's position is
      * where we expect it.
      */
     item = this->fileList.back();

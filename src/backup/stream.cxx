@@ -333,7 +333,7 @@ PGPing PGStream::testConnection(bool no_throw) {
   PGPing result;
 
   /*
-   * Check wether we need to connect via
+   * Check whether we need to connect via
    * DSN string or connection parameters. See connect()
    * for details
    */
@@ -613,7 +613,7 @@ uint32 PGStream::walSegmentSizeInternal() {
 #else
     /*
      * PostgreSQL < 11 doesn't have IsValidWalSegSize(), so we do
-     * a "not so smart" checking wether the reported segment size
+     * a "not so smart" checking whether the reported segment size
      * is a power of two.
      */
     if (( result % 2) != 0)

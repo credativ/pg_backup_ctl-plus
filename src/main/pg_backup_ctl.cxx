@@ -231,7 +231,7 @@ void init_RtCfg() {
 }
 
 /*
- * Checks wether the on_error_variable was set and returns
+ * Checks whether the on_error_variable was set and returns
  * its value.
  */
 bool on_error_exit() {
@@ -468,7 +468,7 @@ static void executeCommand(PGBackupCtlArgs *args) {
       /*
        * The specified archive directory is not yet
        * registered in the catalog database. We can't create
-       * it immediately, since we need to know wether any compressed
+       * it immediately, since we need to know whether any compressed
        * files are found (which is reflected in the catalog
        * as well). So just remember this task for later action.
        */

@@ -2819,7 +2819,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(std::string baseba
    * basebackup, make sure we loop through it.
    *
    * Code here is doubled in getBackupList() (except the loop header),
-   * but it's not sure wether the code retains here this way. So just
+   * but it's not sure whether the code retains here this way. So just
    * repeat it and leave it to some future work to optimize it.
    */
 
@@ -2989,7 +2989,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(int basebackupId,
    * basebackup, make sure we loop through it.
    *
    * Code here is doubled in getBackupList() (except the loop header),
-   * but it's not sure wether the code retains here this way. So just
+   * but it's not sure whether the code retains here this way. So just
    * repeat it and leave it to some future work to optimize it.
    */
 
@@ -3174,7 +3174,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
  * or RETENTION_DROP_OLDER_BY_DATETIME.
  *
  * This makes four operation modes, but we are only interested
- * wether the datetime value is required to be older or newer
+ * whether the datetime value is required to be older or newer
  * than the selected basebackups.
  */
 std::vector<std::shared_ptr<BaseBackupDescr>>
@@ -5969,7 +5969,7 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
      * ...
      *
      * Where the retention properties are the same for each retention. Thus,
-     * we must check during each iteration wether the retention id has changed,
+     * we must check during each iteration whether the retention id has changed,
      * which indicates a new retention policy to be fetched. We start with a retention
      * id set to -1, which indicates an empty retention policy set.
      *
@@ -5984,7 +5984,7 @@ void BackupCatalog::getRetentionPolicies(vector<shared_ptr<RetentionDescr>> &lis
     this->fetchRetentionPolicy(stmt, retention,
                                Range(0, attributesRetention.size() - 1));
 
-    /* Check wether this is a new retention policy item in the result set */
+    /* Check whether this is a new retention policy item in the result set */
     if ( (curr_retention_id != retention->id)
          && (retention->id >= 0) ) {
 
@@ -7006,7 +7006,7 @@ void BackupCatalog::checkCatalog() {
     throw CCatalogIssue("catalog database doesn't have a \"backup_profiles\" table");
 
   /*
-   * Version check. Examine wether CATALOG_MAGIC and the
+   * Version check. Examine whether CATALOG_MAGIC and the
    * current database schema version match. This is a weak check,
    * since one with access to our sqlite database is able to fake
    * this entry. But better than nothing...
@@ -7138,7 +7138,7 @@ void BackupCatalog::setPragma() {
 }
 
 void BackupCatalog::setCatalogDB(string sqliteDB) {
-  /* we don't care wether the database exists already! */
+  /* we don't care whether the database exists already! */
   this->sqliteDB = sqliteDB;
 }
 

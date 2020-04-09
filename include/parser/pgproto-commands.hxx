@@ -134,7 +134,7 @@ namespace credativ {
       std::shared_ptr<PGProtoResultSet> resultSet = nullptr;
 
       /**
-       * Indicates wether this command instance needs
+       * Indicates whether this command instance needs
        * direct archive access. This means that the caller needs
        * to set the basebackup identifier to this command instance,
        * otherwise the command refuses to work.
@@ -144,7 +144,7 @@ namespace credativ {
       /**
        * Helper routine to prepare and open the backup catalog.
        *
-       * The readwrite arguments configures wether the catalog
+       * The readwrite arguments configures whether the catalog
        * database will accept write transactions, in which case
        * the caller have to pass 'true'.
        */

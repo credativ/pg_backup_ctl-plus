@@ -146,7 +146,7 @@ BackupLockInfoType SHMBackupLockInfo::locked(std::shared_ptr<BaseBackupDescr> ba
 
     /**
      * Looks like there is a child with an attached basebackup,
-     * let's have a look wether it's ours.
+     * let's have a look whether it's ours.
      */
     if (worker_info.basebackup_in_use) {
 

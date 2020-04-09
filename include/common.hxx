@@ -271,7 +271,7 @@ namespace credativ {
 
     /**
      * Resolves the given executable name (specified as boost::filesystem::path)
-     * object wether it can be found in PATH.
+     * object whether it can be found in PATH.
      */
     static bool resolve_file_path(std::string filename);
 

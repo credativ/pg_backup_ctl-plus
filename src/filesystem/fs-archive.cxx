@@ -365,7 +365,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
   /*
    * Loop through the archive log directory, examing each
-   * file there and check wether it might be a XLOG segment file.
+   * file there and check whether it might be a XLOG segment file.
    *
    * If something found, extract a XLogRecPtr from its name and store
    * it.
@@ -538,7 +538,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
 
   /*
    * Loop through the offset list, getting an idea which is the oldest
-   * timeline in there. We need this information later to determine wether
+   * timeline in there. We need this information later to determine whether
    * this TLI is somehow reachable.
    *
    * XXX: This is just a weak guess, since it doesn't mean that this
@@ -624,7 +624,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
          * since there's no basebackup depending on it.
          *
          * If the encountered XLogRecPtr is on a timeline seen
-         * during retention initialization, we check wether the cleanup_start
+         * during retention initialization, we check whether the cleanup_start
          * pos (which is the starting point from where we are going to
          * remove XLOG segment files from the archive) is *equal* or *smaller*
          * than the XLOG segment starting offset retrieved above.
