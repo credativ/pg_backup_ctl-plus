@@ -1492,6 +1492,16 @@ StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
        *
        * Save the backup identifier within the runtime configuration
        * environment.
+       *
+       * Please note that we have three reserved identifier here:
+       *
+       * - newest/latest: this is the latest basebackup, if any
+       * - oldest: the oldest basebackup currently present in the catalog
+       *
+       * The catalog handler will process those special identifier later
+       * and replace the corret FQFN into recovery_instance.basebackup_path.
+       * So any callers relying on a static basebackup_path here are
+       * wrong!
        */
       rtconfig->create("recovery_instance.basebackup_path",
                        basebackup_fqfn,

@@ -98,7 +98,25 @@ std::shared_ptr<BaseBackupDescr> PGProtoCatalogHandler::attach(std::string baseb
 
   }
 
-  attached_basebackup = catalog->getBaseBackup(basebackup_fqfn, archive_id);
+  /*
+   * if basebackup_fqfn is either newest, latest or oldest, we
+   * have to do additional work.
+   */
+  if ( (basebackup_fqfn == "latest") || (basebackup_fqfn == "newest") ) {
+
+    attached_basebackup = catalog->getBaseBackup(BASEBACKUP_NEWEST,
+                                                 archive_id,
+                                                 true);
+
+  } else if (basebackup_fqfn == "oldest") {
+
+    attached_basebackup = catalog->getBaseBackup(BASEBACKUP_OLDEST,
+                                                 archive_id,
+                                                 true);
+
+  } else {
+    attached_basebackup = catalog->getBaseBackup(basebackup_fqfn, archive_id);
+  }
 
   /*
    * If successful, register the basebackup into our shared

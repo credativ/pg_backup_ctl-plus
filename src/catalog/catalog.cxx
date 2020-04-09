@@ -4746,12 +4746,11 @@ void BackupCatalog::close() {
     if (rc == SQLITE_OK) {
       this->isOpen    = false;
       this->db_handle = NULL;
+
     } else if (rc == SQLITE_BUSY) {
       throw CCatalogIssue("attempt to close busy database connection");
     }
 
-  } else {
-    throw CCatalogIssue("attempt to close uninitialized catalog");
   }
 }
 
