@@ -288,19 +288,6 @@ namespace credativ {
 
   };
 
-  /*
-   * Exit codes for startup GUC processing.
-   */
-  typedef enum {
-
-                BASEBACKUP_DOES_NOT_EXIST,
-                BASEBACKUP_ALREADY_USE,
-                STARTUP_GUC_INVALID,
-                STARTUP_GUC_REQUIRED,
-                STARTUP_GUC_OK
-
-  } StartupGUCFailure;
-
   class PGProtoStreamingServer : public PGBackupCtlStreamingServer {
   private:
 
@@ -377,11 +364,10 @@ namespace credativ {
      * Requests a basebackup from the catalog.
      * In case the basebackup exists, this will add the
      * basebackup into the worker shared memory, so that concurrent
-     * caller recognized its usage here. Note that this is explicit
-     * and the the method still can return a specific
-     * startup error code.
+     * caller recognized its usage here. Might throw a
+     * CCatalogIssue in case there are catalog problems.
      */
-    StartupGUCFailure process_startup_guc();
+    void process_startup_guc();
 
     /**
      * Extracts and process the query string from
@@ -1445,7 +1431,7 @@ void PGProtoStreamingServer::pgproto_header_in(const boost::system::error_code& 
 
 }
 
-StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
+void PGProtoStreamingServer::process_startup_guc() {
 
   /*
    * Check if a specific value for the "dbname" parameter was set.
@@ -1527,6 +1513,11 @@ StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
        * name we're using.
        */
       rtconfig->get("recovery_instance.archive_id")->getValue(archive_id);
+
+      /*
+       * PGProtoCatalogHandler::attach() throws a CCatalogIssue
+       * in case the basebackup_fqfn couldn't processed properly.
+       */
       catalogHandler->attach(basebackup_fqfn,
                              archive_id,
                              worker_id,
@@ -1536,8 +1527,6 @@ StartupGUCFailure PGProtoStreamingServer::process_startup_guc() {
     }
 
   }
-
-  return STARTUP_GUC_OK;
 
 }
 
@@ -1552,8 +1541,6 @@ void PGProtoStreamingServer::resetQueryState() {
 void PGProtoStreamingServer::startup_msg_body(const boost::system::error_code& ec,
                                          std::size_t len) {
 
-  StartupGUCFailure guc_processing_status;
-
   _read_startup_gucs();
 
   /*
@@ -1563,21 +1550,20 @@ void PGProtoStreamingServer::startup_msg_body(const boost::system::error_code& e
    * Within the streaming server context here, this means
    * a specific basebackup target was requested.
    */
-  if ((guc_processing_status = process_startup_guc()) != STARTUP_GUC_OK) {
+  try {
 
-    if (guc_processing_status == BASEBACKUP_DOES_NOT_EXIST) {
+    process_startup_guc();
 
-      std::string error_str = "requested basebackup does not exist";
-      msg(pgprotocol::PG_ERR_FATAL, error_str);
-      set_sqlstate("");
-      _send_error();
-      start_write(write_buffer.getSize());
+  } catch (CCatalogIssue &ci) {
 
-      /* Throw here, since we must force our worker to exit hard */
-      throw TCPServerFailure(error_str);
+    std::string error_str = "requested basebackup does not exist";
+    msg(pgprotocol::PG_ERR_FATAL, error_str);
+    set_sqlstate("");
+    _send_error();
+    start_write(write_buffer.getSize());
 
-
-    }
+    /* Throw here, since we must force our worker to exit hard */
+    throw TCPServerFailure(error_str);
 
   }
 
