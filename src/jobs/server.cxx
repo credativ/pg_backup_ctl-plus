@@ -807,7 +807,7 @@ void PGProtoStreamingServer::_startup_header() {
 
     /* No SSL currently, tell the client
      * we are currently not handling SSL requests */
-    write_buffer.assign(&nossl, sizeof(pgprotocol::PGMessageType));
+    write_buffer.assign(&nossl, sizeof(pgprotocol::NoSSLMessage));
 
     /* we're done at this point, send the NoSSL Message */
     return;
@@ -1360,7 +1360,6 @@ void PGProtoStreamingServer::startup_msg_in(const boost::system::error_code& ec,
     /* Call initial_read again to re-read final startup
      * messages to establish SSL/NoSSL */
     initial_read();
-    _startup_header();
 
   }
 
