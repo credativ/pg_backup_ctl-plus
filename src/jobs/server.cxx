@@ -791,7 +791,7 @@ void PGProtoStreamingServer::_startup_header() {
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO len " << msglen;
   BOOST_LOG_TRIVIAL(debug) << "PG PROTO ver " << PG_PROTOCOL_MAJOR(protocolVersion);
 
-    /*
+  /*
    * XXX: honor use_ssl, whether we are forced to SSL.
    */
   if (PG_PROTOCOL_MAJOR(protocolVersion) == 1234) {
