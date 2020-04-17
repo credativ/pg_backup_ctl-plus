@@ -259,6 +259,20 @@ void PGProtoListBasebackups::prepareListOfBackups() {
                        -1,
                        0);
 
+  resultSet->addColumn("started",
+                       0,
+                       0,
+                       PGProtoColumnDescr::PG_TYPEOID_TEXT,
+                       -1,
+                       0);
+
+  resultSet->addColumn("duration",
+                       0,
+                       0,
+                       PGProtoColumnDescr::PG_TYPEOID_TEXT,
+                       -1,
+                       0);
+
   /*
    * Loop through the list. We only consider valid basebackups here, since
    * the command is supposed to inform the caller which basebackups are valid
@@ -283,7 +297,22 @@ void PGProtoListBasebackups::prepareListOfBackups() {
 
     colvalue.length = it->fsentry.length();
     colvalue.data   = it->fsentry;
-    converter.clear();
+
+    /*
+     * Add column data to list.
+     */
+    data.push_back(colvalue);
+
+    colvalue.length = it->started.length();
+    colvalue.data   = it->started;
+
+    /*
+     * Add column data to list.
+     */
+    data.push_back(colvalue);
+
+    colvalue.length = it->duration.length();
+    colvalue.data   = it->duration;
 
     /*
      * Add column data to list.
