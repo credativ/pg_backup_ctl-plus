@@ -117,7 +117,7 @@ implemented:
     retention policy will do nothing.
 
     Following example will drop the two oldest basebackup from the list, but only if
-    at least one current basebackup is available_
+    at least one current basebackup is available
 
     Example::
 
@@ -468,6 +468,28 @@ This command starts a recovery background process attached to the
 specified archive identified by ``<identifier>``. The recovery background
 process can be used to recover a specified basebackup over the PostgreSQL
 Streaming Replication protocol.
+
+A recovery instance must be started for each archive to be able to stream
+a basebackup. Currently only a single ip address can be used to bind
+the instance to. The default is localhost, the default port the recovery instance
+uses is 7432.
+
+A recovery instance is a worker process of ``pg_backup_ctl++`` which can be
+used to stream a basebackup over the PostgreSQL streaming protocol. Thus, it
+is possible to just use the ``pg_basebackup`` tool to stream a basebackup
+from the archive to any host where ``pg_basebackup`` is available.
+
+Start a recovery instance listening on localhost ::1, port 7734
+
+Example::
+
+  START RECOVERY STREAM FOR ARCHIVE pg10 PORT 7734 LISTEN_ON(:::1);
+
+Start a recovery instance listening on 192.168.122.34, default port 7432
+
+Example::
+
+  START RECOVERY STREAM FOR ARCHIVE pg10 LISTEN_ON(192.168.122.34);
 
 START STREAMING FOR ARCHIVE
 ===========================
