@@ -69,7 +69,7 @@ void PGProtoCopyFormat::setFormat(PGProtoCopyFormatType format_type) {
 
     err << "invalid copy format type: \"" << format_type << "\"";
     throw CopyProtocolFailure(err.str());
-    
+
   }
 }
 
@@ -172,7 +172,11 @@ void PGProtoCopyDone::begin() {
 
 }
 
-void PGProtoCopyDone::end() {}
+void PGProtoCopyDone::end() {
+
+  /* nothing to do here */
+
+}
 
 std::size_t PGProtoCopyDone::calculateSize() {
 
@@ -262,7 +266,7 @@ size_t PGProtoCopyIn::calculateSize() {
   size += (sizeof(short) * format.count());
 
   return size;
-  
+
 }
 
 void PGProtoCopyIn::begin() {
@@ -272,11 +276,39 @@ void PGProtoCopyIn::begin() {
 
   /* Write message format identifier */
   buf->write_byte((char)format.getFormat());
-  
+
+  /* Write next 2 bytes, indicating number of columns */
+  buf->write_int(format.count());
+
+  /* Write format array to buffer */
+  for (unsigned int i = 0; i < format.count(); i++) {
+    buf->write_short(format.ptr()[i]);
+  }
+
+  /* we're done */
+
 }
 
 void PGProtoCopyIn::data(ProtocolBuffer *buf) {
 
+  /**
+   * Expect a CopyData message
+   *
+   * When the caller ended here, he hopefully processed
+   * a CopyDataIn message and acknowledged the operation
+   * with a CopyResponseMessage.
+   *
+   * We read our internal buffer now and extract the data
+   * payload into the specified buf argument.
+   */
+
+  /* Sanity check, CopyData message? */
+  if (buf->ptr()[0] != CopyDataMessage) {
+    throw CopyProtocolFailure("expected CopyData message");
+  }
+
+  /* Read message header */
+  
 }
 
 void PGProtoCopyIn::end() {}

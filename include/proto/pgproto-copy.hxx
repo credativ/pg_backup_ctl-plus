@@ -156,7 +156,7 @@ namespace credativ {
   protected:
 
     size_t calculateSize();
-    
+
   public:
 
     PGProtoCopyIn(ProtocolBuffer *buf, const PGProtoCopyFormat &format);
