@@ -71,6 +71,17 @@ can build the command reference as shown below:
 
 The documentation can then be found in the build/ subdirectory.
 
+Source Code Documentation
+-------------------------
+
+There's code and API documentation available via doxygen. The documentation
+can be build with
+
+    $ make doc
+
+After successful execution the documentation should be available in
+doc/html/index.html in the project directory.
+
 CentOS/RHEL 7
 -------------
 
@@ -88,6 +99,20 @@ Another requirement is cmake version >= 3.
       $ CXX="ccache g++" CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake3 ..
       $ BOOST_LIBRARYDIR=/usr/lib64/boost169 BOOST_INCLUDEDIR=/usr/include/boost169 CXX="ccache g++" cmake3 ..
 
+Unit Tests
+----------
+
+The unit test framework has just started its implementation, currently
+some tests in the backup catalog API and parser are present.
+To enable unit tests, you have to build pg_backup_ctl++ with the
+BUILD_UNIT_TEST macro, e.g.
+
+      $ CXX="ccache g++" CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake3 -DBUILD_UNIT_TESTS ..
+
+This will build test test_* binaries and can be executed with
+
+      $ make test
+
 Special compile macros
 ----------------------
 
@@ -104,3 +129,5 @@ PG_BACKUP_CTL_SQLITE: Path to sqlite backup catalog database.  Default
                       is ~/.pg_backup_ctl.sqlite
 
 SYSTEMD_SERVICE_FILE: Installs systemd service files if requested.
+
+BUILD_UNIT_TESTS: Build with unit tests.
