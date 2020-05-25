@@ -212,14 +212,14 @@ void init_RtCfg() {
   std::shared_ptr<ConfigVariable> log_level
     = RtCfg->create("logging.level",
 #ifdef __DEBUG__
-                    std::string("debug"),
+                    string("debug"),
 #else
-                    "info",
+                    string("info"),
 #endif
 #ifdef __DEBUG__
-                    std::string("debug")
+                    string("debug")
 #else
-                    "info"
+                    string("info")
 #endif
                     );
 
