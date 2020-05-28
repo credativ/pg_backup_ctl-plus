@@ -5,6 +5,7 @@
 #include <daemon.hxx>
 #include <stream.hxx>
 #include <fs-pipe.hxx>
+#include <output.hxx>
 #include <shm.hxx>
 #include <retention.hxx>
 #include <rtconfig.hxx>
@@ -2371,18 +2372,30 @@ void ListBackupListCommand::execute(bool flag) {
    */
   vector<shared_ptr<BaseBackupDescr>> backupList
     = this->catalog->getBackupList(temp_descr->archive_name);
+  shared_ptr<OutputFormatConfiguration> output_config
+    = std::make_shared<OutputFormatConfiguration>();
 
   /* Print list, check if VERBOSE was requested */
   if (this->verbose_output) {
-    this->print_verbose(temp_descr,
-                        backupList);
+
+    output_config->create("list_backups.verbose", true, false);
+
   } else {
-    this->print(temp_descr,
-                backupList);
+
+    output_config->create("list_backups.verbose", false, false);
 
   }
 
+  std::shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(output_config,
+                                                                          catalog,
+                                                                          temp_descr,
+                                                                          getOutputFormat());
+  std::ostringstream output;
+  formatter->nodeAs(backupList, output);
   this->catalog->close();
+
+  cout << output.str();
+
 }
 
 ListBackupCatalogCommand::ListBackupCatalogCommand(std::shared_ptr<BackupCatalog> catalog) {

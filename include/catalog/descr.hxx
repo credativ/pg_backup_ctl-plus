@@ -76,7 +76,7 @@ namespace credativ {
     DROP_BASEBACKUP
   } CatalogTag;
 
-  /*
+  /**
    * Compression types supported for backup profiles.
    */
   typedef enum {
@@ -89,6 +89,9 @@ namespace credativ {
 
   } BackupProfileCompressType;
 
+  /**
+   * Replication slot states.
+   */
   typedef enum {
 
     REPLICATION_SLOT_OK,
@@ -96,6 +99,14 @@ namespace credativ {
     REPLICATION_SLOT_ERROR
 
   } ReplicationSlotStatus;
+
+  /**
+   * Output format identifier.
+   */
+  typedef enum {
+                OUTPUT_CONSOLE,
+                OUTPUT_JSON
+  } OutputFormatType;
 
   /**
    * Retention Parser States.
@@ -935,6 +946,8 @@ namespace credativ {
     void setJobDetachMode(bool const& detach);
 
     void setStreamingForceXLOGPositionRestart( bool const& restart );
+
+    OutputFormatType getOutputFormat();
 
     CatalogDescr& operator=(CatalogDescr& source);
   };

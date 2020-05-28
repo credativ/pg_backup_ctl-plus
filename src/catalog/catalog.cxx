@@ -632,6 +632,22 @@ std::shared_ptr<RecoveryStreamDescr> CatalogDescr::getRecoveryStreamDescr() {
 
 }
 
+OutputFormatType CatalogDescr::getOutputFormat() {
+
+  std::string output_format;
+
+  this->runtime_config->get("output.format")->getValue(output_format);
+
+  if (output_format == "json")
+    return OUTPUT_JSON;
+
+  if (output_format == "console")
+    return OUTPUT_CONSOLE;
+
+  throw CPGBackupCtlFailure("unknown option to output.format configuration variable");
+
+}
+
 void CatalogDescr::makeRecoveryStreamDescr() {
 
   if (this->recoveryStream != nullptr) {

@@ -193,6 +193,17 @@ void init_RtCfg() {
 
   RtCfg = make_shared<RuntimeConfiguration>();
 
+  std::unordered_set<std::string> enums;
+
+  /*
+   * Output format
+   */
+  enums.insert("json");
+  enums.insert("console");
+
+  RtCfg->create("output.format", "console", "console", enums);
+  enums.clear();
+
   /*
    * walstreamer.wait_timeout
    */

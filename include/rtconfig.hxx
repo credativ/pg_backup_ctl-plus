@@ -311,8 +311,12 @@ namespace credativ {
    * and are set, updated, those changes are visible through
    * any layer using the same reference to a runtime configuration.
    *
-   * Classes which depend on those settings should inherit from
+   * Classes which depend on those settings globally should inherit from
    * the RuntimeVariableEnvironment base class.
+   *
+   * RuntimeConfiguration and ancestors are also used in various
+   * places where we want to carry specific options to actions around,
+   * see src/catalog/output.cxx for an example.
    */
   class RuntimeConfiguration {
   protected:
