@@ -310,7 +310,21 @@ completion_word create_connection_completion[]
  * Please note that the initialization of those completion tokens
  * are done during runtime in init_readline() !
  */
-completion_word create_bck_prof_param_full[8] ;
+completion_word create_bck_prof_param_full[10] ;
+
+completion_word create_bck_prof_manifest_checksums_setting[]
+= { { "NONE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "CRC32C", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "SHA224", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "SHA256", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "SHA384", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "SHA512", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 9, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
+
+completion_word create_bck_prof_manifest_setting[]
+= { { "TRUE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 8, NULL },
+    { "FALSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 8, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word create_bck_prof_noverify_setting[]
 = { { "TRUE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 7, NULL },
@@ -928,6 +942,10 @@ void init_readline(std::string catalog_name,
   completion_word create_bck_prof_w6
     = { "NOVERIFY", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_noverify_setting, NULL };
   completion_word create_bck_prof_w7
+    = { "MANIFEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_manifest_setting, NULL } ;
+  completion_word create_bck_prof_w8
+    = { "MANIFEST_CHECKSUMS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_manifest_checksums_setting, NULL } ;
+  completion_word create_bck_prof_w9
     = { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } ;
 
   create_bck_prof_param_full[0] = create_bck_prof_w0;
@@ -938,6 +956,8 @@ void init_readline(std::string catalog_name,
   create_bck_prof_param_full[5] = create_bck_prof_w5;
   create_bck_prof_param_full[6] = create_bck_prof_w6;
   create_bck_prof_param_full[7] = create_bck_prof_w7;
+  create_bck_prof_param_full[8] = create_bck_prof_w8;
+  create_bck_prof_param_full[9] = create_bck_prof_w9;
 
   /*
    * Initialize catalog handle for completion queries, iff

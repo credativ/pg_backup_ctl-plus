@@ -35,6 +35,7 @@ namespace credativ {
     BASEBACKUP_STEP_TABLESPACE,
     BASEBACKUP_STEP_TABLESPACE_BASE,
     BASEBACKUP_STEP_TABLESPACE_INTERRUPTED,
+    BASEBACKUP_MANIFEST_INTERRUPTED,
     BASEBACKUP_EOB,
     BASEBACKUP_INIT
 
@@ -417,6 +418,12 @@ namespace credativ {
      * received an asynchronous stop signal somehow.
      */
     virtual void assignStopHandler(JobSignalHandler *handler);
+
+    /**
+     * Receives a backup manifest, if requested by the backup profile.
+     */
+    void receiveManifest(std::shared_ptr<StreamBaseBackup> backupHandle);
+
   };
 
 }

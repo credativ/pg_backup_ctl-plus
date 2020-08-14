@@ -12,7 +12,7 @@ using namespace credativ;
  * NOTE: This needs to be in sync if you add or remove parser
  *       command checks.
  */
-#define NUM_SUCCESSFUL_PARSER_COMMANDS 9
+#define NUM_SUCCESSFUL_PARSER_COMMANDS 16
 #define COMMAND_IS_VALID(cmd, number) ( ((cmd) != nullptr) && ((number)++ > 0) )
 
 BOOST_AUTO_TEST_CASE(TestParser)
@@ -102,6 +102,48 @@ BOOST_AUTO_TEST_CASE(TestParser)
   BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test") );
 
   command = parser.getCommand();
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 10 CREATE BACKUP PROFILE test MANIFEST TRUE */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST TRUE") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 11 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS NONE */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS NONE") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 12 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA224 */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA224") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 13 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA256 */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA256") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 14 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA384 */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA384") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 15 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA512 */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS SHA512") );
+  BOOST_TEST( (command != nullptr) );
+
+  if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );
+
+  /* 16 CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS CRC32 */
+  BOOST_REQUIRE_NO_THROW( parser.parseLine("CREATE BACKUP PROFILE test MANIFEST_CHECKSUMS CRC32C") );
   BOOST_TEST( (command != nullptr) );
 
   if COMMAND_IS_VALID(command, count_parser_checks) BOOST_TEST( (command->getCommandTag() == CREATE_BACKUP_PROFILE) );

@@ -527,7 +527,9 @@ namespace credativ {
           >> -(profile_wal_option)
           >> -(profile_checkpoint_option)
           >> -(profile_wait_for_wal_option)
-          >> -(profile_noverify_checksums_option);
+          >> -(profile_noverify_checksums_option)
+          >> -(profile_manifest_option)
+          >> -(profile_manifest_checksums_option);
 
         /*
          * CREATE RETENTION POLICY <identifier>
@@ -827,6 +829,36 @@ namespace credativ {
               );
 
         /*
+         * CREATE BACKUP PROFILE ... MANIFEST { TRUE | FALSE }
+         */
+        profile_manifest_option = no_case[lexeme[ lit("MANIFEST") ]]
+          >> -lit("=")
+          >> (no_case[lexeme[ lit("TRUE") ]]
+              [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, true) ]
+              | no_case[lexeme[ lit("FALSE") ]]
+              [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, false) ]
+              );
+
+        /*
+         * CREATE BACKUP PROFILE ... MANIFEST_CHECKSUM <checksum method>
+         */
+        profile_manifest_checksums_option = no_case[lexeme[ lit("MANIFEST_CHECKSUMS") ]]
+          >> -lit("=")
+          >> (no_case[lexeme[ lit("CRC32C") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("CRC32C"))]
+              | no_case[lexeme[ lit("NONE") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("NONE"))]
+              | no_case[lexeme[ lit("SHA224") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA224"))]
+              | no_case[lexeme[ lit("SHA256") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA256"))]
+              | no_case[lexeme[ lit("SHA384") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA384"))]
+              | no_case[lexeme[ lit("SHA512") ]]
+              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA512"))]
+              );
+
+        /*
          * We try to support both, quoted and unquoted identifiers. With quoted
          * identifiers, we disallow any embedded double quotes, too.
          */
@@ -921,6 +953,8 @@ namespace credativ {
         with_profile.name("backup profile name");
         verify_check_connection.name("CONNECTION");
         profile_noverify_checksums_option.name("NOVERIFY");
+        profile_manifest_option.name("MANIFEST");
+        profile_manifest_checksums_option.name("MANIFEST_CHECKSUMS");
         retention_rule_with_label.name("WITH LABEL");
         regexp_expression.name("<regular expression>");
         force_systemid_update.name("FORCE_SYSTEMID_UPDATE");
@@ -974,6 +1008,7 @@ namespace credativ {
                           verify_check_connection,
                           show_command_type,
                           profile_noverify_checksums_option,
+                          profile_manifest_option,
                           backup_profile_opts,
                           retention_keep_action,
                           retention_drop_action,
@@ -1001,6 +1036,7 @@ namespace credativ {
                           profile_backup_label_option,
                           with_profile,
                           executable,
+                          profile_manifest_checksums_option,
                           retention_rule_with_label,
                           retention_rule_num_basebackups,
                           regexp_expression,
