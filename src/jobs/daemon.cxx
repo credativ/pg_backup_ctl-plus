@@ -17,6 +17,7 @@ extern "C" {
 /* logging */
 #include <boost/log/trivial.hpp>
 #include <istream>
+#include <stack>
 
 #include <bgrndroletype.hxx>
 #include <daemon.hxx>
