@@ -70,7 +70,7 @@ CREATE TABLE version(
        create_date text not null);
 
 /* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
-INSERT INTO version VALUES(106, datetime('now'));
+INSERT INTO version VALUES(107, datetime('now'));
 
 CREATE TABLE backup_profiles(
        id integer not null,
@@ -82,6 +82,8 @@ CREATE TABLE backup_profiles(
        include_wal integer not null default false,
        wait_for_wal integer not null default true,
        noverify_checksums integer not null default false,
+       manifest boolean not null default false,
+       manifest_checksums text not null default 'CRC32C',
        PRIMARY KEY(id)
 );
 

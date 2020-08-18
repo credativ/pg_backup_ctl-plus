@@ -579,9 +579,8 @@ void StartRecoveryArchiveCommand::execute(bool flag) {
    */
   StreamingServer srv(streamDescr);
 
-  cerr << "instantiated streaming server with port "
-       << this->getRecoveryStreamDescr()->port
-       << endl;
+  BOOST_LOG_TRIVIAL(info) << "instantiated streaming server with port "
+                          << this->getRecoveryStreamDescr()->port;
 
   srv.run();
 
@@ -1524,11 +1523,10 @@ void StartStreamingForArchiveCommand::prepareStream() {
     if (pgstream->streamident.slot->status == REPLICATION_SLOT_EXISTS) {
 
 #ifdef __DEBUG_XLOG__
-      cerr
+      BOOST_LOG_TRIVIAL(debug)
         << "replication slot "
         << pgstream->streamident.slot_name
-        << " exists, trying to reuse it"
-        << endl;
+        << " exists, trying to reuse it";
 #endif
 
       /*
@@ -1604,7 +1602,8 @@ void StartStreamingForArchiveCommand::prepareStream() {
         std::string xlogpos;
 
 #ifdef __DEBUG_XLOG__
-        cerr << "not a clean streamer shutdown, trying to get xlog position from log archive" << endl;
+        BOOST_LOG_TRIVIAL(debug)
+          << "not a clean streamer shutdown, trying to get xlog position from log archive";
 #endif
 
         if (!this->forceXLOGPosRestart) {
@@ -1627,9 +1626,8 @@ void StartStreamingForArchiveCommand::prepareStream() {
             myStream->timeline = pgstream->streamident.timeline;
 
 #ifdef __DEBUG_XLOG__
-            cerr
-              << "no transaction logs found, will start from catalog XLOG position"
-              << endl;
+            BOOST_LOG_TRIVIAL(debug)
+              << "no transaction logs found, will start from catalog XLOG position";
 #endif
 
           } else {
@@ -1637,11 +1635,11 @@ void StartStreamingForArchiveCommand::prepareStream() {
              * We could extract a new XLogRecPtr from the archive.
              */
 #ifdef __DEBUG_XLOG__
-            cerr << "new XLOG/TLI start position determined by archive: "
-                 << xlogpos
-                 << "/"
-                 << new_tli
-                 << endl;
+            BOOST_LOG_TRIVIAL(debug)
+              << "new XLOG/TLI start position determined by archive: "
+              << xlogpos
+              << "/"
+              << new_tli;
 #endif
             pgstream->streamident.xlogpos = xlogpos;
             pgstream->streamident.timeline = new_tli;
@@ -1688,8 +1686,6 @@ void StartStreamingForArchiveCommand::prepareStream() {
    * file.
    */
   pgstream->streamident.updateStartSegmentWriteOffset();
-
-  cerr << "pgstream start write offset " << pgstream->streamident.write_pos_start_offset << endl;
 
   /*
    * Update the slot to reflect current state.
@@ -1772,7 +1768,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     std::string archive_name = this->archive_name;
     std::ostringstream cmd_str;
 
-    cerr << "DETACHING requested" << endl;
+    cout << "DETACHING requested" << endl;
 
     cmd_str << "START STREAMING FOR ARCHIVE "
             << archive_name;
@@ -1878,24 +1874,30 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
      * a XLOG segment, we need to setup the current server's
      * XLOG position to segment start.
      */
-    cerr << "IDENTIFY XLOG says: " << pgstream->streamident.xlogpos << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "IDENTIFY XLOG says: "
+      << pgstream->streamident.xlogpos;
     startpos = pgstream->streamident.xlogposDecoded();
-    cerr << "IDENTIFY XLOG after decode says: " << PGStream::encodeXLOGPos(startpos) << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "IDENTIFY XLOG after decode says: "
+      << PGStream::encodeXLOGPos(startpos);
     startpos = pgstream->XLOGSegmentStartPosition(startpos);
-    cerr << "XLOG start position " << PGStream::encodeXLOGPos(startpos) << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "XLOG start position "
+      << PGStream::encodeXLOGPos(startpos);
     pgstream->streamident.xlogpos = PGStream::encodeXLOGPos(startpos);
 
 
 #ifdef __DEBUG_XLOG__
-    cerr << "IDENTIFICATION (TLI/XLOGPOS) "
-         << pgstream->streamident.timeline
-         << "/"
-         << pgstream->streamident.xlogpos
-         << " XLOG_SEG_SIZE "
-         << pgstream->getWalSegmentSize()
-         << " SYSID "
-         << pgstream->streamident.systemid
-         << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "IDENTIFICATION (TLI/XLOGPOS) "
+      << pgstream->streamident.timeline
+      << "/"
+      << pgstream->streamident.xlogpos
+      << " XLOG_SEG_SIZE "
+      << pgstream->getWalSegmentSize()
+      << " SYSID "
+      << pgstream->streamident.systemid;
 #endif
 
     /*
@@ -1944,9 +1946,9 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
       StreamIdentification walstreamerIdent;
 
 #ifdef __DEBUG_XLOG__
-      cerr << "DEBUG: WAL streaming on timeline "
-           << walstreamer->getCurrentTimeline()
-           << endl;
+      BOOST_LOG_TRIVIAL(debug)
+        << "DEBUG: WAL streaming on timeline "
+        << walstreamer->getCurrentTimeline();
 #endif
 
       /*
@@ -1967,10 +1969,10 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         MemoryBuffer timelineHistory;
 
 #ifdef __DEBUG_XLOG__
-        cerr << "DEBUG: checking timeline "
-             << walstreamer->getCurrentTimeline()
-             << " history"
-             << endl;
+        BOOST_LOG_TRIVIAL(debug)
+          << "DEBUG: checking timeline "
+          << walstreamer->getCurrentTimeline()
+          << " history";
 #endif
 
         /*
@@ -1999,8 +2001,9 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
             tli_history_file->close();
 
 #ifdef __DEBUG_XLOG_
-            std::cerr << "got history file " << historyFilename
-                      << " and its content" << std::endl;
+            BOOST_LOG_TRIVIAL(debug)
+              << "got history file " << historyFilename
+              << " and its content";
 #endif
 
           } catch (CArchiveIssue &ai) {
@@ -2066,7 +2069,8 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         } else {
 
           /* oops, this is unexpected here */
-          std::cerr << "unexpected WAL streamer state: " << reason << std::endl;
+          BOOST_LOG_TRIVIAL(debug)
+            << "unexpected WAL streamer state: " << reason;
           break;
 
         }
@@ -2090,7 +2094,8 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
         } else {
 
           /* oops, this is unexpected here */
-          std::cerr << "unexpected WAL streamer state: " << reason << std::endl;
+          BOOST_LOG_TRIVIAL(debug)
+            << "unexpected WAL streamer state: " << reason;
           break;
 
         }
@@ -2591,7 +2596,9 @@ void StartBasebackupCatalogCommand::execute(bool background) {
   if (this->backup_profile->name != "") {
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: checking for profile " << this->backup_profile->name << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "DEBUG: checking for profile "
+      << this->backup_profile->name;
 #endif
 
     this->catalog->startTransaction();
@@ -2634,7 +2641,8 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     }
 
 #ifdef __DEBUG__
-    cerr << "PROFILE keyword not specified, using \"default\" backup profile" << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "PROFILE keyword not specified, using \"default\" backup profile";
 #endif
 
     /*
@@ -2677,7 +2685,8 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     pgstream.connect();
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: connecting stream" << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "DEBUG: connecting stream";
 #endif
 
     /*
@@ -2686,7 +2695,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     pgstream.identify();
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: identify stream" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: identify stream";
 #endif
 
     /*
@@ -2698,8 +2707,10 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     switch(this->check(temp_descr->id, pgstream.streamident)) {
     case BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE:
       {
-        cerr << "WARNING: we are streaming a basebackup with a new systemid" << endl;
-        cerr << "         new systemid = " << pgstream.streamident.systemid << endl;
+        BOOST_LOG_TRIVIAL(debug)
+          << "WARNING: we are streaming a basebackup with a new systemid\n"
+          << "         new systemid = "
+          << pgstream.streamident.systemid;
         break;
       }
     case BASEBACKUP_CATALOG_INVALID_SYSTEMID:
@@ -2742,7 +2753,8 @@ void StartBasebackupCatalogCommand::execute(bool background) {
 
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: basebackup stream handle initialize" << endl;
+    BOOST_LOG_TRIVIAL(debug)
+      << "DEBUG: basebackup stream handle initialize";
 #endif
 
     /*
@@ -2776,7 +2788,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
       basebackupDescr->archive_id = temp_descr->id;
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
 
-      cerr << "directory handle path " << basebackupDescr->fsentry << endl;
+      BOOST_LOG_TRIVIAL(info) << "directory handle path " << basebackupDescr->fsentry;
 
       this->catalog->registerBasebackup(temp_descr->id,
                                         basebackupDescr);
@@ -2793,7 +2805,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     basebackup_registered = true;
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: basebackup stream started" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: basebackup stream started";
 #endif
 
     /*
@@ -2802,19 +2814,18 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     bbp->readTablespaceInfo();
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: basebackup tablespace meta info requested" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: basebackup tablespace meta info requested";
 #endif
 
     /*
      * Loop through tablespaces and stream their contents.
      */
     while(bbp->stepTablespace(backupHandle,
-                              tablespaceDescr)) {
+                               tablespaceDescr)) {
 #ifdef __DEBUG__
-      cerr << "streaming tablespace OID "
-           << tablespaceDescr->spcoid
-           << ",size " << tablespaceDescr->spcsize
-           << endl;
+      BOOST_LOG_TRIVIAL(debug) << "streaming tablespace OID "
+                               << tablespaceDescr->spcoid
+                               << ",size " << tablespaceDescr->spcsize;
 #endif
       /*
        * Since we register each backup tablespace, we need
@@ -2834,6 +2845,14 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     }
 
     /*
+     * Get backup manifest data, if requested. We always
+     * save the file along with the backup files.
+     */
+    if (backupProfile->manifest) {
+      bbp->receiveManifest(backupHandle);
+    }
+
+    /*
      * Call end position in backup stream.
      */
     bbp->end();
@@ -2842,7 +2861,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      * And disconnect
      */
 #ifdef __DEBUG__
-    cerr << "DEBUG: disconnecting stream" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: disconnecting stream";
 #endif
 
     pgstream.disconnect();
@@ -2864,7 +2883,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
         txinprogress = true;
 
 #ifdef __DEBUG__
-        cerr << "DEBUG: marking basebackup as aborted" << endl;
+        BOOST_LOG_TRIVIAL(debug) << "DEBUG: marking basebackup as aborted";
 #endif
 
         this->catalog->abortBasebackup(bbp->getBaseBackupDescr());
@@ -3063,6 +3082,13 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
       /* Profile NOVERIFY */
       cout << boost::format("%-25s\t%-30s") % "NOVERIFY CHECKSUMS" % profile->noverify_checksums << endl;
+
+      /* Profile MANIFEST */
+      cout << boost::format("%-25s\t%-30s") % "MANIFEST" % profile->manifest << endl;
+
+      /* Profile MANIFEST_CHECKSUMS */
+      cout << boost::format("%-25s\t%-30s") % "MANIFEST CHECKSUMS" % profile->manifest_checksums << endl;
+
     }
 
     catalog->commitTransaction();
@@ -3471,12 +3497,12 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
     deleted += retention_rule->apply(this->bblist);
 
 #ifdef __DEBUG__
-    cerr
+    BOOST_LOG_TRIVIAL(debug)
       << "DEBUG: deletion candidates: "
       << deleted
       << " basebackups with rule \""
       << retention_rule->asString()
-      << "\"" << endl;
+      << "\"";
 #endif
 
     /*
@@ -3513,10 +3539,10 @@ shared_ptr<BackupCleanupDescr> ApplyRetentionPolicyCommand::applyRulesAndRemoveB
       if (it == fslookuptable.end() ) {
 
 #ifdef __DEBUG__
-        cerr << "DEBUG: preparing file "
-             << bbdescr->fsentry
-             << " for FS lookup table "
-             << endl;
+        BOOST_LOG_TRIVIAL(debug) << "DEBUG: preparing file "
+                                 << bbdescr->fsentry
+                                 << " for FS lookup table "
+                                 << endl;
 #endif
 
         fslookuptable.emplace(bbdescr->fsentry, bbdescr);
@@ -3570,7 +3596,8 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
     unsigned long long wal_segment_size = 0;
 
 #ifdef __DEBUG__
-    cerr << "DEBUG: operating on directory " << this->directory << endl;
+    BOOST_LOG_TRIVIAL(debug) << "DEBUG: operating on directory "
+                             << this->directory;
 #endif
 
     this->catalog->startTransaction();
@@ -3636,7 +3663,7 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
       boost::system::error_code ec;
 
 #ifdef __DEBUG__
-      cerr << "deleting fs path " << basebackup->fsentry << endl;
+      BOOST_LOG_TRIVIAL(debug) << "deleting fs path " << basebackup->fsentry;
 #endif
 
       if (wal_segment_size == 0) {
@@ -3644,9 +3671,8 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
       }
 
 #ifdef __DEBUG_XLOG__
-      cerr << "DEBUG: cleaning with wal_segment_size="
-           << wal_segment_size
-           << endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: cleaning with wal_segment_size="
+                               << wal_segment_size;
 #endif
 
       /*
@@ -3662,10 +3688,9 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
        */
       if (ec.value() == boost::system::errc::no_such_file_or_directory) {
 
-        cerr << "WARNING: basebackup in file/directory "
-             << basebackup->fsentry
-             << " already gone."
-             << endl;
+        BOOST_LOG_TRIVIAL(debug) << "WARNING: basebackup in file/directory "
+                                 << basebackup->fsentry
+                                 << " already gone.";
 
       } else if (ec.value() != boost::system::errc::success) {
 
@@ -3677,9 +3702,8 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
        * Perform archive cleanup procedures...
        */
 #ifdef __DEBUG__
-      cerr << "DEBUG: cleaning archive log directory "
-           << archiveLogDir->getPath()
-           << endl;
+      BOOST_LOG_TRIVIAL(debug) << "DEBUG: cleaning archive log directory "
+                               << archiveLogDir->getPath();
 #endif
 
       archiveLogDir->checkCleanupDescriptor(archiveCleanupDescr);
@@ -3790,7 +3814,8 @@ void CreateRetentionPolicyCommand::execute(bool flag) {
      * to create it.
      */
 #ifdef __DEBUG__
-    cerr << "creating retention rule with identifier " << this->retention->name << endl;
+    BOOST_LOG_TRIVIAL(debug) << "creating retention rule with identifier "
+                             << this->retention->name;
 #endif
 
     this->catalog->createRetentionPolicy(this->retention);
@@ -3935,12 +3960,15 @@ void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
     throw CArchiveIssue("could not execute archive command: no catalog");
 
 #ifdef __DEBUG__
-  cout << "name: " << this->profileDescr->name << endl;
-  cout << "compression: " << this->profileDescr->compress_type << endl;
-  cout << "max rate: " << this->profileDescr->max_rate << endl;
-  cout << "label: " << this->profileDescr->label << endl;
-  cout << "wal included: " << this->profileDescr->include_wal << endl;
-  cout << "wait for wal: " << this->profileDescr->wait_for_wal << endl;
+  BOOST_LOG_TRIVIAL(debug) << "profile attributes";
+  BOOST_LOG_TRIVIAL(debug) << "name: " << this->profileDescr->name;
+  BOOST_LOG_TRIVIAL(debug) << "compression: " << this->profileDescr->compress_type;
+  BOOST_LOG_TRIVIAL(debug) << "max rate: " << this->profileDescr->max_rate;
+  BOOST_LOG_TRIVIAL(debug) << "label: " << this->profileDescr->label;
+  BOOST_LOG_TRIVIAL(debug) << "wal included: " << this->profileDescr->include_wal;
+  BOOST_LOG_TRIVIAL(debug) << "wait for wal: " << this->profileDescr->wait_for_wal;
+  BOOST_LOG_TRIVIAL(debug) << "manifest: " << this->profileDescr->manifest;
+  BOOST_LOG_TRIVIAL(debug) << "manifest checksums: " << this->profileDescr->manifest_checksums;
 #endif
 
   /*
@@ -3988,6 +4016,8 @@ void CreateBackupProfileCatalogCommand::execute(bool existsOk) {
       attr.push_back(SQL_BCK_PROF_INCL_WAL_ATTNO);
       attr.push_back(SQL_BCK_PROF_WAIT_FOR_WAL_ATTNO);
       attr.push_back(SQL_BCK_PROF_NOVERIFY_CHECKSUMS_ATTNO);
+      attr.push_back(SQL_BCK_PROF_MANIFEST_ATTNO);
+      attr.push_back(SQL_BCK_PROF_MANIFEST_CHECKSUMS_ATTNO);
 
       this->profileDescr->setAffectedAttributes(attr);
       this->catalog->createBackupProfile(this->profileDescr);

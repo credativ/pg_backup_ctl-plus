@@ -1072,6 +1072,20 @@ void BaseBackupProcess::start() {
     query << " NOVERIFY_CHECKSUMS ";
 
   /*
+   * PostgreSQL 13 introduces backup manifests, check
+   * if the profile requested that feature and make sure
+   * we have a server version >= 13.
+   */
+  if ( (this->profile->manifest)
+       && (PQserverVersion(this->pgconn) >= 130000) ) {
+
+    query << " MANIFEST 'yes' ";
+    query << " MANIFEST_CHECKSUMS "
+          << "'" << this->profile->manifest_checksums << "'";
+
+  }
+
+  /*
    * We always request the tablespace map from the stream.
    */
   query << " TABLESPACE_MAP;";
@@ -1257,6 +1271,92 @@ void BaseBackupProcess::readTablespaceInfo() {
    * okay, looks like all meta information is there...
    */
   this->current_state = BASEBACKUP_TABLESPACE_READY;
+}
+
+void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backupHandle) {
+
+  std::shared_ptr<BackupFile> manifest_file = nullptr;
+  bool interrupted = false;
+  char *copybuf = NULL;
+  PGresult *res;
+  int rc;
+
+  if (!backupHandle->isInitialized())
+    throw StreamingFailure("could not receive backup manifest");
+
+  if (this->current_state != BASEBACKUP_EOB)
+    throw StreamingFailure("unexpected state while retrieving backup manifest");
+
+  /* Should have a valid result set with copy data */
+  res = PQgetResult(pgconn);
+
+  if (PQresultStatus(res) != PGRES_COPY_OUT) {
+    std::ostringstream oss;
+
+    oss << "could not get COPY data for backup manifest: ";
+    oss << PQerrorMessage(pgconn);
+    PQclear(res);
+    throw StreamingFailure(oss.str());
+
+  }
+
+  /*
+   * Make the manifest file handle.
+   *
+   * The contents of a manifest are plain, so we have to
+   * make sure we get the right compression type and reset
+   * it to the former one to not confuse our callers.
+   */
+  BackupProfileCompressType former_compression = backupHandle->getCompression();
+  backupHandle->setCompression(BACKUP_COMPRESS_TYPE_NONE);
+  manifest_file = backupHandle->stackFile("backup_manifest");
+  backupHandle->setCompression(former_compression);
+
+  while(true) {
+
+    if (copybuf != NULL) {
+      PQfreemem(copybuf);
+      copybuf = NULL;
+    }
+
+    rc = PQgetCopyData(pgconn, &copybuf, 0);
+
+    if (rc == -1) {
+      /* end of copy data */
+      break;
+    } else if (rc == -2) {
+      std::ostringstream oss;
+
+      oss << "could not read manifest COPY data: ";
+      oss << PQerrorMessage(pgconn);
+      throw StreamingFailure(oss.str());
+
+    }
+
+    manifest_file->write(copybuf, rc);
+
+    /*
+     * Check if we are requested to stop.
+     *
+     * If true, we remember that we were interrupted.
+     */
+    if (this->stopHandlerWantsExit()) {
+      interrupted = true;
+      break;
+    }
+
+  }
+
+  /*
+   * Receiving the manifest is the last action during base backups,
+   * mark the internal start to finish backup.
+   */
+  if (!interrupted)
+    this->current_state = BASEBACKUP_EOB;
+  else
+    this->current_state = BASEBACKUP_MANIFEST_INTERRUPTED;
+
+
 }
 
 bool BaseBackupProcess::stepTablespace(std::shared_ptr<StreamBaseBackup> backupHandle,

@@ -917,6 +917,10 @@ namespace credativ {
 
     void setDirectory(std::string const& directory);
 
+    void setProfileManifest(bool const& manifest);
+
+    void setProfileManifestChecksumsIdent(std::string const& manifest_checksum_ident);
+
     void setProfileNoVerify(bool const& noverify);
 
     void setProfileName(std::string const& profile_name);
@@ -969,6 +973,8 @@ namespace credativ {
     bool include_wal     = false;
     bool wait_for_wal    = true;
     bool noverify_checksums = false;
+    bool manifest           = false;
+    std::string manifest_checksums = "CRC32C";
   };
 
   /*

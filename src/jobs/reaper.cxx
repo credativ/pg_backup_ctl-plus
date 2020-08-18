@@ -1,4 +1,5 @@
 #include <boost/log/trivial.hpp>
+#include <stack>
 
 /* project includes */
 #include <reaper.hxx>

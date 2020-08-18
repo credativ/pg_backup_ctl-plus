@@ -202,6 +202,7 @@ Syntax::
     [MAX_RATE <KBytes per second>]
     [WAIT_FOR_WAL { TRUE|FALSE }]
     [WAL { EXCLUDED|INCLUDED }]
+    [NOVERIFY { TRUE|FALSE }]
 
 A backup profile is basically as set of configuration options on how
 to perform basebackups. The PostgreSQL streaming protocol for basebackups
@@ -234,6 +235,24 @@ The specific options are:
 +------------+----------+------------------------------------------------------------+----------+
 | LABEL      | String   | Backup label string, default is PG_BCK_CTL BASEBACKUP      |          |
 +------------+----------+------------------------------------------------------------+----------+
+| NOVERIFY   | TRUE     | Do no check page checksums during backup                   | FALSE    |
+|            +----------+------------------------------------------------------------+          |
+|            | FALSE    | Leaves checksum checking during backup on                  |          |
++------------+----------+------------------------------------------------------------+----------+
+| MANIFEST   | TRUE     | Include backup manifest file                               | FALSE    |
+|            +----------+------------------------------------------------------------+          |
+|            | FALSE    | Omit backup manifest file                                  |          |
++------------+----------+------------------------------------------------------------+----------+
+| MANIFEST_CHECKSUMS    | Specifies a string identifying the method to be used       | CRC32    |
+|                       | to create file checksums used in the manifest file         |          |
++------------+----------+------------------------------------------------------------+----------+
+
+.. note::
+
+   Specific options aren't available in all supported PostgreSQL versions. If a backup profile
+   is used (see the ``START BASEBACKUP`` command reference for details) with options not supported
+   by the PostgreSQL version, the option will be ignored. This behavior should avoid having
+   special profiles for all kind of different PostgreSQL versions.
 
 LIST ARCHIVE
 ============
