@@ -1302,8 +1302,15 @@ void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backup
 
   /*
    * Make the manifest file handle.
+   *
+   * The contents of a manifest are plain, so we have to
+   * make sure we get the right compression type and reset
+   * it to the former one to not confuse our callers.
    */
+  BackupProfileCompressType former_compression = backupHandle->getCompression();
+  backupHandle->setCompression(BACKUP_COMPRESS_TYPE_NONE);
   manifest_file = backupHandle->stackFile("backup_manifest");
+  backupHandle->setCompression(former_compression);
 
   while(true) {
 
