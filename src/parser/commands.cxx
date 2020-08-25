@@ -2123,222 +2123,6 @@ ListBackupListCommand::ListBackupListCommand(shared_ptr<CatalogDescr> descr) {
 
 }
 
-ListBackupListCommand::ListBackupListCommand(shared_ptr<BackupCatalog> catalog) {
-
-  this->catalog = catalog;
-  this->tag = LIST_BACKUP_LIST;
-
-}
-
-void ListBackupListCommand::print_verbose(std::shared_ptr<CatalogDescr> catalog_descr,
-                                          std::vector<std::shared_ptr<BaseBackupDescr>> &backupList) {
-
-  /*
-   * Format the output.
-   */
-  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + catalog_descr->archive_name,
-                                       boost::format("%-20s\t%-60s") % "Property" % "Value",
-                                       80);
-
-  for (auto &basebackup : backupList) {
-
-    size_t upstream_total_size = 0;
-
-    /*
-     * Directory handle for basebackup directory on disk.
-     */
-    StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
-                                           catalog_descr->directory);
-
-    /*
-     * Details for the backup profile used by the current basebackup.
-     */
-    shared_ptr<BackupProfileDescr> backupProfile
-      = this->catalog->getBackupProfile(basebackup->used_profile);
-
-    /*
-     * Verify state of the current basebackup.
-     */
-    BaseBackupVerificationCode bbstatus
-      = StreamingBaseBackupDirectory::verify(basebackup);
-
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "ID" % basebackup->id);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Pinned" % ( (basebackup->pinned == 0) ? "NO" : "YES" ));
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Backup" % basebackup->fsentry);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Catalog State" % basebackup->status);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Label" % basebackup->label);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "WAL segment size" % basebackup->wal_segment_size);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Started" % basebackup->started);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Timeline" % basebackup->timeline);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "WAL start" % basebackup->xlogpos);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "WAL stop" % basebackup->xlogposend);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "System ID" % basebackup->systemid);
-    cout << CPGBackupCtlBase::makeLine(boost::format("%-20s\t%-60s")
-                                       % "Used Backup Profile" % backupProfile->name);
-
-    /*
-     * Print tablespace information belonging to the current basebackup
-     */
-    cout << CPGBackupCtlBase::makeHeader("tablespaces",
-                                         boost::format("%-20s\t%-60s")
-                                         % "tablespace property"
-                                         % "value", 80);
-
-    for (auto &tablespace : basebackup->tablespaces) {
-
-      /* Check for parent tablespace (also known as pg_default) */
-      if (tablespace->spcoid == 0) {
-
-        cout << " - " << boost::format("%-20s\%-60s")
-          % "upstream location" % "pg_default" << endl;
-        cout << " - " << boost::format("%-20s\%-60s")
-          % "upstream size" % tablespace->spcsize << endl;
-
-      } else {
-
-        cout << " - " << boost::format("%-20s\%-60s")
-          % "oid" % tablespace->spcoid << endl;
-        cout << " - " << boost::format("%-20s\%-60s")
-          % "upstream location" % tablespace->spclocation << endl;
-        cout << " - " << boost::format("%-20s\%-60s")
-          % "upstream size" % tablespace->spcsize << endl;
-
-      }
-
-      upstream_total_size += tablespace->spcsize;
-    }
-
-    cout << "Summary:" << endl;
-    cout << boost::format("%-25s\t%-40s")
-      % "Total size upstream:" % CPGBackupCtlBase::prettySize(upstream_total_size * 1024) << endl;
-
-    /*
-     * Display the state and local size of the basebackup. If the basebackup
-     * doesn't exist anymore, print a warning instead.
-     */
-    if (bbstatus != BASEBACKUP_OK) {
-
-      cout << boost::format("%-25s\t%-40s")
-        % CPGBackupCtlBase::stdout_red("Backup status (ON-DISK):", true)
-        % CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
-
-      cout << boost::format("%-25s\t%-40s")
-        % "Total local backup size:"
-        % "NOT AVAILABLE" << endl;
-
-
-    } else {
-
-      cout << boost::format("%-25s\t%-40s")
-        % "Backup duration" % basebackup->duration << endl;
-
-      cout << boost::format("%-25s\t%-40s")
-        % CPGBackupCtlBase::stdout_green("Backup status (ON-DISK):", true)
-        % CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true) << endl;
-
-      cout << boost::format("%-25s\t%-40s")
-        % "Total local backup size:"
-        % CPGBackupCtlBase::prettySize(directory.size()) << endl;
-
-    }
-
-    cout << CPGBackupCtlBase::makeLine(80) << endl;
-    cout << endl;
-
-  }
-
-}
-
-void ListBackupListCommand::print(std::shared_ptr<CatalogDescr> catalog_descr,
-                                  std::vector<std::shared_ptr<BaseBackupDescr>> &backupList) {
-
-  cout << CPGBackupCtlBase::makeHeader("Basebackups in archive " + catalog_descr->archive_name,
-                                       boost::format("%-5s\t%-35s\t%-40s") % "ID" % "Backup" % "Size",
-                                       80);
-
-  for (auto &basebackup : backupList) {
-
-    /*
-     * Verify state of the current basebackup.
-     */
-    BaseBackupVerificationCode bbstatus
-      = StreamingBaseBackupDirectory::verify(basebackup);
-    std::string status = "";
-
-    /*
-     * Directory handle for basebackup directory on disk.
-     */
-    StreamingBaseBackupDirectory directory(path(basebackup->fsentry).filename().string(),
-                                           catalog_descr->directory);
-
-    /*
-     * Transform basebackup status into its string representation.
-     */
-    if (bbstatus != BASEBACKUP_OK) {
-
-      status = CPGBackupCtlBase::stdout_red(BackupDirectory::verificationCodeAsString(bbstatus), true);
-
-      cout << boost::format("%-5s\t%-35s\t%-40s")
-        % basebackup->id
-        % basebackup->fsentry
-        % "N/A"
-           << endl;
-
-    } else {
-
-      status = CPGBackupCtlBase::stdout_green(BackupDirectory::verificationCodeAsString(bbstatus), true);
-
-      cout << boost::format("%-5s\t%-35s\t%-40s")
-        % basebackup->id
-        % basebackup->fsentry
-        % CPGBackupCtlBase::prettySize(directory.size())
-           << endl;
-
-    }
-
-    /* Print compact list of basebackups */
-
-    cout << "- Details" << endl;
-
-    /* Duration */
-    cout << boost::format("\t%-20s\t%-60s")
-      % "Duration" % basebackup->duration
-         << endl;
-
-    /* Datetime basebackup started */
-    cout << boost::format("\t%-20s\t%-60s")
-      % "Started"
-      % basebackup->started
-         << endl;
-
-    cout << boost::format("\t%-20s\t%-60s")
-      % "Stopped"
-      % basebackup->stopped
-         << endl;
-
-    cout << boost::format("\t%-20s\t%-60s")
-      %" Status"
-      % status
-         << endl;
-
-    cout << CPGBackupCtlBase::makeLine(80);
-    cout << endl;
-
-  }
-
-}
-
 void ListBackupListCommand::execute(bool flag) {
 
   /*
@@ -2374,6 +2158,10 @@ void ListBackupListCommand::execute(bool flag) {
    *
    * This also includes all tablespaces and additional information
    * we need to give a detailed overview about the stored backups.
+   *
+   * NOTE: We don't close the catalog afterwards immediately, since
+   *       OutputFormatter are still doing catalog lookup using
+   *       the catalog instance.
    */
   vector<shared_ptr<BaseBackupDescr>> backupList
     = this->catalog->getBackupList(temp_descr->archive_name);
@@ -2397,6 +2185,10 @@ void ListBackupListCommand::execute(bool flag) {
                                                                           getOutputFormat());
   std::ostringstream output;
   formatter->nodeAs(backupList, output);
+
+  /*
+   * Now we can close the backup catalog safely.
+   */
   this->catalog->close();
 
   cout << output.str();

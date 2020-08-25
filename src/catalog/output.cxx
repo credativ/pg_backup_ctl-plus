@@ -359,6 +359,13 @@ void JsonOutputFormatter::listBackups(std::vector<std::shared_ptr<BaseBackupDesc
     bbackup.put("fsentry", descr->fsentry);
     bbackup.put("started", descr->started);
     bbackup.put("stopped", descr->stopped);
+    bbackup.put("duration", descr->duration);
+
+    oss.str("");
+    oss.clear();
+    oss << descr->tablespaces.size();
+
+    bbackup.put("num_tablespaces", oss.str());
     bbackup.put("size", directory.size());
     bbackup.put("status",
                 BackupDirectory::verificationCodeAsString(StreamingBaseBackupDirectory::verify(descr)));
@@ -374,6 +381,87 @@ void JsonOutputFormatter::listBackups(std::vector<std::shared_ptr<BaseBackupDesc
 
 void JsonOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                              std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree basebackups;
+  std::ostringstream oss;
+
+  oss << list.size();
+  head.put("num_basebackups", oss.str());
+
+  BOOST_FOREACH(const std::shared_ptr<BaseBackupDescr> &descr, list) {
+
+    size_t upstream_total_size = 0;
+    pt::ptree bbackup;
+    pt::ptree tablespaces;
+
+    /*
+     * Directory handle for basebackup directory on disk.
+     */
+    StreamingBaseBackupDirectory directory(path(descr->fsentry).filename().string(),
+                                           catalog_descr->directory);
+
+    /*
+     * Details for the backup profile used by the current basebackup.
+     */
+    shared_ptr<BackupProfileDescr> backupProfile
+      = this->catalog->getBackupProfile(descr->used_profile);
+
+    bbackup.put("id", oss.str());
+    bbackup.put("pinned", (descr->pinned ? "yes" : "no"));
+    bbackup.put("fsentry", descr->fsentry);
+    bbackup.put("catalog state", descr->status);
+    bbackup.put("label", descr->label);
+    bbackup.put("started", descr->started);
+    bbackup.put("stopped", descr->stopped);
+    bbackup.put("duration", descr->duration);
+    bbackup.put("timeline", descr->timeline);
+    bbackup.put("wal start location", descr->xlogpos);
+    bbackup.put("wal stop location", descr->xlogposend);
+    bbackup.put("system id", descr->systemid);
+    bbackup.put("wal segment size", descr->wal_segment_size);
+    bbackup.put("size", directory.size());
+    bbackup.put("status",
+                BackupDirectory::verificationCodeAsString(StreamingBaseBackupDirectory::verify(descr)));
+
+    oss.str("");
+    oss.clear();
+    oss << descr->tablespaces.size();
+
+    bbackup.put("num_tablespaces", oss.str());
+
+    BOOST_FOREACH(const std::shared_ptr<BackupTablespaceDescr> &tblspc, descr->tablespaces) {
+
+      pt::ptree tblspcinfo;
+
+      tblspcinfo.put("tablespace oid", tblspc->spcoid);
+      tblspcinfo.put("tablespace size", tblspc->spcsize);
+
+      /* Check for parent tablespace (also known as pg_default) */
+      if (tblspc->spcoid == 0) {
+        tblspcinfo.put("tablespace location", "pg_default");
+      } else {
+        tblspcinfo.put("tablespace location", tblspc->spclocation);
+      }
+
+      upstream_total_size += tblspc->spcsize;
+      tablespaces.push_back(std::make_pair("", tblspcinfo));
+
+    }
+
+    oss.str("");
+    oss.clear();
+    oss << upstream_total_size;
+    bbackup.put("upstream total size", oss.str());
+    bbackup.push_back(std::make_pair("", tablespaces));
+    basebackups.push_back(std::make_pair("", bbackup));
+
+  }
+
+  head.add_child("basebackups", basebackups);
+  pt::write_json(output, head);
 
 }
 
