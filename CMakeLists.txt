@@ -307,7 +307,7 @@ if(BUILD_UNIT_TESTS)
 
   add_custom_command(OUTPUT .pg_backup_ctl.sqlite
     COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql"
-    DEPENDS ../src/sql/catalog.sql)
+    DEPENDS src/sql/catalog.sql)
 
   add_custom_target(createdb
     DEPENDS .pg_backup_ctl.sqlite)
