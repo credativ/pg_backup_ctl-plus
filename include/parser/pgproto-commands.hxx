@@ -6,6 +6,7 @@
 
 #include <rtconfig.hxx>
 #include <descr.hxx>
+#include <exectx.hxx>
 #include <shm.hxx>
 #include <pgsql-proto.hxx>
 #include <proto-descr.hxx>
@@ -93,6 +94,11 @@ namespace credativ {
     protected:
 
       /**
+       * Executable context this command should run within.
+       */
+      ExecutableContextName executable_context_name = EXECUTABLE_CONTEXT_DEFAULT;
+
+      /**
        * A reference to the worker shared memory handle.
        * Initialized in case a command needs shared memory access.
        */
@@ -161,13 +167,32 @@ namespace credativ {
                               std::shared_ptr<WorkerSHM> worker_shm);
       virtual ~PGProtoStreamingCommand();
 
-      virtual void execute() = 0;
+      /**
+       * Returns the identifier of the executable context required
+       * by a streaming command.
+       */
+      virtual ExecutableContextName getExecutableContextName();
 
+      /**
+       * Abstract method, implementing the leg work of this command.
+       */
+      virtual void execute(std::shared_ptr<ExecutableContext> context) = 0;
+
+      /**
+       * Protocol execution steps.
+       */
       virtual int step(ProtocolBuffer &buffer);
 
+      /**
+       * Returns true if the command handle required backup/archive access.
+       */
       virtual bool needsArchive();
 
+      /**
+       * The command tag this command implements.
+       */
       virtual std::string tag();
+
     };
 
     /**
@@ -184,8 +209,14 @@ namespace credativ {
 
       virtual ~PGProtoIdentifySystem();
 
-      virtual void execute();
+      /**
+       * Does the legwork for IDENTIFY_SYSTEM commands.
+       */
+      virtual void execute(std::shared_ptr<ExecutableContext> context);
 
+      /**
+       * Resets internal protocol steps.
+       */
       virtual void reset();
     };
 
@@ -202,8 +233,14 @@ namespace credativ {
 
       virtual ~PGProtoTimelineHistory();
 
-      virtual void execute();
+      /**
+       * Executes the leg work for TIMELINE_HISTORY commands.
+       */
+      virtual void execute(std::shared_ptr<ExecutableContext> context);
 
+      /**
+       * Resets internal protocol steps.
+       */
       virtual void reset();
 
     };
@@ -239,8 +276,14 @@ namespace credativ {
 
       virtual ~PGProtoListBasebackups();
 
-      virtual void execute();
+      /**
+       * Executes the leg work for LIST_BASEBACKUPS commands.
+       */
+      virtual void execute(std::shared_ptr<ExecutableContext> context);
 
+      /**
+       * Resets the internal protocol steps.
+       */
       virtual void reset();
     };
 

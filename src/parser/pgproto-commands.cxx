@@ -122,6 +122,12 @@ int PGProtoStreamingCommand::step(ProtocolBuffer &buffer) {
 
 }
 
+ExecutableContextName PGProtoStreamingCommand::getExecutableContextName() {
+
+  return executable_context_name;
+
+}
+
 /* ****************************************************************************
  * PGProtoIdentifySystem command ... IDENTIFY_SYSTEM
  * ***************************************************************************/
@@ -141,7 +147,7 @@ PGProtoIdentifySystem::PGProtoIdentifySystem(std::shared_ptr<PGProtoCmdDescr> de
 
 PGProtoIdentifySystem::~PGProtoIdentifySystem() {}
 
-void PGProtoIdentifySystem::execute() {
+void PGProtoIdentifySystem::execute(std::shared_ptr<ExecutableContext> context) {
 
   BOOST_LOG_TRIVIAL(debug) << "IDENTIFY_SYSTEM: using catalog \""
                            << catalogHandler->getCatalogFullname()
@@ -180,7 +186,7 @@ PGProtoTimelineHistory::PGProtoTimelineHistory(std::shared_ptr<PGProtoCmdDescr> 
 
 PGProtoTimelineHistory::~PGProtoTimelineHistory() {}
 
-void PGProtoTimelineHistory::execute() {
+void PGProtoTimelineHistory::execute(std::shared_ptr<ExecutableContext> context) {
 
   BOOST_LOG_TRIVIAL(debug) << "requesting timeline history file for tli="
                            << command_handle->tli;
@@ -331,7 +337,7 @@ void PGProtoListBasebackups::prepareListOfBackups() {
 
 }
 
-void PGProtoListBasebackups::execute() {
+void PGProtoListBasebackups::execute(std::shared_ptr<ExecutableContext> context) {
 
   /*
    * Runtime configuration tells us the

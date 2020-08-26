@@ -28,6 +28,7 @@ extern "C" {
 #include <pgproto-commands.hxx>
 #include <shm.hxx>
 #include <server.hxx>
+#include <exectx.hxx>
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
 
@@ -955,6 +956,8 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
 
       while (!execQueue.empty()) {
 
+        std::shared_ptr<pgprotocol::ExecutableContext> exec_context = nullptr;
+
         int step;
 
         handler = execQueue.front();
@@ -976,7 +979,12 @@ std::string PGProtoStreamingServer::_process_query_execute(size_t qsize) {
 
         }
 
-        cmd->execute();
+        /*
+         * Execute the command handler. We need a suitable executable context
+         * for this, so get the right one requested by the command handler.
+         */
+        exec_context = pgprotocol::ExecutableContext::create(cmd->getExecutableContextName());
+        cmd->execute(exec_context);
 
         while((step = cmd->step(write_buffer)) != -1) {
 

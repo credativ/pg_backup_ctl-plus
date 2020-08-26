@@ -219,6 +219,10 @@ namespace credativ {
 using namespace credativ;
 using namespace credativ::pgprotocol;
 
+/* ****************************************************************************
+ * PostgreSQLStreamingParser
+ * ****************************************************************************/
+
 PostgreSQLStreamingParser::PostgreSQLStreamingParser(std::shared_ptr<RuntimeConfiguration> rtc) {
 
   runtime_configuration = rtc;
