@@ -798,43 +798,15 @@ void ShowWorkersCommandHandle::execute(bool noop) {
    * whatever we want now, since no critical locks
    * are held.
    */
-  for(auto &worker : slots_used) {
+  shared_ptr<OutputFormatConfiguration> output_config
+    = std::make_shared<OutputFormatConfiguration>();
+  shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(output_config,
+                                                                     catalog,
+                                                                     getOutputFormat());
+  ostringstream output;
+  formatter->nodeAs(slots_used, output);
+  cout << output.str();
 
-    string archive_name = "N/A";
-
-    if (worker.archive_id >= 0) {
-      shared_ptr<CatalogDescr> archive_descr = this->catalog->existsById(worker.archive_id);
-
-      if (archive_descr->id >= 0) {
-        archive_name = archive_descr->archive_name;
-      }
-    }
-
-    cout << "WORKER PID " << worker.pid
-         << " | executing " << CatalogDescr::commandTagName(worker.cmdType)
-         << " | archive name " << archive_name
-         << " | archive ID " << worker.archive_id
-         << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
-         << endl;
-
-    /* Print child info, if any */
-    for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
-
-      sub_worker_info child_info = worker.child_info[idx];
-
-      if (child_info.pid > 0) {
-        cout << " `-> CHILD "
-             << idx
-             << " | PID "
-             << child_info.pid
-             << " | "
-             << ((child_info.backup_id < 0) ? "no backup in use" : "backup used: ID="
-                 + CPGBackupCtlBase::intToStr(child_info.backup_id))
-             << endl;
-      }
-    }
-
-  }
 }
 
 ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<CatalogDescr> descr) {
@@ -991,13 +963,20 @@ void ListConnectionCatalogCommand::execute(bool flag) {
 
   try {
 
-    std::shared_ptr<CatalogDescr> tempDescr;
-    std::vector<std::shared_ptr<ConnectionDescr>> connections;
+    shared_ptr<CatalogDescr> tempDescr;
+    vector<std::shared_ptr<ConnectionDescr>> connections;
+    shared_ptr<OutputFormatConfiguration> output_config
+      = std::make_shared<OutputFormatConfiguration>();
 
     /*
      * Check if specified archive is valid.
      */
     tempDescr = this->catalog->existsByName(this->archive_name);
+    shared_ptr<OutputFormatter> formatter
+      = OutputFormatter::formatter(output_config,
+                                   catalog,
+                                   tempDescr,
+                                   getOutputFormat());
 
     /*
      * Normally we don't get a nullptr back from
@@ -1006,6 +985,8 @@ void ListConnectionCatalogCommand::execute(bool flag) {
     if (tempDescr != nullptr
         && tempDescr->id >= 0) {
 
+      std::ostringstream output;
+
       /*
        * Archive exists and existsByName() has initialized
        * our temporary descriptor with its archive_id we need to
@@ -1013,36 +994,9 @@ void ListConnectionCatalogCommand::execute(bool flag) {
        */
       connections = this->catalog->getCatalogConnection(tempDescr->id);
 
-      /*
-       * Print result header
-       */
-      cout << "List of connections for archive \""
-           << this->archive_name
-           << "\""
-           << endl;
+      formatter->nodeAs(connections, output);
+      cout << output.str();
 
-      /*
-       * XXX: createArchive() normally ensures that a
-       *      catalog connection definition of type 'basebackup'
-       *      (CONNECTION_TYPE_BASEBACKUP) exists, at least. But
-       *      we don't rely on this fact, just loop through
-       *      the results and spill them out...
-       *
-       *      getCatalogConnection() returns the shared pointers
-       *      ordered by its type.
-       */
-      for(auto & con : connections) {
-
-        /* item header */
-        cout << CPGBackupCtlBase::makeHeader("connection type " + con->type,
-                                             boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
-                                             80);
-        cout << boost::format("%-15s\t%-60s") % "DSN" % con->dsn << endl;
-        cout << boost::format("%-15s\t%-60s") % "PGHOST" % con->pghost << endl;
-        cout << boost::format("%-15s\t%-60s") % "PGDATABASE" % con->pgdatabase << endl;
-        cout << boost::format("%-15s\t%-60s") % "PGUSER" % con->pguser << endl;
-        cout << boost::format("%-15s\t%-60s") % "PGPORT" % con->pgport << endl;
-      }
     } else {
 
       ostringstream oss;
@@ -3000,6 +2954,13 @@ void ListRetentionPolicyCommand::execute(bool flag) {
   try {
 
     shared_ptr<RetentionDescr> retentionDescr = nullptr;
+    shared_ptr<OutputFormatConfiguration> output_config
+      = std::make_shared<OutputFormatConfiguration>();
+    shared_ptr<OutputFormatter> formatter
+      = OutputFormatter::formatter(output_config,
+                                   catalog,
+                                   getOutputFormat());
+    std::ostringstream output;
 
     this->catalog->startTransaction();
 
@@ -3020,29 +2981,8 @@ void ListRetentionPolicyCommand::execute(bool flag) {
 
     /* Print contents of this policy */
 
-    cout << CPGBackupCtlBase::makeHeader("Details of retention policy " + this->retention_name,
-                                         boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
-                                         80) << endl;
-
-    cout << boost::format("%-15s\t%-60s") % "ID" % retentionDescr->id << endl;
-    cout << boost::format("%-15s\t%-60s") % "NAME" % retentionDescr->name << endl;
-    cout << boost::format("%-15s\t%-60s") % "CREATED" % retentionDescr->created << endl;
-
-    cout << endl;
-
-    for (auto rule : retentionDescr->rules) {
-
-      /*
-       * Build a retention object out of this rule to get
-       * its decomposed string representation.
-       */
-      shared_ptr<Retention> instance = Retention::get(rule);
-
-      cout << boost::format("%-15s\t%-60s") % "RULE" % instance->asString() << endl;
-
-    }
-
-    cout << CPGBackupCtlBase::makeLine(80) << endl;
+    formatter->nodeAs(retentionDescr, output);
+    std::cout << output.str();
 
   } catch(CPGBackupCtlFailure &e) {
 
@@ -3050,6 +2990,7 @@ void ListRetentionPolicyCommand::execute(bool flag) {
     throw e; /* don't hide errors */
 
   }
+
 }
 
 ListRetentionPoliciesCommand::ListRetentionPoliciesCommand() {

@@ -6,6 +6,7 @@
 #include <common.hxx>
 #include <fs-archive.hxx>
 #include <output.hxx>
+#include <retention.hxx>
 
 using namespace credativ;
 
@@ -17,6 +18,11 @@ OutputFormatter::OutputFormatter(std::shared_ptr<OutputFormatConfiguration> conf
                                  std::shared_ptr<BackupCatalog> catalog,
                                  std::shared_ptr<CatalogDescr> catalog_descr) {
 
+  /*
+   * NOTE: We allow a nullptr for catalog_descr, since it's not a hard requirement
+   *       for every output format
+   */
+
   /* We throw immediately in case catalog is uninitalized */
   if (catalog == nullptr)
     throw CCatalogIssue("undefined catalog handle not allowed in formatter instance");
@@ -24,10 +30,6 @@ OutputFormatter::OutputFormatter(std::shared_ptr<OutputFormatConfiguration> conf
   /* We throw immediately in case catalog wasn't opened */
   if (!catalog->available())
     throw CCatalogIssue("formatter instances expect catalog handler to be opened");
-
-  /* We throw immediately if there's no valid catalog archive handle */
-  if (catalog_descr == nullptr)
-    throw CCatalogIssue("formatter instances need a valid catalog archive handle");
 
   /* We throw immediatly if there's no valid output config */
   if (config == nullptr)
@@ -43,8 +45,22 @@ OutputFormatter::~OutputFormatter() {}
 
 std::shared_ptr<OutputFormatter> OutputFormatter::formatter(std::shared_ptr<OutputFormatConfiguration> config,
                                                             std::shared_ptr<BackupCatalog> catalog,
+                                                            OutputFormatType type) {
+  return formatter(config,
+                   catalog,
+                   std::shared_ptr<CatalogDescr>(nullptr),
+                   type);
+
+}
+
+std::shared_ptr<OutputFormatter> OutputFormatter::formatter(std::shared_ptr<OutputFormatConfiguration> config,
+                                                            std::shared_ptr<BackupCatalog> catalog,
                                                             std::shared_ptr<CatalogDescr> catalog_descr,
                                                             OutputFormatType type) {
+  /*
+   * NOTE: We allow a nullptr for catalog_descr, since it's not a hard requirement
+   *       for every output format
+   */
 
   std::shared_ptr<OutputFormatter> formatter = nullptr;
 
@@ -55,10 +71,6 @@ std::shared_ptr<OutputFormatter> OutputFormatter::formatter(std::shared_ptr<Outp
   /* We throw immediately in case catalog wasn't opened */
   if (!catalog->available())
     throw CCatalogIssue("formatter instances expect catalog handler to be opened");
-
-  /* We throw immediately if there's no valid catalog archive handle */
-  if (catalog_descr == nullptr)
-    throw CCatalogIssue("formatter instances need a valid catalog archive handle");
 
   /* We throw immediatly if there's no valid output config */
   if (config == nullptr)
@@ -83,7 +95,7 @@ std::shared_ptr<OutputFormatter> OutputFormatter::formatter(std::shared_ptr<Outp
 }
 
 /* ****************************************************************************
- * Implementation of JsonOutputFormatter
+ * Implementation of ConsoleOutputFormatter
  * ****************************************************************************/
 
 ConsoleOutputFormatter::ConsoleOutputFormatter(std::shared_ptr<OutputFormatConfiguration> config,
@@ -224,6 +236,43 @@ void ConsoleOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<Base
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
+                                    std::ostringstream &output) {
+
+  /*
+   * Print result header
+   */
+  output << "List of connections for archive \""
+         << catalog_descr->archive_name
+         << "\"" << endl;
+
+  /*
+   * XXX: createArchive() normally ensures that a
+   *      catalog connection definition of type 'basebackup'
+   *      (CONNECTION_TYPE_BASEBACKUP) exists, at least. But
+   *      we don't rely on this fact, just loop through
+   *      the results and spill them out...
+   *
+   *      getCatalogConnection() returns the shared pointers
+   *      ordered by its type.
+   */
+
+  for (auto & con : connections) {
+
+    /* item header */
+    output << CPGBackupCtlBase::makeHeader("connection type " + con->type,
+                                           boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
+                                           80) << endl;
+    output << boost::format("%-15s\t%-60s") % "DSN" % con->dsn << endl;
+    output << boost::format("%-15s\t%-60s") % "PGHOST" % con->pghost << endl;
+    output << boost::format("%-15s\t%-60s") % "PGDATABASE" % con->pgdatabase << endl;
+    output << boost::format("%-15s\t%-60s") % "PGUSER" % con->pguser << endl;
+    output << boost::format("%-15s\t%-60s") % "PGPORT" % con->pgport << endl;
+
+  }
+
+}
+
 void ConsoleOutputFormatter::listBackups(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                          std::ostringstream &output) {
 
@@ -303,6 +352,81 @@ void ConsoleOutputFormatter::listBackups(std::vector<std::shared_ptr<BaseBackupD
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::vector<shm_worker_area> &slots,
+                                    std::ostringstream &output) {
+
+  for(auto &worker : slots) {
+
+    string archive_name = "N/A";
+
+    if (worker.archive_id >= 0) {
+      shared_ptr<CatalogDescr> archive_descr = this->catalog->existsById(worker.archive_id);
+
+      if (archive_descr->id >= 0) {
+        archive_name = archive_descr->archive_name;
+      }
+    }
+
+    cout << "WORKER PID " << worker.pid
+         << " | executing " << CatalogDescr::commandTagName(worker.cmdType)
+         << " | archive name " << archive_name
+         << " | archive ID " << worker.archive_id
+         << " | started " << CPGBackupCtlBase::ptime_to_str(worker.started)
+         << endl;
+
+    /* Print child info, if any */
+    for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+      sub_worker_info child_info = worker.child_info[idx];
+
+      if (child_info.pid > 0) {
+        cout << " `-> CHILD "
+             << idx
+             << " | PID "
+             << child_info.pid
+             << " | "
+             << ((child_info.backup_id < 0) ? "no backup in use" : "backup used: ID="
+                 + CPGBackupCtlBase::intToStr(child_info.backup_id))
+             << endl;
+      }
+    }
+
+  }
+
+
+}
+
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                                    std::ostringstream &output) {
+
+  /* Print contents of this policy */
+
+  std::cout << CPGBackupCtlBase::makeHeader("Details of retention policy " + retentionDescr->name,
+                                            boost::format("%-15s\t%-60s") % "Attribute" % "Setting",
+                                            80) << std::endl;
+
+  std::cout << boost::format("%-15s\t%-60s") % "ID" % retentionDescr->id << std::endl;
+  std::cout << boost::format("%-15s\t%-60s") % "NAME" % retentionDescr->name << std::endl;
+  std::cout << boost::format("%-15s\t%-60s") % "CREATED" % retentionDescr->created << std::endl;
+
+  std::cout << std::endl;
+
+  for (auto rule : retentionDescr->rules) {
+
+    /*
+     * Build a retention object out of this rule to get
+     * its decomposed string representation.
+     */
+    shared_ptr<Retention> instance = Retention::get(rule);
+    std::cout << boost::format("%-15s\t%-60s") % "RULE" % instance->asString() << std::endl;
+
+  }
+
+  std::cout << CPGBackupCtlBase::makeLine(80) << std::endl;
+
+}
+
+
 void ConsoleOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                     std::ostringstream &output) {
 
@@ -332,6 +456,40 @@ JsonOutputFormatter::JsonOutputFormatter(std::shared_ptr<OutputFormatConfigurati
   : OutputFormatter(config, catalog, catalog_descr) {}
 
 JsonOutputFormatter::~JsonOutputFormatter() {}
+
+void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree clist; /* makes up json array for connection info */
+  std::ostringstream oss;
+
+  oss << connections.size();
+
+  head.put("num_connections", oss.str());
+  head.put("archive name", catalog_descr->archive_name);
+
+  for (auto & con : connections) {
+
+    pt::ptree item;
+
+    item.put("connection type", con->type);
+    item.put("hostname", con->pghost);
+    item.put("dbname", con->pgdatabase);
+    item.put("user", con->pguser);
+    item.put("port", con->pgport);
+    item.put("dsn", con->dsn);
+
+    clist.push_back(std::make_pair("", item));
+
+  }
+
+  head.add_child("connections", clist);
+  pt::write_json(output, head);
+
+}
 
 void JsonOutputFormatter::listBackups(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                  std::ostringstream &output) {
@@ -465,10 +623,106 @@ void JsonOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<BaseBac
 
 }
 
+void JsonOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree rules;
+
+  head.put("id", retentionDescr->id);
+  head.put("name", retentionDescr->name);
+  head.put("created", retentionDescr->created);
+
+  BOOST_FOREACH(const std::shared_ptr<RetentionRuleDescr> &rule, retentionDescr->rules) {
+
+    /*
+     * Build a retention object out of this rule to get
+     * its decomposed string representation.
+     */
+    shared_ptr<Retention> instance = Retention::get(rule);
+    rules.put("rule", instance->asString());
+
+  }
+
+  head.add_child("rules", rules);
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::vector<shm_worker_area> &slots,
+                                    std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree workers;
+
+  head.put("number of background workers", slots.size());
+
+  if (slots.size() > 0) {
+    for(auto &worker : slots) {
+
+      string archive_name      = "N/A";
+      unsigned int child_count = 0;
+      pt::ptree current;
+      pt::ptree child_node;
+
+      if (worker.archive_id >= 0) {
+        shared_ptr<CatalogDescr> archive_descr = this->catalog->existsById(worker.archive_id);
+
+        if (archive_descr->id >= 0) {
+          archive_name = archive_descr->archive_name;
+        }
+      }
+
+      current.put("worker id", worker.pid);
+      current.put("command tag", CatalogDescr::commandTagName(worker.cmdType));
+      current.put("archive name", archive_name);
+      current.put("archive id", worker.archive_id);
+      current.put("started", CPGBackupCtlBase::ptime_to_str(worker.started));
+
+      /* Print child info, if any */
+      for (unsigned int idx = 0; idx < MAX_WORKER_CHILDS; idx++) {
+
+        sub_worker_info child_info = worker.child_info[idx];
+
+        if (child_info.pid > 0) {
+          child_count++;
+
+          child_node.put("child id", idx);
+          child_node.put("child pid", child_info.pid);
+          child_node.put("attached basebackup id", child_info.backup_id);
+
+        }
+      }
+
+      if (child_count > 0) {
+        current.put("number of childs", child_count);
+        current.push_back(std::make_pair("", child_node));
+      }
+
+      workers.push_back(std::make_pair("", current));
+    }
+
+    head.add_child("background workers",  workers);
+  }
+
+  pt::write_json(output, head);
+
+}
+
 void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                  std::ostringstream &output) {
 
   bool verbose;
+
+  /*
+   * Sanity check, make sure we have a valid catalog descriptor.
+   */
+  if (catalog_descr == nullptr)
+    throw CCatalogIssue("could not format basebackup list without valid catalog descriptor");
 
   config->get("list_backups.verbose")->getValue(verbose);
 

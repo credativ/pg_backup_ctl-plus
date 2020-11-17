@@ -72,6 +72,13 @@ namespace credativ {
      */
     virtual void nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                         std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::vector<shm_worker_area> &slots,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
+                        std::ostringstream &output) = 0;
+
 
     /**
      * Static factory method, returns an instance of
@@ -82,6 +89,9 @@ namespace credativ {
                                                       std::shared_ptr<CatalogDescr> catalog_descr,
                                                       OutputFormatType type);
 
+    static std::shared_ptr<OutputFormatter> formatter(std::shared_ptr<OutputFormatConfiguration> config,
+                                                      std::shared_ptr<BackupCatalog> catalog,
+                                                      OutputFormatType type);
 
   };
 
@@ -109,14 +119,28 @@ namespace credativ {
 
     virtual void nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                         std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::vector<shm_worker_area> &slots,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
+                        std::ostringstream &output);
+
 
   };
 
   class JsonOutputFormatter : public OutputFormatter {
   private:
 
+    /**
+     * Internal method to list backups verbose
+     */
     void listBackupsVerbose(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                             std::ostringstream &output);
+
+    /**
+     * Internal method to list backups non-verbose
+     */
     void listBackups(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                      std::ostringstream &output);
 
@@ -129,6 +153,14 @@ namespace credativ {
 
     virtual void nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                         std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::vector<shm_worker_area> &slots,
+                            std::ostringstream &output);
+    virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
+                        std::ostringstream &output);
+
+
 
   };
 
