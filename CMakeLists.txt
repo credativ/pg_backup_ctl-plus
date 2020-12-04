@@ -34,6 +34,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_definitions(-std=c++11)
 add_definitions(-Wall)
 
+## This is for newer boost library versions and suppresses compile warnings like
+##
+## "The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated."
+##
+## We need once to include boost::placeholder namespace or switch
+## to std::bind() to get rid of this.
+add_definitions(-DBOOST_BIND_GLOBAL_PLACEHOLDERS)
+
 ## This is for boost::log support. Since we don't
 ## want to link statically, we have to tell...
 add_definitions(-DBOOST_ALL_DYN_LINK)
