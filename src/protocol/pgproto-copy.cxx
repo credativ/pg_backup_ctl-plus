@@ -2,6 +2,7 @@
 #include <ostream>
 #include <pgproto-copy.hxx>
 
+using namespace credativ;
 /* *****************************************************************************
  * Base class PGProtoCopyFormat
  * *****************************************************************************/
@@ -110,245 +111,36 @@ short PGProtoCopyFormat::operator[](unsigned short idx) {
 
 }
 
+
 /* *****************************************************************************
- * Base class PGProtoCopy
+ * class PGProtoCopy
  * *****************************************************************************/
 
-PGProtoCopy::PGProtoCopy(ProtocolBuffer *buf) {
+PGProtoCopy::PGProtoCopy(PGProtoCopyContext context) {
 
-  /* We need a valid reference to recv/send buffer
-   * handler */
-  if (buf == nullptr) {
-    throw CopyProtocolFailure("undefined recv/send buffer handler");
+  if (context.state == nullptr) {
+    throw CopyProtocolFailure("No initial state choosen.");
   }
 
-  this->buf = buf;
+  context_.state = context.state;
+  context_.formats = context.formats;
+  context_.input_buffer = context.input_buffer;
+  context_.input_data_buffer = context.input_data_buffer;
+  context_.output_buffer = context.output_buffer;
+  context_.output_data_buffer = context.output_data_buffer;
 
 }
-
 
 PGProtoCopy::~PGProtoCopy() {}
 
-void PGProtoCopy::prepare() {
-
-  /* Calculate overal message size */
-  calculateSize();
-
-  /* Adjust buffer for message, including type byte */
-  buf->allocate(size + 1);
-
-  /*
-   * Prepare the message type byte.
-   */
-  buf->write_byte(type);
-
-  /*
-   * Set message size
-   */
-  buf->write_int(size);
-
-
+size_t PGProtoCopy::write() {
+  return context_.state->write(context_);
 }
 
-/* *****************************************************************************
- * Implementation of class PGProtoCopyDone
- * *****************************************************************************/
-
-PGProtoCopyDone::PGProtoCopyDone(ProtocolBuffer *buf)
-  : PGProtoCopy(buf) {
-
-  type = CopyDoneMessage;
-
+size_t PGProtoCopy::read() {
+  return context_.state->read(context_);
 }
 
-PGProtoCopyDone::~PGProtoCopyDone() {}
-
-void PGProtoCopyDone::begin() {
-
-  /* A CopyDone message is  relatively simple,
-   * just call prepare to materialize the message header
-   * and we're done */
-  prepare();
-
+PGProtoCopyStateType PGProtoCopy::state() {
+  return context_.state->state();
 }
-
-void PGProtoCopyDone::end() {
-
-  /* nothing to do here */
-
-}
-
-std::size_t PGProtoCopyDone::calculateSize() {
-
-  size = 0;
-  size += sizeof(MESSAGE_HDR_LENGTH_SIZE);
-
-  return size;
-
-}
-
-/* *****************************************************************************
- * Implementation of class PGProtoCopyFail
- * *****************************************************************************/
-
-PGProtoCopyFail::PGProtoCopyFail(ProtocolBuffer *buf)
-  : PGProtoCopy(buf) {
-
-  type = CopyFailMessage;
-
-}
-
-PGProtoCopyFail::~PGProtoCopyFail() {}
-
-void PGProtoCopyFail::begin() {
-
-  /* Prepare message header */
-  prepare();
-
-  /*
-   * Write error message, including null byte
-   *
-   * NOTE: calculateSize() already honored the trailing
-   *       NULL byte.
-   */
-  buf->write_buffer(error_message.c_str(), error_message.length());
-  buf->write_byte('\0');
-
-}
-
-void PGProtoCopyFail::message(std::string msg) {
-
-  error_message = msg;
-
-}
-
-void PGProtoCopyFail::end() {
-  /* no op here */
-}
-
-std::size_t PGProtoCopyFail::calculateSize() {
-
-  size = 0;
-  size += sizeof(MESSAGE_HDR_LENGTH_SIZE);
-  size += (error_message.length() + 1); /* null byte */
-
-  return size;
-
-}
-
-/* *****************************************************************************
- * PGProtoCopyIn, protocol handler for COPY FROM STDIN
- * *****************************************************************************/
-
-PGProtoCopyIn::PGProtoCopyIn(ProtocolBuffer *buf,
-                             const PGProtoCopyFormat &format)
-  : PGProtoCopy(buf) {
-
-  type = CopyInResponseMessage;
-  this->format = format;
-
-}
-
-PGProtoCopyIn::~PGProtoCopyIn() {}
-
-size_t PGProtoCopyIn::calculateSize() {
-
-  /* size of message length property */
-  size += sizeof(MESSAGE_HDR_LENGTH_SIZE);
-
-  /* format identifier */
-  size += sizeof(char);
-
-  /* number of cols property */
-  size += sizeof(short);
-
-  /* size of format identifier, for <cols> columns */
-  size += (sizeof(short) * format.count());
-
-  return size;
-
-}
-
-void PGProtoCopyIn::begin() {
-
-  /* Prepare message header */
-  prepare();
-
-  /* Write message format identifier */
-  buf->write_byte((char)format.getFormat());
-
-  /* Write next 2 bytes, indicating number of columns */
-  buf->write_int(format.count());
-
-  /* Write format array to buffer */
-  for (unsigned int i = 0; i < format.count(); i++) {
-    buf->write_short(format.ptr()[i]);
-  }
-
-  /* we're done */
-
-}
-
-void PGProtoCopyIn::data(ProtocolBuffer *buf) {
-
-  /**
-   * Expect a CopyData message
-   *
-   * When the caller ended here, he hopefully processed
-   * a CopyDataIn message and acknowledged the operation
-   * with a CopyResponseMessage.
-   *
-   * We read our internal buffer now and extract the data
-   * payload into the specified buf argument.
-   */
-
-  /* Sanity check, CopyData message? */
-  if (buf->ptr()[0] != CopyDataMessage) {
-    throw CopyProtocolFailure("expected CopyData message");
-  }
-
-  /* Read message header */
-  
-}
-
-void PGProtoCopyIn::end() {}
-
-/* *****************************************************************************
- * PGProtoCopyOut, protocol handler for COPY TO STDOUT
- * *****************************************************************************/
-
-PGProtoCopyOut::PGProtoCopyOut(ProtocolBuffer *buf)
-  : PGProtoCopy(buf) {
-
-  type = CopyOutResponseMessage;
-
-}
-
-PGProtoCopyOut::~PGProtoCopyOut() {}
-
-void PGProtoCopyOut::begin() {
-
-}
-
-void PGProtoCopyOut::end() {}
-
-void PGProtoCopyOut::data(ProtocolBuffer *buf) {}
-
-/* *****************************************************************************
- * PGProtoCopyBoth, protocol handler for START_REPLICATION Copy sub-protocol
- * *****************************************************************************/
-
-PGProtoCopyBoth::PGProtoCopyBoth(ProtocolBuffer *buf)
-  : PGProtoCopy(buf) {
-
-  type = CopyBothResponseMessage;
-
-}
-
-PGProtoCopyBoth::~PGProtoCopyBoth() {}
-
-void PGProtoCopyBoth::begin() {}
-
-void PGProtoCopyBoth::data(ProtocolBuffer *buf) {}
-
-void PGProtoCopyBoth::end() {}

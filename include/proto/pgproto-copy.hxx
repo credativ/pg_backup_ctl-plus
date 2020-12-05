@@ -2,6 +2,9 @@
 #define __HAVE_PG_PROTO_COPY__
 
 #include <string>
+#include <mutex>
+#include <memory>
+#include <proto-buffer.hxx>
 #include <pgsql-proto.hxx>
 #include <pgbckctl_exception.hxx>
 
@@ -11,12 +14,9 @@ using namespace credativ::pgprotocol;
 namespace credativ {
 
   /* Forwarded declarations */
-  class PGProtoCopyFormat;
-  class PGProtoCopyFail;
-  class PGProtoCopyDone;
-  class PGProtoCopyIn;
-  class PGProtoCopyOut;
-  class PGProtoCopyBoth;
+  class PGProtoCopy;
+  class PGProtoState;
+  struct PGProtoCopyContext;
 
   /**
    * Copy subprotocol exception class.
@@ -42,8 +42,8 @@ namespace credativ {
    * COPY format identifier.
    */
   typedef enum {
-                COPY_TEXT = 0,
-                COPY_BINARY = 1
+    COPY_TEXT = 0,
+    COPY_BINARY = 1
   } PGProtoCopyFormatType;
 
   /**
@@ -52,8 +52,8 @@ namespace credativ {
   class PGProtoCopyFormat {
   protected:
 
-    short *formats = nullptr;
-    unsigned short cols = 0;
+    int16_t *formats = nullptr;
+    uint16_t cols = 0;
     PGProtoCopyFormatType copy_format_type = COPY_BINARY;
 
   public:
@@ -104,148 +104,108 @@ namespace credativ {
     virtual PGProtoCopyFormatType getFormat();
   };
 
-  /**
-   * Base class for PostgreSQL COPY sub-protocol
-   * implementations.
-   */
+  typedef enum {
+        Init,
+        Fail,
+        Done,
+        In,
+        Out,
+        Both
+  } PGProtoCopyStateType;
+
+  class PGProtoCopyState {
+    public:
+      PGProtoCopyState(){};
+      virtual size_t read(PGProtoCopyContext &);
+      virtual size_t write(PGProtoCopyContext &);
+      virtual PGProtoCopyStateType state() = 0;
+  };
+
+  class PGProtoCopyResponseState : public PGProtoCopyState {
+    protected:
+      virtual std::shared_ptr<PGProtoCopyState> nextState() = 0;
+      virtual PGMessageType type() = 0;
+      size_t writeCopyResponse(PGProtoCopyContext &);
+    public:
+      PGProtoCopyStateType state();
+      size_t write(PGProtoCopyContext &);
+  };
+
+  class PGProtoCopyOutResponseState : public PGProtoCopyResponseState {
+    private:
+      std::shared_ptr<PGProtoCopyState> nextState();
+      PGMessageType type();
+  };
+
+  class PGProtoCopyInResponseState : public PGProtoCopyResponseState {
+    private:
+      std::shared_ptr<PGProtoCopyState> nextState();
+      PGMessageType type();
+  };
+
+  class PGProtoCopyBothResponseState : public PGProtoCopyResponseState {
+    private:
+      std::shared_ptr<PGProtoCopyState> nextState();
+      PGMessageType type();
+  };
+
+  class PGProtoCopyDataInState : public virtual PGProtoCopyState {
+    protected:
+      inline size_t readCopyData(PGProtoCopyContext &);
+      inline size_t readCopyFail(PGProtoCopyContext &);
+      inline size_t readCopyDone(PGProtoCopyContext &);
+    public:
+      virtual size_t read(PGProtoCopyContext &);
+      virtual PGProtoCopyStateType state();
+  };
+
+  class PGProtoCopyDataOutState : public virtual PGProtoCopyState {
+    protected:
+      inline size_t writeCopyDone(PGProtoCopyContext &);
+      inline size_t writeCopyData(PGProtoCopyContext &);
+    public:
+      virtual size_t write(PGProtoCopyContext &);
+      virtual PGProtoCopyStateType state();
+  };
+
+  class PGProtoCopyDataBothState :
+  public PGProtoCopyDataOutState, 
+  public PGProtoCopyDataInState {
+
+    public:
+      size_t read(PGProtoCopyContext &);
+      size_t write(PGProtoCopyContext &);
+      PGProtoCopyStateType state();
+  };
+
+  class PGProtoCopyDoneState : public PGProtoCopyState {
+    public:
+      PGProtoCopyStateType state();
+  };
+
+  class PGProtoCopyFailState : public PGProtoCopyState {
+    public:
+      PGProtoCopyStateType state();
+  };
+
+  struct PGProtoCopyContext{
+    std::shared_ptr<PGProtoCopyFormat> formats;
+    std::shared_ptr<ProtocolBuffer> input_buffer;
+    std::shared_ptr<ProtocolBuffer> input_data_buffer;
+    std::shared_ptr<ProtocolBuffer> output_buffer;
+    std::shared_ptr<ProtocolBuffer> output_data_buffer;
+    std::shared_ptr<PGProtoCopyState> state;
+  };
+
   class PGProtoCopy {
-  protected:
-
-    ProtocolBuffer *buf = nullptr;
-    PGMessageType type = '\0';
-
-    /**
-     * Overall size of the copy message,
-     * including 4 byte message size indicator.
-     *
-     * NOTE: derived copy format classes don't modify
-     *       this attribute directly, they implement an
-     *       own overwritten method calculateSize()
-     *       to recalculate the message size.
-     */
-    std::size_t size = 0;
-
-    /*
-     * Prepare a copy message start
-     */
-    virtual void prepare();
-
-    /**
-     * Calculate total message size.
-     */
-    virtual std::size_t calculateSize() = 0;
-
-  public:
-
-    PGProtoCopy(ProtocolBuffer *buf);
-    virtual ~PGProtoCopy();
-
-    virtual void begin() = 0;
-    virtual void end() = 0;
-
-  };
-
-  /**
-   * Implements COPY FROM protocol support.
-   */
-  class PGProtoCopyIn : public PGProtoCopy {
-  private:
-
-    PGProtoCopyFormat format;
-
-  protected:
-
-    size_t calculateSize();
-
-  public:
-
-    PGProtoCopyIn(ProtocolBuffer *buf, const PGProtoCopyFormat &format);
-    virtual ~PGProtoCopyIn();
-
-    virtual void begin();
-    virtual void data(ProtocolBuffer *buf);
-    virtual void end();
-
-  };
-
-  /**
-   * Implements COPY TO protocol support.
-   */
-  class PGProtoCopyOut : public PGProtoCopy {
-  public:
-
-    PGProtoCopyOut(ProtocolBuffer *buf);
-    virtual ~PGProtoCopyOut();
-
-    virtual void begin();
-    virtual void data(ProtocolBuffer *buf);
-    virtual void end();
-
-  };
-
-  /**
-   * CopyBothResponse sub-protocol handler, used by START_REPLICATION
-   * commands.
-   */
-  class PGProtoCopyBoth: public PGProtoCopy {
-  public:
-
-    PGProtoCopyBoth(ProtocolBuffer *buf);
-    virtual ~PGProtoCopyBoth();
-
-    virtual void begin();
-    virtual void data(ProtocolBuffer *buf);
-    virtual void end();
-  };
-
-  /**
-   * Constructs a CopyFail Message
-   */
-  class PGProtoCopyFail : public PGProtoCopy {
-  private:
-
-    std::string error_message = "";
-
-  protected:
-
-    virtual std::size_t calculateSize();
-
-  public:
-
-    PGProtoCopyFail(ProtocolBuffer *buf);
-    virtual ~PGProtoCopyFail();
-
-    virtual void begin();
-    virtual void message(std::string msg);
-    virtual void end();
-
-  };
-
-  /**
-   * Constructs a CopyDone message.
-   */
-  class PGProtoCopyDone : public PGProtoCopy {
-  protected:
-
-    virtual std::size_t calculateSize();
-
-  public:
-
-    PGProtoCopyDone(ProtocolBuffer *buf);
-    virtual ~PGProtoCopyDone();
-
-    virtual void begin();
-    virtual void end();
-
-  };
-
-  /**
-   * Constructs a CopyData message.
-   */
-  class PGProtoCopyData : public PGProtoCopy {
-  public:
-
-
+    protected:
+      PGProtoCopyContext context_;
+    public:
+      PGProtoCopy (PGProtoCopyContext);
+      ~PGProtoCopy();
+      size_t write();
+      size_t read();
+      PGProtoCopyStateType state();
   };
 
 }

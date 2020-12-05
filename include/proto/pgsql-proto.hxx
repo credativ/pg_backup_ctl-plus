@@ -45,6 +45,7 @@ namespace credativ {
     /* ************************************************************************
      * PostgresSQL protocol message types
      * ***********************************************************************/
+    const PGMessageType UndefinedMessage       = '\0';
 
     /* FE messages */
     const PGMessageType ExecuteMessage         = 'E';

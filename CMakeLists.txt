@@ -79,16 +79,44 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 include_directories ("${PROJECT_SOURCE_DIR}/include/recovery")
 include_directories ("${PROJECT_SOURCE_DIR}/include/proto")
 add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
-add_library (pgbckctl-proto SHARED src/protocol/proto-buffer.cxx src/protocol/proto-types.cxx
-  src/protocol/proto-handler.cxx src/parser/pgproto-commands.cxx src/parser/pgproto-parser.cxx
-  src/jobs/exectx.cxx src/protocol/proto-catalog.cxx src/jobs/server.cxx
-  src/protocol/pgproto-copy.cxx)
-add_library (pgbckctl-common SHARED src/main/rtconfig.cxx src/main/common.cxx
-  src/jobs/reaper.cxx src/jobs/signalhandler.cxx src/jobs/daemon.cxx src/jobs/server.cxx
-  src/filesystem/fs-archive.cxx src/catalog/catalog.cxx src/catalog/backuplockinfo.cxx
-  src/catalog/retention.cxx src/parser/parser.cxx src/parser/commands.cxx src/backup/xlogdefs.cxx
-  src/backup/backup.cxx src/backup/stream.cxx src/backup/backupprocesses.cxx
-  src/recovery/restore.cxx src/main/memorybuffer.cxx)
+add_library (pgbckctl-proto SHARED
+  src/protocol/proto-buffer.cxx
+  src/protocol/proto-types.cxx
+  src/protocol/proto-handler.cxx
+  src/parser/pgproto-commands.cxx
+  src/parser/pgproto-parser.cxx
+  src/jobs/exectx.cxx
+  src/protocol/proto-catalog.cxx
+  src/jobs/server.cxx
+
+  # COPY-PROTOCOL
+  src/protocol/pgmessage.cxx
+  src/protocol/pgmessage-copyresponse.cxx
+  src/protocol/pgmessage-copydata.cxx
+  src/protocol/pgmessage-copyfail.cxx
+  src/protocol/pgproto-copy.cxx
+  src/protocol/pgproto-copystate.cxx
+)
+add_library (pgbckctl-common SHARED
+  src/main/rtconfig.cxx
+  src/main/common.cxx
+  src/jobs/reaper.cxx
+  src/jobs/signalhandler.cxx
+  src/jobs/daemon.cxx
+  src/jobs/server.cxx
+  src/filesystem/fs-archive.cxx
+  src/catalog/catalog.cxx
+  src/catalog/backuplockinfo.cxx
+  src/catalog/retention.cxx
+  src/parser/parser.cxx
+  src/parser/commands.cxx
+  src/backup/xlogdefs.cxx
+  src/backup/backup.cxx
+  src/backup/stream.cxx
+  src/backup/backupprocesses.cxx
+  src/recovery/restore.cxx
+  src/main/memorybuffer.cxx
+)
 
 IF(APPLE)
    target_link_libraries (pg_backup_ctl++ pthread pgbckctl-proto pgbckctl-common)
@@ -326,9 +354,8 @@ if(BUILD_UNIT_TESTS)
   find_package (Boost COMPONENTS system filesystem unit_test_framework REQUIRED)
 
   add_definitions (-DBOOST_TEST_DYN_LINK)
-  add_executable (test_catalog test/src/test_catalog.cxx)
-  add_executable(test_parser test/src/test_parser.cxx)
 
+  add_executable (test_catalog test/src/test_catalog.cxx)
   target_link_libraries (test_catalog
     pgbckctl-proto
     pgbckctl-common
@@ -336,7 +363,9 @@ if(BUILD_UNIT_TESTS)
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
     )
+  add_test(NAME TestCatalog COMMAND test_catalog)
 
+  add_executable(test_parser test/src/test_parser.cxx)
   target_link_libraries (test_parser
     pgbckctl-proto
     pgbckctl-common
@@ -344,9 +373,107 @@ if(BUILD_UNIT_TESTS)
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
     )
-
-  add_test(NAME TestCatalog COMMAND test_catalog)
   add_test(NAME TestParser COMMAND test_parser)
+
+  add_executable(test_pgmessage test/src/test_pgmessage.cxx)
+  target_link_libraries (test_pgmessage
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGMessage COMMAND test_pgmessage)
+
+  add_executable(test_pgmessage_copyresponse test/src/test_pgmessage_copyresponse.cxx)
+  target_link_libraries (test_pgmessage_copyresponse
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGMessageCopyResponse COMMAND test_pgmessage_copyresponse)
+
+  add_executable(test_pgmessage_copyfail test/src/test_pgmessage_copyfail.cxx)
+  target_link_libraries (test_pgmessage_copyfail
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGMessageCopyFail COMMAND test_pgmessage_copyfail)
+
+  add_executable(test_pgmessage_copydata test/src/test_pgmessage_copydata.cxx)
+  target_link_libraries (test_pgmessage_copydata
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGMessageCopyData COMMAND test_pgmessage_copydata)
+
+  add_executable(test_pgprotocopy test/src/test_pgprotocopy.cxx)
+  target_link_libraries (test_pgprotocopy
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopy COMMAND test_pgprotocopy)
+
+  add_executable(test_pgprotocopystate test/src/test_pgprotocopystate.cxx)
+  target_link_libraries (test_pgprotocopystate
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopyState COMMAND test_pgprotocopystate)
+
+  add_executable(test_pgprotocopyinstate test/src/test_pgprotocopyinstate.cxx)
+  target_link_libraries (test_pgprotocopyinstate
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopyInState COMMAND test_pgprotocopyinstate)
+
+  add_executable(test_pgprotocopyoutstate test/src/test_pgprotocopyoutstate.cxx)
+  target_link_libraries (test_pgprotocopyoutstate
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopyOutState COMMAND test_pgprotocopyoutstate)
+
+  add_executable(test_pgprotocopybothstate test/src/test_pgprotocopybothstate.cxx)
+  target_link_libraries (test_pgprotocopybothstate
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopyBothState COMMAND test_pgprotocopybothstate)
+
+  add_executable(test_pgprotocopyresponsestate test/src/test_pgprotocopyresponsestate.cxx)
+  target_link_libraries (test_pgprotocopyresponsestate
+    pgbckctl-proto
+    pgbckctl-common
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+  )
+  add_test(NAME TestPGProtoCopyResponseState COMMAND test_pgprotocopyresponsestate)
 
 endif()
 
