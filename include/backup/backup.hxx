@@ -93,14 +93,14 @@ namespace credativ {
      * isn't allowed to call initialize() on a TransactionLogBackup
      * handle until this value is initialized correctly.
      */
-    uint32 wal_segment_size = 0;
+    uint32_t wal_segment_size = 0;
 
     /**
      * Number of WAL files synced. This effectively counts the number
      * of WAL files synced into the transaction log archive during
      * the lifetime of a TransactionLogBackup instance.
      */
-    uint64 wal_synced = 0;
+    uint64_t wal_synced = 0;
 
   public:
     TransactionLogBackup(const std::shared_ptr<CatalogDescr> & descr);
@@ -208,13 +208,13 @@ namespace credativ {
      * might be initdb'ed with a user defined size, so you need
      * to get the correct size from there anyways.
      */
-    virtual void setWalSegmentSize(uint32 wal_segment_size);
+    virtual void setWalSegmentSize(uint32_t wal_segment_size);
 
     /**
      * Returns the number of WAL synced by a TransactionLogBackup
      * instance.
      */
-    virtual uint64 countSynced();
+    virtual uint64_t countSynced();
   };
 
   typedef enum {

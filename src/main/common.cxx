@@ -340,11 +340,11 @@ std::chrono::microseconds CPGBackupCtlBase::calculate_duration_us(high_resolutio
 
 }
 
-uint64 CPGBackupCtlBase::duration_get_ms(std::chrono::milliseconds ms) {
+uint64_t CPGBackupCtlBase::duration_get_ms(std::chrono::milliseconds ms) {
   return ms.count();
 }
 
-uint64 CPGBackupCtlBase::duration_get_us(std::chrono::microseconds us) {
+uint64_t CPGBackupCtlBase::duration_get_us(std::chrono::microseconds us) {
   return us.count();
 }
 

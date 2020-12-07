@@ -131,7 +131,7 @@ int PGStream::XLOGOffset(XLogRecPtr pos) {
 }
 
 int PGStream::XLOGOffset(XLogRecPtr pos,
-                         uint32 wal_segment_size) {
+                         uint32_t wal_segment_size) {
 
 #if PG_VERSION_NUM >= 110000
   return XLogSegmentOffset(pos, wal_segment_size);
@@ -152,7 +152,7 @@ XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos) {
 }
 
 XLogRecPtr PGStream::XLOGSegmentStartPosition(XLogRecPtr pos,
-                                              uint32 wal_segment_size) {
+                                              uint32_t wal_segment_size) {
 
 #if PG_VERSION_NUM < 110000
   return pos - (pos % wal_segment_size);
@@ -173,7 +173,7 @@ XLogRecPtr PGStream::XLOGNextSegmentStartPosition(XLogRecPtr pos) {
 }
 
 XLogRecPtr PGStream::XLOGNextSegmentStartPosition(XLogRecPtr pos,
-                                                  uint32 wal_segment_size) {
+                                                  uint32_t wal_segment_size) {
 
 #if PG_VERSION_NUM < 110000
   return (pos - (pos % wal_segment_size)) + wal_segment_size +1;
@@ -211,7 +211,7 @@ XLogRecPtr PGStream::XLOGPrevSegmentStartPosition(XLogRecPtr pos) {
 }
 
 XLogRecPtr PGStream::XLOGPrevSegmentStartPosition(XLogRecPtr pos,
-                                                  uint32 wal_segment_size) {
+                                                  uint32_t wal_segment_size) {
 
   XLogRecPtr prev_recptr = InvalidXLogRecPtr;
 
@@ -244,8 +244,8 @@ std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
   std::ostringstream oss;
   unsigned int hi, lo;
 
-  hi = (uint32)(pos >> 32);
-  lo = (uint32)(pos);
+  hi = (uint32_t)(pos >> 32);
+  lo = (uint32_t)(pos);
 
   oss << std::hex << hi << "/" << std::hex << lo;
 
@@ -256,7 +256,7 @@ std::string PGStream::encodeXLOGPos(XLogRecPtr pos) {
 
 XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
 
-  uint32     hi, lo;
+  uint32_t     hi, lo;
 
   if (sscanf(pos.c_str(), "%X/%X", &hi, &lo) != 2) {
     std::ostringstream oss;
@@ -264,7 +264,7 @@ XLogRecPtr PGStream::decodeXLOGPos(std::string pos) {
     throw StreamingFailure(oss.str());
   }
 
-  return ((uint64) hi << 32) | lo;
+  return ((uint64_t) hi << 32) | lo;
 }
 
 int PGStream::getServerVersion() {
@@ -532,11 +532,11 @@ void PGStream::timelineHistoryFileContent(MemoryBuffer &buffer,
 
 }
 
-uint32 PGStream::getWalSegmentSize() {
+uint32_t PGStream::getWalSegmentSize() {
   return this->walSegmentSize;
 }
 
-uint32 PGStream::walSegmentSizeInternal() {
+uint32_t PGStream::walSegmentSizeInternal() {
 
   if (!this->connected()) {
     throw StreamingFailure("stream is not connected");
@@ -578,7 +578,7 @@ uint32 PGStream::walSegmentSizeInternal() {
     /*
      * XLOG segment size in bytes.
      */
-    uint32 result = -1;
+    uint32_t result = -1;
 
     /*
      * We need the segment size in bytes. SHOW returns

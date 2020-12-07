@@ -246,7 +246,7 @@ XLogRecPtr TransactionLogBackup::write(XLOGDataStreamMessage *message,
   return position;
 }
 
-uint64 TransactionLogBackup::countSynced() {
+uint64_t TransactionLogBackup::countSynced() {
 
   return this->wal_synced;
 
@@ -337,7 +337,7 @@ void TransactionLogBackup::initialize() {
 
 }
 
-void TransactionLogBackup::setWalSegmentSize(uint32 wal_segment_size) {
+void TransactionLogBackup::setWalSegmentSize(uint32_t wal_segment_size) {
 
   if (this->isInitialized())
     throw CArchiveIssue("cannot change WAL segment size on initialized transaction log backup handle");

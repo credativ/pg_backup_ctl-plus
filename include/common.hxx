@@ -1,66 +1,7 @@
 #ifndef __PGBACKUPCTL_COMMON__
 #define __PGBACKUPCTL_COMMON__
 
-extern "C" {
-/* required for postgresql typedefs here */
-#include <postgres_fe.h>
-}
-
-/**
- * likely() and unlikely() are already defined
- * in the PostgreSQL headers, colliding with the symbols
- * provides by boost/c++ 17. Undefine them explicitely, to
- * avoid compile problems.
- */
-
-#ifdef likely
-#undef likely
-#endif
-
-#ifdef unlikely
-#undef unlikely
-#endif
-
-#include "pg_backup_ctl.hxx"
-#include <pgbckctl_exception.hxx>
-
-/*
- * PostgreSQL >= 12 comes with an overriden, own implementation
- * of strerror() and friends, which clashes in the definitions of
- * boost::interprocess::fill_system_message( int system_error, std::string &str)
- *
- * See /usr/include/boost/interprocess/errors.hpp
- * for details (path to errors.hpp may vary).
- *
- * Since boost does here all things on it's own (e.g. encapsulate Windows
- * error message behavior), we revoke all that definitions.
- */
-
-#ifdef strerror
-#undef strerror
-#endif
-#ifdef strerror_r
-#undef strerror_r
-#endif
-#ifdef vsnprintf
-#undef vsnprintf
-#endif
-#ifdef snprintf
-#undef snprintf
-#endif
-#ifdef sprintf
-#undef sprintf
-#endif
-#ifdef vfprintf
-#undef vfprintf
-#endif
-#ifdef fprintf
-#undef fprintf
-#endif
-#ifdef printf
-#undef printf
-#endif
-
+#include <cstdint>
 #include <boost/date_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem.hpp>
@@ -80,7 +21,12 @@ extern "C" {
 #include <ratio>
 #include <chrono>
 
+#include "pg_backup_ctl.hxx"
+#include <pgbckctl_exception.hxx>
+
 #define PG_BACKUP_CTL_INFO_FILE "PG_BACKUP_CTL_MAGIC"
+
+#define PGBCKCTL_UINT64CONST(X) static_cast<uint64_t>((X))
 
 /**
  * Plattform specific code
@@ -88,16 +34,16 @@ extern "C" {
  * NOTE: UINT64CONST define comes from postgres c.h
  */
 static
-inline uint64 uint64_to_host_byteorder(uint64 x) {
+inline uint64_t uint64_to_host_byteorder(uint64_t x) {
   return
-    ((x << 56) & UINT64CONST(0xff00000000000000)) |
-    ((x << 40) & UINT64CONST(0x00ff000000000000)) |
-    ((x << 24) & UINT64CONST(0x0000ff0000000000)) |
-    ((x << 8) & UINT64CONST(0x000000ff00000000)) |
-    ((x >> 8) & UINT64CONST(0x00000000ff000000)) |
-    ((x >> 24) & UINT64CONST(0x0000000000ff0000)) |
-    ((x >> 40) & UINT64CONST(0x000000000000ff00)) |
-    ((x >> 56) & UINT64CONST(0x00000000000000ff));
+    ((x << 56) & PGBCKCTL_UINT64CONST(0xff00000000000000)) |
+    ((x << 40) & PGBCKCTL_UINT64CONST(0x00ff000000000000)) |
+    ((x << 24) & PGBCKCTL_UINT64CONST(0x0000ff0000000000)) |
+    ((x << 8) & PGBCKCTL_UINT64CONST(0x000000ff00000000)) |
+    ((x >> 8) & PGBCKCTL_UINT64CONST(0x00000000ff000000)) |
+    ((x >> 24) & PGBCKCTL_UINT64CONST(0x0000000000ff0000)) |
+    ((x >> 40) & PGBCKCTL_UINT64CONST(0x000000000000ff00)) |
+    ((x >> 56) & PGBCKCTL_UINT64CONST(0x00000000000000ff));
 }
 
 #ifndef PG_BACKUP_CTL_BIG_ENDIAN
@@ -110,9 +56,9 @@ inline uint64 uint64_to_host_byteorder(uint64 x) {
 #endif
 
 static inline void
-uint64_hton_sendbuf(char *buf, uint64 val) {
+uint64_hton_sendbuf(char *buf, uint64_t val) {
 
-  uint64 nbo_val = SWAP_UINT64(val);
+  uint64_t nbo_val = SWAP_UINT64(val);
   memcpy(buf, &nbo_val, sizeof(nbo_val));
 
 }
@@ -246,12 +192,12 @@ namespace credativ {
     /**
      * Extracts the number of milliseconds from the given duration.
      */
-    static uint64 duration_get_ms(std::chrono::milliseconds ms);
+    static uint64_t duration_get_ms(std::chrono::milliseconds ms);
 
     /**
      * Extracts the number of microseconds from the given duration.
      */
-    static uint64 duration_get_us(std::chrono::microseconds us);
+    static uint64_t duration_get_us(std::chrono::microseconds us);
 
     /**
      * Returns a milliseconds duration.

@@ -28,7 +28,7 @@ extern "C" {
 #include <pgproto-commands.hxx>
 #include <shm.hxx>
 #include <server.hxx>
-#include <exectx.hxx>
+#include <pgiosocketcontext.hxx>
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
 

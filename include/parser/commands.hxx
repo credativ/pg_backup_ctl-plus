@@ -5,6 +5,8 @@
 #include <BackupCatalog.hxx>
 #include <fs-archive.hxx>
 #include <signalhandler.hxx>
+#include <streamident.hxx>
+#include <backupcleanupdescr.hxx>
 
 #include <vector>
 

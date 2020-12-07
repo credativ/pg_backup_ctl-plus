@@ -5,6 +5,7 @@
 
 #include <common.hxx>
 #include <descr.hxx>
+#include <streamident.hxx>
 #include <backupprocesses.hxx>
 #include <memorybuffer.hxx>
 

@@ -5,6 +5,7 @@
 #include <BackupCatalog.hxx>
 #include <shm.hxx>
 #include <backuplockinfo.hxx>
+#include <backupcleanupdescr.hxx>
 
 namespace credativ {
 

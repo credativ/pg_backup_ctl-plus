@@ -203,7 +203,7 @@ namespace credativ {
   class PrimaryFeedbackMessage : public XLOGStreamMessage {
   protected:
     XLogRecPtr xlogserverendpos = InvalidXLogRecPtr;
-    uint64 xlogservertime = 0;
+    uint64_t xlogservertime = 0;
   public:
     PrimaryFeedbackMessage(PGconn *prepared_connection);
     PrimaryFeedbackMessage(PGconn *prepared_connection,
@@ -232,7 +232,7 @@ namespace credativ {
      *
      * The returned value are microseconds since 2000-01-01 midnight.
      */
-    virtual uint64 getServerTime();
+    virtual uint64_t getServerTime();
   };
 
   class ReceiverStatusUpdateMessage : protected FeedbackMessage {
@@ -240,7 +240,7 @@ namespace credativ {
     XLogRecPtr xlogPos_written = InvalidXLogRecPtr;
     XLogRecPtr xlogPos_flushed = InvalidXLogRecPtr;
     XLogRecPtr xlogPos_applied = InvalidXLogRecPtr;
-    uint64 current_time_us = 0;
+    uint64_t current_time_us = 0;
     bool report_flush_position = false;
   public:
     ReceiverStatusUpdateMessage(PGconn *prepared_connection);

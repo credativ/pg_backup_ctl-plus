@@ -9,6 +9,7 @@
 #include <common.hxx>
 #include <daemon.hxx>
 #include <BackupCatalog.hxx>
+#include <backupcleanupdescr.hxx>
 #include <memorybuffer.hxx>
 
 #ifdef PG_BACKUP_CTL_HAS_ZLIB

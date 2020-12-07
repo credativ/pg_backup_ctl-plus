@@ -7,10 +7,6 @@
 #include <queue>
 #include <boost/tokenizer.hpp>
 
-extern "C" {
-#include "access/xlogdefs.h"
-}
-
 /* special descriptors */
 #include <recoverydescr.hxx>
 
@@ -324,96 +320,6 @@ namespace credativ {
     std::string pguser = "";
     std::string pgdatabase = "";
     std::string dsn = "";
-  };
-
-  /*
-   * Represents an identified streaming connection.
-   */
-  class StreamIdentification : public PushableCols {
-  public:
-
-    static constexpr const char * STREAM_PROGRESS_IDENTIFIED = "IDENTIFIED";
-    static constexpr const char * STREAM_PROGRESS_STREAMING = "STREAMING";
-    static constexpr const char * STREAM_PROGRESS_SHUTDOWN = "SHUTDOWN";
-    static constexpr const char * STREAM_PROGRESS_FAILED = "FAILED";
-    static constexpr const char * STREAM_PROGRESS_TIMELINE_SWITCH = "TIMELINE_SWITCH";
-
-    unsigned long long id = -1; /* internal catalog stream id */
-    int archive_id = -1; /* used to reflect assigned archive */
-    std::string stype;
-    std::string slot_name;
-    std::string systemid;
-    unsigned int timeline;
-    std::string xlogpos;
-    std::string dbname;
-    std::string status;
-    std::string create_date;
-
-    /**
-     * Runtime variable wal_segment_size, transports
-     * the configured wal_segment_size during streaming
-     * operation.
-     *
-     * Usually this gets initialized by instantiating
-     * a PGStream object and establish a streaming connnection
-     * (e.g. PGStream::connect()).
-     */
-    unsigned long long wal_segment_size = -1;
-
-    /*
-     * Tells the stream to restart from the server XLOG
-     * position without consulting the catalog. Only used
-     * during runtime.
-     */
-    bool force_xlogpos_restart = false;
-
-    /*
-     * Runtime streaming properties. Those usually
-     * get instrumented for example by a WALStreamerProcess
-     * instance.
-     */
-    int write_pos_start_offset = 0; /* starting offset into current XLogSegment */
-    XLogRecPtr flush_position = InvalidXLogRecPtr;
-    XLogRecPtr write_position = InvalidXLogRecPtr;
-    XLogRecPtr apply_position = InvalidXLogRecPtr;
-    XLogRecPtr server_position = InvalidXLogRecPtr;
-    XLogRecPtr last_reported_flush_position = InvalidXLogRecPtr;
-
-    /*
-     * Additional properties, those aren't necessarily
-     * initialized. Use them with care.
-     */
-    std::string archive_name = "";
-
-    StreamIdentification();
-    ~StreamIdentification();
-
-    /*
-     * Physical replication slot, if any
-     */
-    std::shared_ptr<PhysicalReplicationSlot> slot = nullptr;
-
-    /*
-     * Set properties back to default.
-     */
-    void reset();
-
-    /*
-     * Returns the decoded XLogRecPtr from xlogpos
-     */
-    XLogRecPtr xlogposDecoded();
-    std::string xlogposEncoded();
-
-    /**
-     * Updates the internal write position segment
-     * to XLOG segment start boundary.
-     *
-     * Please note that calling this method is only legit if you have
-     * set the write_position and WAL segment size (which
-     * might be hard coded if compiled against PostgreSQL < 11).
-     */
-    int updateStartSegmentWriteOffset();
-
   };
 
   /*
@@ -1102,79 +1008,6 @@ namespace credativ {
 
   };
 
-  /**
-   * Define WAL cleanup modes.
-   */
-  typedef enum {
-
-    WAL_CLEANUP_RANGE,
-    WAL_CLEANUP_OFFSET,
-    WAL_CLEANUP_ALL,
-    NO_WAL_TO_DELETE
-
-  } WALCleanupMode;
-
-  /**
-   * Cleanup basebackup list mode.
-   *
-   * Can be either BACKUP_KEEP or BACKUP_DELETE
-   */
-  typedef enum {
-
-    NO_BASEBACKUPS,
-    BASEBACKUP_KEEP,
-    BASEBACKUP_DELETE
-
-  } BasebackupCleanupMode;
-
-  /**
-   * A structure describing the XLogRecPtr
-   * cleanup threshold and the timelines which
-   * it belongs to.
-   */
-  class xlog_cleanup_off_t {
-  public:
-
-    unsigned int timeline;
-    unsigned int wal_segment_size;
-    XLogRecPtr wal_cleanup_start_pos = InvalidXLogRecPtr;
-    XLogRecPtr wal_cleanup_end_pos   = InvalidXLogRecPtr;
-
-  };
-
-  typedef std::map<unsigned int,
-                   std::shared_ptr<xlog_cleanup_off_t>> tli_cleanup_offsets;
-
-  /**
-   * A BackupCleanupDescr descriptor instance describes
-   * which basebackups and WAL segment ranges can be evicted
-   * from the archive. It carries a list of basebackup descriptors
-   * which is identifying the basebackups to delete or to keep.
-   *
-   * The newest basebackup is the first in the vector, the older one
-   * is the last. The cleanup descriptor also maintains a XLogRecPtr
-   * offset or range, depending on the deletion mode specified in
-   * the property mode.
-   *
-   * This identifies the starting (or ending) location of WAL segments which are
-   * safe to delete from the archive. Please note that this XLogRecPtr doesn't
-   * necessarily belong to the list of basebackups currently elected
-   * for eviction from the archive, but might have been influenced
-   * by a basebackup to keep or which was pinned before.
-   *
-   */
-  class BackupCleanupDescr {
-  public:
-
-    std::vector<std::shared_ptr<BaseBackupDescr>> basebackups;
-    BasebackupCleanupMode basebackupMode = BASEBACKUP_KEEP;
-
-    /* List if TLI/XLOG cleanup offset items */
-    tli_cleanup_offsets off_list;
-
-    WALCleanupMode mode = NO_WAL_TO_DELETE;
-
-  };
 
   /**
    * Basebackup retrieval modes for BackupCatalog::getBaseBackup().

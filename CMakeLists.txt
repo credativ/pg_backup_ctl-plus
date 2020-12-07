@@ -86,6 +86,7 @@ add_library (pgbckctl-proto SHARED
   src/parser/pgproto-commands.cxx
   src/parser/pgproto-parser.cxx
   src/jobs/exectx.cxx
+  src/jobs/pgiosocketcontext.cxx
   src/protocol/proto-catalog.cxx
   src/jobs/server.cxx
 
