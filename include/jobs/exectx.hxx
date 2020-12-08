@@ -71,23 +71,6 @@ namespace credativ {
 
     };
 
-    /**
-     * A specific executable context, describing the context
-     * for protocol commands using COPY BOTH protocol actions.
-     */
-    class CopyContext : public ExecutableContext {
-    protected:
-
-      /* Identifier for this context */
-      ExecutableContextName name = EXECUTABLE_CONTEXT_COPY;
-
-    public:
-
-      CopyContext();
-      virtual ~CopyContext();
-
-    };
-
   }
 
 }

@@ -3,6 +3,7 @@
 #include <memory>
 #include <exectx.hxx>
 #include <pgbckctl_exception.hxx>
+#include <copyprotocolcontext.hxx>
 
 using namespace credativ;
 using namespace pgprotocol;
@@ -47,11 +48,3 @@ std::shared_ptr<ExecutableContext> ExecutableContext::create(ExecutableContextNa
   return context;
 
 }
-
-/* ****************************************************************************
- * CopyContext
- * ****************************************************************************/
-
-CopyContext::CopyContext() {}
-
-CopyContext::~CopyContext() {}
