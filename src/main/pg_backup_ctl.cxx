@@ -68,6 +68,7 @@ typedef struct PGBackupCtlArgs {
   char *action;
   char *actionFile; /* commands read from file */
   char *catalogDir; /* mandatory or compiled in default */
+  char **variables = NULL; /* list of runtime variables to set */
   bool  useCompression;
   int   start_launcher = 0;
   int   start_wal_streaming = 0;
@@ -159,6 +160,8 @@ static void processCmdLineArgs(int argc,
       &handle->start_wal_streaming, 0, "start WAL streamer on specified archive and exit (requires --archive-name)" },
     { "backup-profile", 'P', POPT_ARG_STRING,
       &handle->backup_profile, 0, "specifies a backup profile used by specified actions" },
+    { "variable", 'V', POPT_ARG_ARGV,
+      &handle->variables, 0, "runtime variables to be set during execution" },
 
     POPT_AUTOHELP { NULL, 0, 0, NULL, 0 }
   };
@@ -184,6 +187,7 @@ static void processCmdLineArgs(int argc,
       + string((char *)poptStrerror(processedArg));
     throw CPGBackupCtlFailure(errstr.c_str());
   }
+
 }
 
 /*
