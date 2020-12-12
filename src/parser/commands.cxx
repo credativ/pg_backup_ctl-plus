@@ -367,24 +367,16 @@ ShowVariablesCatalogCommand::ShowVariablesCatalogCommand() {}
 
 void ShowVariablesCatalogCommand::execute(bool flag) {
 
-  auto it_start = this->runtime_config->begin();
-  auto it_end = this->runtime_config->end();
+  shared_ptr<OutputFormatConfiguration> output_config
+    = make_shared<OutputFormatConfiguration>();
+  shared_ptr<OutputFormatter> formatter
+    = OutputFormatter::formatter(output_config,
+                                 catalog,
+                                 getOutputFormat());
+  ostringstream output;
 
-  cout << CPGBackupCtlBase::makeHeader("Runtime Variables",
-                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
-                                       80);
-
-  for(; it_start != it_end; ++it_start) {
-
-    shared_ptr<ConfigVariable> var = it_start->second;
-    string str_value;
-
-    var->getValue(str_value);
-
-    cout << boost::format("%-30s | %-40s") % var->getName() % str_value
-         << endl;
-
-  }
+  formatter->nodeAs(runtime_config, output);
+  cout << output.str();
 
 }
 
@@ -590,16 +582,16 @@ void ShowVariableCatalogCommand::execute(bool flag) {
 
   /* throws in case variable is unkown */
   std::shared_ptr<ConfigVariable> var = this->runtime_config->get(this->var_name);
-  string str_value;
+  shared_ptr<OutputFormatConfiguration> output_config
+    = make_shared<OutputFormatConfiguration>();
+  shared_ptr<OutputFormatter> formatter
+    = OutputFormatter::formatter(output_config,
+                                 catalog,
+                                 getOutputFormat());
+  ostringstream output;
 
-  /* extract value */
-  var->getValue(str_value);
-
-  cout << CPGBackupCtlBase::makeHeader("Runtime Variables",
-                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
-                                       80);
-  cout << boost::format("%-30s | %-40s") % var->getName() % str_value
-       << endl;
+  formatter->nodeAs(var, output);
+  cout << output.str();
 
 }
 
@@ -3072,30 +3064,12 @@ void ListRetentionPoliciesCommand::execute(bool flag) {
     /*
      * Print out details.
      */
-    cout << CPGBackupCtlBase::makeHeader("List of retention policies",
-                                         boost::format("%-10s\t%-30s\t%-25s") % "ID" % "NAME" % "CREATED",
-                                         80);
-
-    for (auto retention : retentionList) {
-
-      cout << boost::format("%-10s\t%-30s\t%-25s")
-        % retention->id % retention->name % retention->created << endl;
-
-      if (retention->rules.size() > 0) {
-        cout << boost::format("%-80s") % "RULE(s):"
-             << endl;
-      }
-
-      for (auto rule : retention->rules) {
-
-        shared_ptr<Retention> instance = Retention::get(rule);
-
-        cout << CPGBackupCtlBase::makeLine(boost::format("%-10s\t%-70s")
-                                           % " - " % instance->asString());
-        cout << CPGBackupCtlBase::makeLine(80) << endl;
-
-      }
-    }
+    shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
+                                                                       catalog,
+                                                                       getOutputFormat());
+    ostringstream output;
+    formatter->nodeAs(retentionList, output);
+    cout << output.str();
 
   } catch (CPGBackupCtlFailure &e) {
     if (have_tx) {
@@ -3922,7 +3896,15 @@ ListArchiveCatalogCommand::ListArchiveCatalogCommand() {
 
 void ListArchiveCatalogCommand::execute(bool extendedOutput) {
 
+  shared_ptr<OutputFormatConfiguration> output_config
+    = make_shared<OutputFormatConfiguration>();
+  shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(output_config,
+                                                                     catalog,
+                                                                     getOutputFormat());
+  shared_ptr<list<shared_ptr<CatalogDescr>>> archiveList(nullptr);
   shared_ptr<CatalogDescr> temp_descr(nullptr);
+
+  std::ostringstream output;
 
   /*
    * Die hard in case no catalog available.
@@ -3942,48 +3924,26 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
 
     if (this->mode == ARCHIVE_LIST) {
 
+      output_config->create("list_archive.mode", "full", "full");
+
       /*
        * Get a list of current registered archives in the catalog.
        */
-      auto archiveList = catalog->getArchiveList();
+      archiveList = catalog->getArchiveList();
 
-      /*
-       * Print headline
-       */
-      cout << CPGBackupCtlBase::makeHeader("List of archives",
-                                           boost::format("%-15s\t%-30s") % "Name" % "Directory",
-                                           80);
-
-      /*
-       * Print archive properties
-       */
-      for (auto& descr : *archiveList) {
-        cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-30s")
-                                           % descr->archive_name
-                                           % descr->directory);
-      }
     }
     else if (this->mode == ARCHIVE_FILTERED_LIST) {
 
       /*
        * Get a filtered list for the specified properties.
+       *
+       * This is not really employed here atm, but may change
+       * in the future.
        */
-      auto archiveList = catalog->getArchiveList(make_shared<CatalogDescr>(*this),
-                                                 this->affectedAttributes);
+      archiveList = catalog->getArchiveList(make_shared<CatalogDescr>(*this),
+                                            this->affectedAttributes);
 
-      /* Print headline */
-      cout << CPGBackupCtlBase::makeHeader("Filtered archive list",
-                                           boost::format("%-15s\t%-30s") % "Name" % "Directory",
-                                           80);
-
-      /*
-       * Print archive properties
-       */
-      for (auto& descr : *archiveList) {
-        cout << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-30s")
-                                           % descr->archive_name
-                                           % descr->directory);
-      }
+      output_config->create("list_archive.mode", "filtered", "filtered");
 
     } else if (this->mode == ARCHIVE_DETAIL_LIST) {
       /*
@@ -3996,30 +3956,17 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
        * at this point nevertheless, since we just call
        * getArchiveList with the affected NAME property attached only.
        */
+      output_config->create("list_archive.mode", "detail", "detail");
 
       /*
        * Get a filtered list for the specified properties.
        */
-      auto archiveList = catalog->getArchiveList(make_shared<CatalogDescr>(*this),
-                                                 this->affectedAttributes);
+      archiveList = catalog->getArchiveList(make_shared<CatalogDescr>(*this),
+                                            this->affectedAttributes);
 
-      /* Print headline */
-      cout << CPGBackupCtlBase::makeHeader("Detail view for archive",
-                                           boost::format("%-20s\t%-30s") % "Property" % "Setting",
-                                           80);
-
-      for (auto& descr: *archiveList) {
-        cout << boost::format("%-20s\t%-30s") % "NAME" % descr->archive_name << endl;
-        cout << boost::format("%-20s\t%-30s") % "DIRECTORY" % descr->directory << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGHOST" % descr->coninfo->pghost << endl;
-        cout << boost::format("%-20s\t%-30d") % "PGPORT" % descr->coninfo->pgport << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGDATABASE" % descr->coninfo->pgdatabase << endl;
-        cout << boost::format("%-20s\t%-30s") % "PGUSER" % descr->coninfo->pguser << endl;
-        cout << boost::format("%-20s\t%-30s") % "DSN" % descr->coninfo->dsn << endl;
-        cout << boost::format("%-20s\t%-30s") % "COMPRESSION" % descr->compression << endl;
-        cout << CPGBackupCtlBase::makeLine(80) << endl;
-      }
     }
+
+    catalog->commitTransaction();
 
   } catch (CPGBackupCtlFailure& e) {
     /* rollback transaction */
@@ -4028,6 +3975,10 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
   }
 
   catalog->close();
+
+  /* Print results */
+  formatter->nodeAs(archiveList, output);
+  cout << output.str();
 
 }
 

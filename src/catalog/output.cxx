@@ -396,6 +396,37 @@ void ConsoleOutputFormatter::nodeAs(std::vector<shm_worker_area> &slots,
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::vector<std::shared_ptr<RetentionDescr>> &retentionList,
+                                    std::ostringstream &output) {
+
+    output << CPGBackupCtlBase::makeHeader("List of retention policies",
+                                         boost::format("%-10s\t%-30s\t%-25s") % "ID" % "NAME" % "CREATED",
+                                         80);
+
+    for (auto retention : retentionList) {
+
+      output << boost::format("%-10s\t%-30s\t%-25s")
+        % retention->id % retention->name % retention->created << endl;
+
+      if (retention->rules.size() > 0) {
+        output << boost::format("%-80s") % "RULE(s):"
+             << endl;
+      }
+
+      for (auto rule : retention->rules) {
+
+        shared_ptr<Retention> instance = Retention::get(rule);
+
+        output << CPGBackupCtlBase::makeLine(boost::format("%-10s\t%-70s")
+                                           % " - " % instance->asString());
+        output << CPGBackupCtlBase::makeLine(80) << endl;
+
+      }
+
+    }
+
+}
+
 void ConsoleOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
                                     std::ostringstream &output) {
 
@@ -426,6 +457,74 @@ void ConsoleOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDes
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                                    std::ostringstream &output) {
+
+  /*
+   * We must distinguish between ARCHIVE_LIST, ARCHIVE_FILTERED_LIST and
+   * ARCHIVE_DETAIL_LIST.
+   */
+  std::string mode;
+
+  config->get("list_archive.mode")->getValue(mode);
+
+  /* ARCHIVE_LIST and ARCHIVE_FILTERED_LIST are basically the same. */
+  if (mode == "filtered" || mode == "full") {
+    listArchiveList(list, output);
+  }
+
+  if (mode == "detail") {
+    listArchiveDetail(list, output);
+  }
+
+}
+
+void ConsoleOutputFormatter::listArchiveList(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                                             std::ostringstream &output) {
+
+  /* Print headline */
+  output << CPGBackupCtlBase::makeHeader("Filtered archive list",
+                                         boost::format("%-15s\t%-30s") % "Name" % "Directory",
+                                         80);
+
+  /*
+   * Print archive properties
+   */
+  for (auto& descr : *list) {
+    output << CPGBackupCtlBase::makeLine(boost::format("%-15s\t%-30s")
+                                         % descr->archive_name
+                                         % descr->directory);
+  }
+
+}
+
+void ConsoleOutputFormatter::listArchiveDetail(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                                               std::ostringstream &output) {
+
+  /* Print headline */
+  output << CPGBackupCtlBase::makeHeader("Detail view for archive",
+                                       boost::format("%-20s\t%-30s") % "Property" % "Setting",
+                                       80);
+
+  for (auto& descr: *list) {
+
+    output << CPGBackupCtlBase::makeLine(80);
+
+    output << boost::format("%-20s\t%-30s") % "NAME" % descr->archive_name << endl;
+    output << boost::format("%-20s\t%-30s") % "DIRECTORY" % descr->directory << endl;
+    output << boost::format("%-20s\t%-30s") % "PGHOST" % descr->coninfo->pghost << endl;
+    output << boost::format("%-20s\t%-30d") % "PGPORT" % descr->coninfo->pgport << endl;
+    output << boost::format("%-20s\t%-30s") % "PGDATABASE" % descr->coninfo->pgdatabase << endl;
+    output << boost::format("%-20s\t%-30s") % "PGUSER" % descr->coninfo->pguser << endl;
+    output << boost::format("%-20s\t%-30s") % "DSN" % descr->coninfo->dsn << endl;
+    output << boost::format("%-20s\t%-30s") % "COMPRESSION" % descr->compression << endl;
+    output << CPGBackupCtlBase::makeLine(80) << endl;
+
+    output << CPGBackupCtlBase::makeLine(80);
+
+  }
+
+}
 
 void ConsoleOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                     std::ostringstream &output) {
@@ -443,6 +542,46 @@ void ConsoleOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>
     this->listBackups(list, output);
 
   }
+
+}
+
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
+                                    std::ostringstream &output) {
+
+  auto it_start = rtc->begin();
+  auto it_end = rtc->end();
+
+  output << CPGBackupCtlBase::makeHeader("Runtime Variables",
+                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
+                                       80);
+
+  for(; it_start != it_end; ++it_start) {
+
+    shared_ptr<ConfigVariable> var = it_start->second;
+    string str_value;
+
+    var->getValue(str_value);
+
+    output << boost::format("%-30s | %-40s") % var->getName() % str_value
+         << endl;
+
+  }
+
+}
+
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<ConfigVariable> var,
+                                    std::ostringstream &output) {
+
+  string str_value;
+
+  /* extract value */
+  var->getValue(str_value);
+
+  output << CPGBackupCtlBase::makeHeader("Runtime Variables",
+                                       boost::format("%-30s\t%-40s") % "Name" % "Value",
+                                       80);
+  output << boost::format("%-30s | %-40s") % var->getName() % str_value
+         << endl;
 
 }
 
@@ -623,8 +762,7 @@ void JsonOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<BaseBac
 
 }
 
-void JsonOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
-                                 std::ostringstream &output) {
+boost::property_tree::ptree JsonOutputFormatter::toPtree(std::shared_ptr<RetentionDescr> retentionDescr) {
 
   namespace pt = boost::property_tree;
 
@@ -647,7 +785,37 @@ void JsonOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
   }
 
   head.add_child("rules", rules);
+
+  return head;
+
+}
+
+void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<RetentionDescr>> &retentionList,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree item;
+
+  head.put("number of retentions", retentionList.size());
+
+  BOOST_FOREACH(const std::shared_ptr<RetentionDescr> descr, retentionList) {
+    item.add_child("retention", this->toPtree(descr));
+  }
+
+  head.add_child("retentions", item);
   pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<RetentionDescr> retentionDescr,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree result = this->toPtree(retentionDescr);
+  pt::write_json(output, result);
 
 }
 
@@ -713,6 +881,56 @@ void JsonOutputFormatter::nodeAs(std::vector<shm_worker_area> &slots,
 
 }
 
+void JsonOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree archives;
+
+  /*
+   * We must distinguish between ARCHIVE_LIST, ARCHIVE_FILTERED_LIST and
+   * ARCHIVE_DETAIL_LIST.
+   */
+  std::string mode;
+
+  config->get("list_archive.mode")->getValue(mode);
+
+  for (auto &descr : *list) {
+
+    pt::ptree item;
+
+    head.put("number of archives", list->size());
+
+    /* ARCHIVE_LIST and ARCHIVE_FILTERED_LIST are basically the same. */
+    if (mode == "filtered" || mode == "full") {
+
+      item.put("name", descr->archive_name);
+      item.put("directory", descr->directory);
+
+    } else {
+
+      item.put("name", descr->archive_name);
+      item.put("directory", descr->directory);
+      item.put("pghost", descr->coninfo->pghost);
+      item.put("pgport", descr->coninfo->pgport);
+      item.put("pgdatabase", descr->coninfo->pgdatabase);
+      item.put("pguser", descr->coninfo->pguser);
+      item.put("dsn", descr->coninfo->dsn);
+      item.put("wal compression", descr->compression);
+
+    }
+
+    archives.add_child("archive", item);
+
+  }
+
+  head.add_child("archives", archives);
+  pt::write_json(output, head);
+
+}
+
 void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                  std::ostringstream &output) {
 
@@ -735,5 +953,54 @@ void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<BaseBackupDescr>> &
     this->listBackups(list, output);
 
   }
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  auto it_start = rtc->begin();
+  auto it_end = rtc->end();
+
+  pt::ptree head;
+  head.put("number of variables", rtc->count_variables());
+
+  for(; it_start != it_end; ++it_start) {
+
+    pt::ptree item;
+
+    shared_ptr<ConfigVariable> var = it_start->second;
+    string str_value;
+
+    var->getValue(str_value);
+
+    item.put("name", var->getName());
+    item.put("value", str_value);
+
+    head.add_child("config variable", item);
+
+  }
+
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<ConfigVariable> var,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  pt::ptree item;
+  string str_value;
+
+  var->getValue(str_value);
+  item.put("name", var->getName());
+  item.put("value", str_value);
+
+  head.add_child("config variable", item);
+  pt::write_json(output, head);
 
 }

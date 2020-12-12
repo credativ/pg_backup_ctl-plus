@@ -1,6 +1,8 @@
 #ifndef __HAVE_OUTPUT_HXX__
 #define __HAVE_OUTPUT_HXX__
 
+#include <boost/property_tree/ptree.hpp>
+
 #include <descr.hxx>
 #include <rtconfig.hxx>
 #include <BackupCatalog.hxx>
@@ -78,7 +80,14 @@ namespace credativ {
                         std::ostringstream &output) = 0;
     virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
                         std::ostringstream &output) = 0;
-
+    virtual void nodeAs(std::vector<std::shared_ptr<RetentionDescr>> &retentionList,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
+                        std::ostringstream &output) = 0;
 
     /**
      * Static factory method, returns an instance of
@@ -110,6 +119,18 @@ namespace credativ {
     void listBackupsVerbose(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                             std::ostringstream &output);
 
+    /**
+     * Output archive information in full or filtered mode.
+     */
+    void listArchiveList(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> descr,
+                         std::ostringstream &output);
+
+    /**
+     * Output archive information in detail mode.
+     */
+    void listArchiveDetail(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> descr,
+                           std::ostringstream &output);
+
   public:
 
     ConsoleOutputFormatter(std::shared_ptr<OutputFormatConfiguration> config,
@@ -125,12 +146,25 @@ namespace credativ {
                         std::ostringstream &output);
     virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
                         std::ostringstream &output);
-
+    virtual void nodeAs(std::vector<std::shared_ptr<RetentionDescr>> &retentionList,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
+                        std::ostringstream &output);
 
   };
 
   class JsonOutputFormatter : public OutputFormatter {
   private:
+
+    /**
+     * Internal method to convert a RetentionDescr instance
+     * to a json ptree representation
+     */
+    boost::property_tree::ptree toPtree(std::shared_ptr<RetentionDescr> retentionDescr);
 
     /**
      * Internal method to list backups verbose
@@ -143,6 +177,18 @@ namespace credativ {
      */
     void listBackups(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                      std::ostringstream &output);
+
+    /**
+     * Output archive information in full or filtered mode.
+     */
+    void listArchiveList(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> descr,
+                         std::ostringstream &output);
+
+    /**
+     * Output archive information in detail mode.
+     */
+    void listArchiveDetail(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> descr,
+                           std::ostringstream &output);
 
   public:
 
@@ -159,7 +205,14 @@ namespace credativ {
                             std::ostringstream &output);
     virtual void nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
                         std::ostringstream &output);
-
+    virtual void nodeAs(std::vector<std::shared_ptr<RetentionDescr>> &retentionList,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> list,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
+                        std::ostringstream &output);
 
 
   };
