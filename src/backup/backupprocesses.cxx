@@ -1281,6 +1281,12 @@ void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backup
   PGresult *res;
   int rc;
 
+  /* This is a no-op in case PostgreSQL version is lower than 13.0 */
+  if (PQserverVersion(this->pgconn) < 130000) {
+    BOOST_LOG_TRIVIAL(warning) << "backup manifest requested, but upstream server does not have support for it, ignoring";
+    return;
+  }
+
   if (!backupHandle->isInitialized())
     throw StreamingFailure("could not receive backup manifest");
 
