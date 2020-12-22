@@ -975,6 +975,10 @@ namespace credativ {
     bool noverify_checksums = false;
     bool manifest           = false;
     std::string manifest_checksums = "CRC32C";
+
+    static BackupProfileCompressType compressionType(std::string type);
+    static std::string compressionType(BackupProfileCompressType type);
+
   };
 
   /*

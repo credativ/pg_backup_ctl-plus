@@ -19,6 +19,7 @@
 #include <common.hxx>
 #include <signalhandler.hxx>
 #include <fs-archive.hxx>
+#include <output.hxx>
 #include <parser.hxx>
 #include <rtconfig.hxx>
 
@@ -338,14 +339,23 @@ static void handle_interactive(std::string in,
     cout << CatalogDescr::commandTagName(cmdType) << endl;
 
   } catch (exception& e) {
-    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
+    //    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
 
     /*
      * Check if runtime configuration variable interactive.on_error_exit
      * was set to TRUE. If yes, re-throw this exception.
      */
-    if (on_error_exit())
+    if (on_error_exit()) {
       throw e;
+    }
+    else {
+      std::string output_format;
+      std::ostringstream output;
+      RtCfg->get("output.format")->getValue(output_format);
+      OutputFormatter::nodeAs(e, output, output_format);
+      BOOST_LOG_TRIVIAL(error) << output.str();
+    }
+
   }
 
 }

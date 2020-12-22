@@ -94,6 +94,26 @@ std::shared_ptr<OutputFormatter> OutputFormatter::formatter(std::shared_ptr<Outp
 
 }
 
+void OutputFormatter::nodeAs(std::exception &e,
+                             std::ostringstream &output,
+                             std::string output_type) {
+
+  namespace pt = boost::property_tree;
+
+  if (output_type == "json") {
+    pt::ptree head;
+
+    head.put("severity", "error");
+    head.put("message", e.what());
+    pt::write_json(output, head);
+  }
+
+  if (output_type == "console") {
+    output << e.what() << endl;
+  }
+
+}
+
 /* ****************************************************************************
  * Implementation of ConsoleOutputFormatter
  * ****************************************************************************/
@@ -585,6 +605,76 @@ void ConsoleOutputFormatter::nodeAs(std::shared_ptr<ConfigVariable> var,
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::string result_str,
+                                    std::ostringstream &output) {
+
+  output << result_str << endl;
+
+}
+
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<BackupProfileDescr> profile,
+                                    std::ostringstream &output) {
+
+  output << CPGBackupCtlBase::makeHeader("Details for backup profile " + profile->name,
+                                       boost::format("%-25s\t%-40s") % "Property" % "Setting", 80);
+
+  /* Profile Name */
+  output << boost::format("%-25s\t%-30s") % "NAME" % profile->name << endl;
+
+  /* Profile compression type */
+  output << boost::format("%-25s\t%-30s") % "COMPRESSION"
+    % BackupProfileDescr::compressionType(profile->compress_type) << endl;
+
+  /* Profile max rate */
+  if (profile->max_rate <= 0) {
+    output << boost::format("%-25s\t%-30s") % "MAX RATE" % "NOT RATED"<< endl;
+  } else {
+    output << boost::format("%-25s\t%-30s") % "MAX RATE(KByte/s)" % profile->max_rate<< endl;
+  }
+
+  /* Profile backup label */
+  output << boost::format("%-25s\t%-30s") % "LABEL" % profile->label<< endl;
+
+  /* Profile fast checkpoint mode */
+  output << boost::format("%-25s\t%-30s") % "FAST CHECKPOINT" % profile->fast_checkpoint<< endl;
+
+  /* Profile WAL included */
+  output << boost::format("%-25s\t%-30s") % "WAL INCLUDED" % profile->include_wal<< endl;
+
+  /* Profile WAIT FOR WAL */
+  output << boost::format("%-25s\t%-30s") % "WAIT FOR WAL" % profile->wait_for_wal<< endl;
+
+  /* Profile NOVERIFY */
+  output << boost::format("%-25s\t%-30s") % "NOVERIFY CHECKSUMS" % profile->noverify_checksums<< endl;
+
+  /* Profile MANIFEST */
+  output << boost::format("%-25s\t%-30s") % "MANIFEST" % profile->manifest<< endl;
+
+  /* Profile MANIFEST_CHECKSUMS */
+  output << boost::format("%-25s\t%-30s") % "MANIFEST CHECKSUMS" % profile->manifest_checksums<< endl;
+
+}
+
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
+                                    std::ostringstream &output) {
+
+  /*
+   * Print headline
+   */
+  output << CPGBackupCtlBase::makeHeader("List of backup profiles",
+                                       boost::format("%-25s\t%-15s")
+                                       % "Name" % "Backup Label", 80);
+
+  /*
+   * Print name and label
+   */
+  for (auto& descr : *list) {
+    output << boost::format("%-25s\t%-15s") % descr->name % descr->label
+         << endl;
+  }
+
+}
+
 /* ****************************************************************************
  * Implementation of JsonOutputFormatter
  * ****************************************************************************/
@@ -922,7 +1012,7 @@ void JsonOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<Catal
 
     }
 
-    archives.add_child("archive", item);
+    archives.add_child(descr->archive_name, item);
 
   }
 
@@ -976,10 +1066,9 @@ void JsonOutputFormatter::nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
 
     var->getValue(str_value);
 
-    item.put("name", var->getName());
     item.put("value", str_value);
 
-    head.add_child("config variable", item);
+    head.add_child(var->getName(), item);
 
   }
 
@@ -1001,6 +1090,68 @@ void JsonOutputFormatter::nodeAs(std::shared_ptr<ConfigVariable> var,
   item.put("value", str_value);
 
   head.add_child("config variable", item);
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::string result_str,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  head.put("result", result_str);
+
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::listBackupProfileDetail(std::shared_ptr<BackupProfileDescr> descr,
+                                                  boost::property_tree::ptree &node) {
+
+  node.put("compress type", BackupProfileDescr::compressionType(descr->compress_type));
+  node.put("max rate", descr->max_rate);
+  node.put("backup label", descr->label);
+  node.put("fast checkpoint", descr->fast_checkpoint);
+  node.put("wal included", descr->include_wal);
+  node.put("wait for wal", descr->wait_for_wal);
+  node.put("noverify checksums", descr->noverify_checksums);
+  node.put("manifest", descr->manifest);
+  node.put("manifest checksums", descr->manifest_checksums);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<BackupProfileDescr> profile,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+
+  head.put("profile name", profile->name);
+  this->listBackupProfileDetail(profile, head);
+
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+  pt::ptree head;
+
+  head.put("number of profiles", list->size());
+
+  for(auto &descr : *list) {
+
+    pt::ptree item;
+
+    this->listBackupProfileDetail(descr, item);
+    head.add_child(descr->name, item);
+
+  }
+
   pt::write_json(output, head);
 
 }

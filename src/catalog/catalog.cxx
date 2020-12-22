@@ -143,6 +143,46 @@ void PushableCols::setAffectedAttributes(std::vector<int> affectedAttributes) {
   this->affectedAttributes = affectedAttributes;
 }
 
+BackupProfileCompressType BackupProfileDescr::compressionType(std::string type) {
+
+  if (boost::iequals(type, "NONE"))
+    return BACKUP_COMPRESS_TYPE_NONE;
+
+  if (boost::iequals(type, "GZIP"))
+    return BACKUP_COMPRESS_TYPE_GZIP;
+
+  if (boost::iequals(type, "ZSTD"))
+    return BACKUP_COMPRESS_TYPE_ZSTD;
+
+  if (boost::iequals(type, "XZ"))
+    return BACKUP_COMPRESS_TYPE_XZ;
+
+  if (boost::iequals(type, "PLAIN"))
+    return BACKUP_COMPRESS_TYPE_PLAIN;
+
+  throw CPGBackupCtlFailure("cannot convert backup compress type string");
+
+}
+
+std::string BackupProfileDescr::compressionType(BackupProfileCompressType type) {
+
+  switch(type) {
+  case BACKUP_COMPRESS_TYPE_NONE:
+    return "NONE";
+  case BACKUP_COMPRESS_TYPE_GZIP:
+    return "GZIP";
+  case BACKUP_COMPRESS_TYPE_ZSTD:
+    return "ZSTD";
+  case BACKUP_COMPRESS_TYPE_XZ:
+    return "XZ";
+  case BACKUP_COMPRESS_TYPE_PLAIN:
+    return "PLAIN";
+  default:
+    throw CPGBackupCtlFailure("cannot convert backup compress type id");
+  }
+
+}
+
 std::string StatCatalogArchive::gimmeFormattedString() {
   std::ostringstream formatted;
 

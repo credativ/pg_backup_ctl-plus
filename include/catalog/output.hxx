@@ -51,6 +51,8 @@ namespace credativ {
   class OutputFormatter {
   protected:
 
+    CatalogTag tag = EMPTY_DESCR;
+
     /* Internal reference to BackupCatalog */
     std::shared_ptr<BackupCatalog> catalog = nullptr;
 
@@ -88,6 +90,15 @@ namespace credativ {
                         std::ostringstream &output) = 0;
     virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
                         std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<BackupProfileDescr> profile,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
+                        std::ostringstream &output) = 0;
+    virtual void nodeAs(std::string result_str,
+                        std::ostringstream &output) = 0;
+    static void nodeAs(std::exception &e,
+                       std::ostringstream &output,
+                       std::string output_type);
 
     /**
      * Static factory method, returns an instance of
@@ -154,6 +165,12 @@ namespace credativ {
                         std::ostringstream &output);
     virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
                         std::ostringstream &output);
+    virtual void nodeAs(std::string result_str,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<BackupProfileDescr> profile,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
+                        std::ostringstream &output);
 
   };
 
@@ -190,6 +207,12 @@ namespace credativ {
     void listArchiveDetail(std::shared_ptr<std::list<std::shared_ptr<CatalogDescr>>> descr,
                            std::ostringstream &output);
 
+    /**
+     * Creates a profile node for JSON output
+     */
+    void listBackupProfileDetail(std::shared_ptr<BackupProfileDescr> descr,
+                                 boost::property_tree::ptree &node);
+
   public:
 
     JsonOutputFormatter(std::shared_ptr<OutputFormatConfiguration> config,
@@ -212,6 +235,12 @@ namespace credativ {
     virtual void nodeAs(std::shared_ptr<RuntimeConfiguration> rtc,
                         std::ostringstream &output);
     virtual void nodeAs(std::shared_ptr<ConfigVariable> var,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::string result_str,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<BackupProfileDescr> profile,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
                         std::ostringstream &output);
 
 

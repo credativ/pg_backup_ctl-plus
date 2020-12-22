@@ -193,7 +193,7 @@ void DropBasebackupCatalogCommand::execute(bool flag) {
      * Thus, check archive and basebackup separately.
      *
      */
-    cout << "checking for archive " << this->archive_name << endl;
+    BOOST_LOG_TRIVIAL(debug) << "checking for archive \"" << this->archive_name << "\"";
     archiveDescr = this->catalog->existsByName(this->archive_name);
 
     if (archiveDescr->id < 0) {
@@ -206,7 +206,7 @@ void DropBasebackupCatalogCommand::execute(bool flag) {
     /*
      * Check whether the basebackup exists.
      */
-    cout << "checking for basebackup ID \"" << this->basebackup_id << "\"" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "checking for basebackup ID \"" << this->basebackup_id << "\"";
 
     bbDescr = this->catalog->getBaseBackup(this->basebackup_id, archiveDescr->id);
 
@@ -247,11 +247,10 @@ void DropBasebackupCatalogCommand::execute(bool flag) {
     } catch(CArchiveIssue &ai) {
 
       /* unlink_path() reports CArchiveIssue in case path doesn not exist */
-      cout << "WARNING: "
-           << "basebackup path \""
-           << bbDescr->fsentry
-           << "\" does not exist, dropping catalog entry anyways"
-           << endl;
+      BOOST_LOG_TRIVIAL(warning) << "WARNING: "
+                                 << "basebackup path \""
+                                 << bbDescr->fsentry
+                                 << "\" does not exist, dropping catalog entry anyways";
 
     }
 
@@ -712,7 +711,7 @@ void PinCatalogCommand::execute(bool flag) {
 
     int pinned = retention.apply(bblist);
 
-    cout << "pinning on " << pinned << " basebackups successful" << endl;
+    BOOST_LOG_TRIVIAL(debug) << "pinning on " << pinned << " basebackups successful";
 
   } catch(CPGBackupCtlFailure &e) {
 
@@ -814,8 +813,14 @@ ExecCommandCatalogCommand::ExecCommandCatalogCommand(std::shared_ptr<BackupCatal
 
 void ExecCommandCatalogCommand::execute(bool flag) {
 
+  shared_ptr<OutputFormatter> formatter
+    = OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
+                                 catalog,
+                                 getOutputFormat());
   job_info jobDescr;
   char buf_byte;
+  ostringstream cmd_result;
+  ostringstream output;
   pid_t pid;
 
   jobDescr.background_exec = true;
@@ -827,13 +832,17 @@ void ExecCommandCatalogCommand::execute(bool flag) {
   pid = run_process(jobDescr);
 
   if (pid < (pid_t)0) {
-    cerr << "could not execute command" << endl;
+    throw CPGBackupCtlFailure("could not execute command");
     return;
   }
 
   while (::read(jobDescr.pipe_out[0], &buf_byte, 1) > 0) {
-    cout << buf_byte;
+    output << buf_byte;
   }
+
+  formatter->nodeAs(cmd_result.str(),
+                    output);
+  cout << output.str();
 
 }
 
@@ -1212,11 +1221,12 @@ void StartLauncherCatalogCommand::execute(bool flag) {
 
   if (pid > 0) {
 
-    cout << "background launcher launched at pid " << pid << endl;
+    BOOST_LOG_TRIVIAL(debug) << "background launcher launched at pid ";
 
-      /*
-       * Send a test message.
-       */
+    /*
+     * Send a test message.
+     */
+
     /*
      * Establish message queue, of not yet there.
      */
@@ -1321,7 +1331,7 @@ void StopStreamingForArchiveCommandHandle::execute(bool noop) {
 
   if (archive_pid > 0) {
     ::kill(archive_pid, SIGTERM);
-    cout << "NOTICE: terminated worker pid " << archive_pid << " for archive " << temp_descr->archive_name << endl;
+    BOOST_LOG_TRIVIAL(info) << "terminated worker pid " << archive_pid << " for archive " << temp_descr->archive_name << endl;
   } else {
     throw CArchiveIssue("no streaming worker for archive " + temp_descr->archive_name + " found");
   }
@@ -1493,12 +1503,11 @@ void StartStreamingForArchiveCommand::prepareStream() {
       if (myStream->status == StreamIdentification::STREAM_PROGRESS_SHUTDOWN) {
 
 #ifdef __DEBUG__
-        cout << "using xlog position "
-             << myStream->xlogpos
-             << " timeline "
-             << myStream->timeline
-             << " from catalog"
-             << endl;
+        BOOST_LOG_TRIVIAL(debug) << "using xlog position "
+                                 << myStream->xlogpos
+                                 << " timeline "
+                                 << myStream->timeline
+                                 << " from catalog";
 #endif
 
         /*
@@ -1714,7 +1723,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     std::string archive_name = this->archive_name;
     std::ostringstream cmd_str;
 
-    cout << "DETACHING requested" << endl;
+    BOOST_LOG_TRIVIAL(info) << "DETACHING requested";
 
     cmd_str << "START STREAMING FOR ARCHIVE "
             << archive_name;
@@ -1788,9 +1797,8 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
                                           ConnectionDescr::CONNECTION_TYPE_BASEBACKUP);
     }
 
-#ifdef __DEBUG__
-    cout << "streaming connection DSN " << temp_descr->coninfo->dsn << endl;
-#endif
+    BOOST_LOG_TRIVIAL(debug) << "streaming connection DSN " << temp_descr->coninfo->dsn;
+
     /*
      * Connection definition should be ready now, create PGStream
      * connection handle and go further.
@@ -2724,7 +2732,11 @@ ListBackupProfileCatalogCommand::ListBackupProfileCatalogCommand(std::shared_ptr
 
 void ListBackupProfileCatalogCommand::execute(bool extended) {
 
+  shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
+                                                                     catalog,
+                                                                     getOutputFormat());
   shared_ptr<CatalogDescr> temp_descr(nullptr);
+  ostringstream output;
 
   /*
    * Die hard in case no catalog available.
@@ -2751,85 +2763,23 @@ void ListBackupProfileCatalogCommand::execute(bool extended) {
 
       auto profileList = catalog->getBackupProfiles();
 
-      /*
-       * Print headline
-       */
-      cout << CPGBackupCtlBase::makeHeader("List of backup profiles",
-                                           boost::format("%-25s\t%-15s")
-                                           % "Name" % "Backup Label", 80);
+      formatter->nodeAs(profileList, output);
 
-      /*
-       * Print name and label
-       */
-      for (auto& descr : *profileList) {
-        cout << boost::format("%-25s\t%-15s") % descr->name % descr->label
-             << endl;
-      }
 
     } else if (this->tag == LIST_BACKUP_PROFILE_DETAIL) {
 
       std::shared_ptr<BackupProfileDescr> profile
         = this->catalog->getBackupProfile(this->getBackupProfileDescr()->name);
 
-      cout << CPGBackupCtlBase::makeHeader("Details for backup profile " + profile->name,
-                                           boost::format("%-25s\t%-40s") % "Property" % "Setting", 80);
+      formatter->nodeAs(profile, output);
 
-      /* Profile Name */
-      cout << boost::format("%-25s\t%-30s") % "NAME" % profile->name << endl;
-
-      /* Profile compression type */
-      switch(profile->compress_type) {
-      case BACKUP_COMPRESS_TYPE_NONE:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "NONE" << endl;
-        break;
-      case BACKUP_COMPRESS_TYPE_GZIP:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "GZIP" << endl;
-        break;
-      case BACKUP_COMPRESS_TYPE_ZSTD:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "ZSTD" << endl;
-        break;
-      case BACKUP_COMPRESS_TYPE_XZ:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "XZ" << endl;
-        break;
-      case BACKUP_COMPRESS_TYPE_PLAIN:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "PLAIN" << endl;
-        break;
-      default:
-        cout << boost::format("%-25s\t%-30s") % "COMPRESSION" % "UNKNOWN or N/A" << endl;
-        break;
-      }
-
-      /* Profile max rate */
-      if (profile->max_rate <= 0) {
-        cout << boost::format("%-25s\t%-30s") % "MAX RATE" % "NOT RATED" << endl;
-      } else {
-        cout << boost::format("%-25s\t%-30s") % "MAX RATE(KByte/s)" % profile->max_rate << endl;
-      }
-
-      /* Profile backup label */
-      cout << boost::format("%-25s\t%-30s") % "LABEL" % profile->label << endl;
-
-      /* Profile fast checkpoint mode */
-      cout << boost::format("%-25s\t%-30s") % "FAST CHECKPOINT" % profile->fast_checkpoint << endl;
-
-      /* Profile WAL included */
-      cout << boost::format("%-25s\t%-30s") % "WAL INCLUDED" % profile->include_wal << endl;
-
-      /* Profile WAIT FOR WAL */
-      cout << boost::format("%-25s\t%-30s") % "WAIT FOR WAL" % profile->wait_for_wal << endl;
-
-      /* Profile NOVERIFY */
-      cout << boost::format("%-25s\t%-30s") % "NOVERIFY CHECKSUMS" % profile->noverify_checksums << endl;
-
-      /* Profile MANIFEST */
-      cout << boost::format("%-25s\t%-30s") % "MANIFEST" % profile->manifest << endl;
-
-      /* Profile MANIFEST_CHECKSUMS */
-      cout << boost::format("%-25s\t%-30s") % "MANIFEST CHECKSUMS" % profile->manifest_checksums << endl;
 
     }
 
     catalog->commitTransaction();
+
+    /* finally output results */
+    cout << output.str();
 
   } catch (exception& e) {
     this->catalog->rollbackTransaction();
