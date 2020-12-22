@@ -183,32 +183,6 @@ std::string BackupProfileDescr::compressionType(BackupProfileCompressType type) 
 
 }
 
-std::string StatCatalogArchive::gimmeFormattedString() {
-  std::ostringstream formatted;
-
-  formatted << CPGBackupCtlBase::makeHeader("Archive Catalog Overview",
-                                            boost::format("%-15s\t%-30s\t%-20s")
-                                            % "Name" % "Directory" % "Host", 80);
-  formatted << boost::format("%-15s\t%-30s\t%-20s")
-    % this->archive_name % this->archive_directory % this->archive_host;
-  formatted << endl;
-
-  /*
-   * Catalog statistics data.
-   */
-  formatted << CPGBackupCtlBase::makeHeader("Backups",
-                                            boost::format("%-9s\t%-9s\t%-9s\t%-16s")
-                                            % "# total" % "# failed"
-                                            % "# running" % "avg duration (s)", 80);
-  formatted << boost::format("%-9s\t%-9s\t%-9s\t%-16s")
-    % this->number_of_backups % this->backups_failed
-    % this->backups_running
-    % this->avg_backup_duration;
-  formatted << endl;
-
-  return formatted.str();
-}
-
 BasicPinDescr::BasicPinDescr() {
   this->tag = EMPTY_DESCR;
 }

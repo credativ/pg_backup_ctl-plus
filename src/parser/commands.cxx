@@ -2176,8 +2176,9 @@ void ListBackupCatalogCommand::execute(bool flag) {
    */
   try {
 
-    std::shared_ptr<StatCatalog> stat = nullptr;
+    std::shared_ptr<StatCatalogArchive> stat = nullptr;
     std::shared_ptr<CatalogDescr> temp_descr = nullptr;
+    std::ostringstream output;
 
     this->catalog->startTransaction();
 
@@ -2199,9 +2200,12 @@ void ListBackupCatalogCommand::execute(bool flag) {
     }
     /* list of all backups in every archive */
     stat = this->catalog->statCatalog(this->archive_name);
-    cout << stat->gimmeFormattedString();
-
     this->catalog->commitTransaction();
+
+    OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
+                               catalog,
+                               getOutputFormat())->nodeAs(stat, output);
+    cout << output.str();
 
   } catch (CPGBackupCtlFailure &e) {
     this->catalog->rollbackTransaction();
@@ -3734,8 +3738,6 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
     this->catalog->open_rw();
   }
 
-  cout << "checking archive structure: ";
-
   /*
    * Check archive directory structure.
    */
@@ -3757,10 +3759,16 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
      * is intact.
      */
     shared_ptr<BackupDirectory> archivedir = CPGBackupCtlFS::getArchiveDirectoryDescr(temp_descr->directory);
-    archivedir->verify();
-    cout << "OK" << endl;
+    std::ostringstream output;
 
+    archivedir->verify();
     this->catalog->commitTransaction();
+
+    (OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
+                                catalog,
+                                getOutputFormat()))->nodeAs("OK",
+                                                            output);
+    cout << output.str();
 
   } catch(CPGBackupCtlFailure& e) {
 

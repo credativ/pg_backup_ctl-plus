@@ -675,6 +675,31 @@ void ConsoleOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<Ba
 
 }
 
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<StatCatalogArchive> stat,
+                                    std::ostringstream &output) {
+
+  output << CPGBackupCtlBase::makeHeader("Archive Catalog Overview",
+                                            boost::format("%-15s\t%-30s\t%-20s")
+                                            % "Name" % "Directory" % "Host", 80);
+  output << boost::format("%-15s\t%-30s\t%-20s")
+    % stat->archive_name % stat->archive_directory % stat->archive_host;
+  output << endl;
+
+  /*
+   * Catalog statistics data.
+   */
+  output << CPGBackupCtlBase::makeHeader("Backups",
+                                            boost::format("%-9s\t%-9s\t%-9s\t%-16s")
+                                            % "# total" % "# failed"
+                                            % "# running" % "avg duration (s)", 80);
+  output << boost::format("%-9s\t%-9s\t%-9s\t%-16s")
+    % stat->number_of_backups % stat->backups_failed
+    % stat->backups_running
+    % stat->avg_backup_duration;
+  output << endl;
+
+}
+
 /* ****************************************************************************
  * Implementation of JsonOutputFormatter
  * ****************************************************************************/
@@ -1151,6 +1176,28 @@ void JsonOutputFormatter::nodeAs(std::shared_ptr<std::list<std::shared_ptr<Backu
     head.add_child(descr->name, item);
 
   }
+
+  pt::write_json(output, head);
+
+}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<StatCatalogArchive> stat,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+  pt::ptree head;
+  pt::ptree stats;
+
+  head.put("archive name", stat->archive_name);
+  head.put("directory", stat->archive_directory);
+  head.put("host", stat->archive_host);
+
+  stats.put("number of backups", stat->number_of_backups);
+  stats.put("backups running", stat->backups_running);
+  stats.put("avg duration", stat->avg_backup_duration);
+  stats.put("backups failed", stat->backups_failed);
+
+  head.add_child("backup statistics", stats);
 
   pt::write_json(output, head);
 

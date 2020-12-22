@@ -96,6 +96,8 @@ namespace credativ {
                         std::ostringstream &output) = 0;
     virtual void nodeAs(std::string result_str,
                         std::ostringstream &output) = 0;
+    virtual void nodeAs(std::shared_ptr<StatCatalogArchive> stat,
+                        std::ostringstream &output) = 0;
     static void nodeAs(std::exception &e,
                        std::ostringstream &output,
                        std::string output_type);
@@ -171,6 +173,8 @@ namespace credativ {
                         std::ostringstream &output);
     virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
                         std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<StatCatalogArchive> stat,
+                        std::ostringstream &output);
 
   };
 
@@ -241,6 +245,8 @@ namespace credativ {
     virtual void nodeAs(std::shared_ptr<BackupProfileDescr> profile,
                         std::ostringstream &output);
     virtual void nodeAs(std::shared_ptr<std::list<std::shared_ptr<BackupProfileDescr>>> &list,
+                        std::ostringstream &output);
+    virtual void nodeAs(std::shared_ptr<StatCatalogArchive> stat,
                         std::ostringstream &output);
 
 
