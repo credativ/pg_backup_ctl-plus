@@ -268,13 +268,6 @@ namespace credativ {
   };
 
   class ListBackupListCommand : public BaseCatalogCommand {
-  private:
-
-    virtual void print(std::shared_ptr<CatalogDescr> catalog_descr,
-                       std::vector<std::shared_ptr<BaseBackupDescr>> &backupList);
-    virtual void print_verbose(std::shared_ptr<CatalogDescr> catalog_descr,
-                               std::vector<std::shared_ptr<BaseBackupDescr>> &backupList);
-
   public:
     ListBackupListCommand(std::shared_ptr<CatalogDescr> descr);
     ListBackupListCommand(std::shared_ptr<BackupCatalog> catalog);

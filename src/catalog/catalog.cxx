@@ -143,30 +143,44 @@ void PushableCols::setAffectedAttributes(std::vector<int> affectedAttributes) {
   this->affectedAttributes = affectedAttributes;
 }
 
-std::string StatCatalogArchive::gimmeFormattedString() {
-  std::ostringstream formatted;
+BackupProfileCompressType BackupProfileDescr::compressionType(std::string type) {
 
-  formatted << CPGBackupCtlBase::makeHeader("Archive Catalog Overview",
-                                            boost::format("%-15s\t%-30s\t%-20s")
-                                            % "Name" % "Directory" % "Host", 80);
-  formatted << boost::format("%-15s\t%-30s\t%-20s")
-    % this->archive_name % this->archive_directory % this->archive_host;
-  formatted << endl;
+  if (boost::iequals(type, "NONE"))
+    return BACKUP_COMPRESS_TYPE_NONE;
 
-  /*
-   * Catalog statistics data.
-   */
-  formatted << CPGBackupCtlBase::makeHeader("Backups",
-                                            boost::format("%-9s\t%-9s\t%-9s\t%-16s")
-                                            % "# total" % "# failed"
-                                            % "# running" % "avg duration (s)", 80);
-  formatted << boost::format("%-9s\t%-9s\t%-9s\t%-16s")
-    % this->number_of_backups % this->backups_failed
-    % this->backups_running
-    % this->avg_backup_duration;
-  formatted << endl;
+  if (boost::iequals(type, "GZIP"))
+    return BACKUP_COMPRESS_TYPE_GZIP;
 
-  return formatted.str();
+  if (boost::iequals(type, "ZSTD"))
+    return BACKUP_COMPRESS_TYPE_ZSTD;
+
+  if (boost::iequals(type, "XZ"))
+    return BACKUP_COMPRESS_TYPE_XZ;
+
+  if (boost::iequals(type, "PLAIN"))
+    return BACKUP_COMPRESS_TYPE_PLAIN;
+
+  throw CPGBackupCtlFailure("cannot convert backup compress type string");
+
+}
+
+std::string BackupProfileDescr::compressionType(BackupProfileCompressType type) {
+
+  switch(type) {
+  case BACKUP_COMPRESS_TYPE_NONE:
+    return "NONE";
+  case BACKUP_COMPRESS_TYPE_GZIP:
+    return "GZIP";
+  case BACKUP_COMPRESS_TYPE_ZSTD:
+    return "ZSTD";
+  case BACKUP_COMPRESS_TYPE_XZ:
+    return "XZ";
+  case BACKUP_COMPRESS_TYPE_PLAIN:
+    return "PLAIN";
+  default:
+    throw CPGBackupCtlFailure("cannot convert backup compress type id");
+  }
+
 }
 
 BasicPinDescr::BasicPinDescr() {
@@ -631,6 +645,22 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
 std::shared_ptr<RecoveryStreamDescr> CatalogDescr::getRecoveryStreamDescr() {
 
   return this->recoveryStream;
+
+}
+
+OutputFormatType CatalogDescr::getOutputFormat() {
+
+  std::string output_format;
+
+  this->runtime_config->get("output.format")->getValue(output_format);
+
+  if (output_format == "json")
+    return OUTPUT_JSON;
+
+  if (output_format == "console")
+    return OUTPUT_CONSOLE;
+
+  throw CPGBackupCtlFailure("unknown option to output.format configuration variable");
 
 }
 

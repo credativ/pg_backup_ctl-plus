@@ -19,6 +19,7 @@
 #include <common.hxx>
 #include <signalhandler.hxx>
 #include <fs-archive.hxx>
+#include <output.hxx>
 #include <parser.hxx>
 #include <rtconfig.hxx>
 
@@ -68,6 +69,7 @@ typedef struct PGBackupCtlArgs {
   char *action;
   char *actionFile; /* commands read from file */
   char *catalogDir; /* mandatory or compiled in default */
+  char **variables = NULL; /* list of runtime variables to set */
   bool  useCompression;
   int   start_launcher = 0;
   int   start_wal_streaming = 0;
@@ -159,6 +161,8 @@ static void processCmdLineArgs(int argc,
       &handle->start_wal_streaming, 0, "start WAL streamer on specified archive and exit (requires --archive-name)" },
     { "backup-profile", 'P', POPT_ARG_STRING,
       &handle->backup_profile, 0, "specifies a backup profile used by specified actions" },
+    { "variable", 'V', POPT_ARG_ARGV,
+      &handle->variables, 0, "runtime variables to be set during execution" },
 
     POPT_AUTOHELP { NULL, 0, 0, NULL, 0 }
   };
@@ -184,6 +188,7 @@ static void processCmdLineArgs(int argc,
       + string((char *)poptStrerror(processedArg));
     throw CPGBackupCtlFailure(errstr.c_str());
   }
+
 }
 
 /*
@@ -192,6 +197,17 @@ static void processCmdLineArgs(int argc,
 void init_RtCfg() {
 
   RtCfg = make_shared<RuntimeConfiguration>();
+
+  std::unordered_set<std::string> enums;
+
+  /*
+   * Output format
+   */
+  enums.insert("json");
+  enums.insert("console");
+
+  RtCfg->create("output.format", "console", "console", enums);
+  enums.clear();
 
   /*
    * walstreamer.wait_timeout
@@ -323,14 +339,23 @@ static void handle_interactive(std::string in,
     cout << CatalogDescr::commandTagName(cmdType) << endl;
 
   } catch (exception& e) {
-    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
+    //    BOOST_LOG_TRIVIAL(error) << "command execution failure: " << e.what();
 
     /*
      * Check if runtime configuration variable interactive.on_error_exit
      * was set to TRUE. If yes, re-throw this exception.
      */
-    if (on_error_exit())
+    if (on_error_exit()) {
       throw e;
+    }
+    else {
+      std::string output_format;
+      std::ostringstream output;
+      RtCfg->get("output.format")->getValue(output_format);
+      OutputFormatter::nodeAs(e, output, output_format);
+      BOOST_LOG_TRIVIAL(error) << output.str();
+    }
+
   }
 
 }

@@ -72,7 +72,7 @@ namespace credativ {
     DROP_BASEBACKUP
   } CatalogTag;
 
-  /*
+  /**
    * Compression types supported for backup profiles.
    */
   typedef enum {
@@ -85,6 +85,9 @@ namespace credativ {
 
   } BackupProfileCompressType;
 
+  /**
+   * Replication slot states.
+   */
   typedef enum {
 
     REPLICATION_SLOT_OK,
@@ -92,6 +95,14 @@ namespace credativ {
     REPLICATION_SLOT_ERROR
 
   } ReplicationSlotStatus;
+
+  /**
+   * Output format identifier.
+   */
+  typedef enum {
+                OUTPUT_CONSOLE,
+                OUTPUT_JSON
+  } OutputFormatType;
 
   /**
    * Retention Parser States.
@@ -846,6 +857,8 @@ namespace credativ {
 
     void setStreamingForceXLOGPositionRestart( bool const& restart );
 
+    OutputFormatType getOutputFormat();
+
     CatalogDescr& operator=(CatalogDescr& source);
   };
 
@@ -868,6 +881,10 @@ namespace credativ {
     bool noverify_checksums = false;
     bool manifest           = false;
     std::string manifest_checksums = "CRC32C";
+
+    static BackupProfileCompressType compressionType(std::string type);
+    static std::string compressionType(BackupProfileCompressType type);
+
   };
 
   /*
@@ -936,23 +953,9 @@ namespace credativ {
   };
 
   /*
-   * StatCatalog is a base class for stat commands
-   * against the archive backup catalog. The idea is to
-   * provide a generic interface to the commands to create
-   * corresponding output for a specific stat*() call. Specific
-   * descriptor should override the abstract method
-   * gimmeFormattedString() to generate a string representing
-   * the stat data.
-   */
-  class StatCatalog {
-  public:
-    virtual std::string gimmeFormattedString() = 0;
-  };
-
-  /*
    * Provides stat data for the archive itself.
    */
-  class StatCatalogArchive : public StatCatalog {
+  class StatCatalogArchive {
   public:
     /* member values */
     int archive_id;
@@ -968,7 +971,6 @@ namespace credativ {
 
     std::string latest_finished = "";
 
-    virtual std::string gimmeFormattedString();
   };
 
   /**

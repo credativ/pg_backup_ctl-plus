@@ -79,6 +79,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/include/backup")
 include_directories ("${PROJECT_SOURCE_DIR}/include/recovery")
 include_directories ("${PROJECT_SOURCE_DIR}/include/proto")
 add_executable (pg_backup_ctl++ src/main/tab_completion.cxx src/main/pg_backup_ctl.cxx)
+
 add_library (pgbckctl-proto SHARED
   src/protocol/proto-buffer.cxx
   src/protocol/proto-types.cxx
@@ -117,6 +118,7 @@ add_library (pgbckctl-common SHARED
   src/backup/backupprocesses.cxx
   src/recovery/restore.cxx
   src/main/memorybuffer.cxx
+  src/catalog/output.cxx
 )
 
 IF(APPLE)
