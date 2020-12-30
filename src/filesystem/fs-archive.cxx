@@ -13,7 +13,6 @@
 #include <fs-pipe.hxx>
 
 using namespace credativ;
-using namespace std;
 using namespace boost::adaptors;
 using namespace boost::filesystem;
 using namespace boost::iostreams;
