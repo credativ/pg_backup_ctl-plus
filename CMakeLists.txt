@@ -98,6 +98,7 @@ add_library (pgbckctl-proto SHARED
   src/protocol/pgmessage-copyfail.cxx
   src/protocol/pgproto-copy.cxx
   src/protocol/pgproto-copystate.cxx
+  src/jobs/copyprotocolcontext.cxx
 )
 add_library (pgbckctl-common SHARED
   src/main/rtconfig.cxx
