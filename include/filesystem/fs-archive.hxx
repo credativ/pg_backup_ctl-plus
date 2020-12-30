@@ -599,8 +599,8 @@ namespace credativ {
      * Factory method. Returns a new instance
      * of StreamingBaseBackupDirectory.
      */
-    static StreamingBaseBackupDirectory *getInstance(std::string dirname,
-                                                     path archiveDir);
+    static std::shared_ptr<StreamingBaseBackupDirectory> getInstance(std::string dirname,
+                                                                     path archiveDir);
   };
 
   /*

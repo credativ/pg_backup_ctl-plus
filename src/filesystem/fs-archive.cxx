@@ -85,13 +85,10 @@ void StreamingBaseBackupDirectory::remove() {
 
 }
 
-StreamingBaseBackupDirectory *StreamingBaseBackupDirectory::getInstance(string dirname,
+std::shared_ptr<StreamingBaseBackupDirectory> StreamingBaseBackupDirectory::getInstance(string dirname,
                                                                         path archiveDir) {
 
-  StreamingBaseBackupDirectory *backupdir
-    = new StreamingBaseBackupDirectory(dirname, archiveDir);
-
-  return backupdir;
+  return std::make_shared<StreamingBaseBackupDirectory>(dirname, archiveDir);
 
 }
 
