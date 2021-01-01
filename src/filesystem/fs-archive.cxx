@@ -22,6 +22,18 @@ using boost::regex;
  * StreamingBaseBackupDirectory Implementation
  ******************************************************************************/
 
+DirectoryTreeWalker StreamingBaseBackupDirectory::walker(path handle) {
+
+  return DirectoryTreeWalker(handle);
+
+}
+
+DirectoryTreeWalker StreamingBaseBackupDirectory::walker() {
+
+  return DirectoryTreeWalker(this->streaming_subdir);
+
+}
+
 StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
                                                            path archiveDir)  : BackupDirectory(archiveDir) {
   this->streaming_subdir = this->basedir() / streaming_dirname;
@@ -246,6 +258,44 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
 
 path StreamingBaseBackupDirectory::getPath() {
   return this->streaming_subdir;
+}
+
+/******************************************************************************
+ * DirectoryTreeWalker Implementation
+ ******************************************************************************/
+
+DirectoryTreeWalker::DirectoryTreeWalker(path handle) {
+
+  if (!exists(handle) && !is_directory(handle)) {
+    throw CArchiveIssue("directory tree walker cannot be opened on a non-directory handle");
+  }
+
+  this->handle = handle;
+
+}
+
+DirectoryTreeWalker::~DirectoryTreeWalker() {}
+
+path DirectoryTreeWalker::next() {
+
+  return (++this->dit)->path();
+
+}
+
+bool DirectoryTreeWalker::end() {
+
+  return (this->dit == directory_iterator());
+}
+
+bool DirectoryTreeWalker::isOpen() {
+  return this->opened;
+}
+
+void DirectoryTreeWalker::open() {
+
+  this->dit = directory_iterator(this->handle);
+  this->opened = true;
+
 }
 
 /******************************************************************************

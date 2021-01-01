@@ -255,7 +255,57 @@ namespace credativ {
 
 #endif
 
-  /*
+  /**
+   * Directory tree walker instance
+   */
+  class DirectoryTreeWalker {
+  private:
+
+    /**
+     * Internal directory handle to walk down.
+     */
+    path handle;
+
+    /**
+     * Internal iterator handle.
+     */
+    directory_iterator dit;
+
+    /**
+     * Indicates wether the iterator was already opened.
+     */
+    bool opened = false;
+
+  public:
+
+    DirectoryTreeWalker(path handle);
+    virtual ~DirectoryTreeWalker();
+
+    /**
+     * Open the iterator
+     */
+    virtual void open();
+
+    /**
+     * Return path handle from opened iterator and move
+     * iterator to next element.
+     */
+    virtual path next();
+
+    /**
+     * Returns true if the iterator reached the end of.
+     * contents.
+     */
+    virtual bool end();
+
+    /**
+     * Returns true if the iterator was already opened.
+     */
+    bool isOpen();
+
+  };
+
+  /**
    * Base class for archive directories. Also encapsulates
    * the complete archive directory tree with the following layout:
    *
@@ -540,6 +590,20 @@ namespace credativ {
                                  std::shared_ptr<BackupDirectory> parent);
 
     virtual ~StreamingBaseBackupDirectory();
+
+    /**
+     * Returns a directory tree walker instance to traverse
+     * filesystem contents of a streamed base backup directory.
+     */
+    virtual DirectoryTreeWalker walker();
+
+    /**
+     * Static version of walker(), can be called to derive a
+     * directory tree walker on an arbitrary path handle.
+     *
+     * Throws in case handle is not a valid directory path.
+     */
+    static DirectoryTreeWalker walker(path handle);
 
     /*
      * Returns the path to the streaming base backup
