@@ -1,7 +1,7 @@
 #ifndef __CATALOG__
 #define __CATALOG__
 
-#define CATALOG_MAGIC 107
+#define CATALOG_MAGIC 108
 
 /*
  * Archive catalog entity
