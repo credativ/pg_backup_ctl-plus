@@ -55,6 +55,7 @@
 #define SQL_BACKUP_SYSTEMID_ATTNO 11
 #define SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO 12
 #define SQL_BACKUP_USED_PROFILE_ATTNO 13
+#define SQL_BACKUP_PG_VERSION_NUM_ATTNO 14
 
 /*
  * Computed columns with no corresponding
@@ -63,8 +64,8 @@
  * a BaseBackupDescr. They must not be counted
  * below in SQL_BACKUP_NCOLS!
  */
-#define SQL_BACKUP_COMPUTED_DURATION 14
-#define SQL_BACKUP_COMPUTED_RETENTION_DATETIME 15
+#define SQL_BACKUP_COMPUTED_DURATION 15
+#define SQL_BACKUP_COMPUTED_RETENTION_DATETIME 16
 
 /*
  * Keep that in sync with above number of cols

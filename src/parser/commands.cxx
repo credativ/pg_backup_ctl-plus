@@ -2537,6 +2537,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
 
       basebackupDescr->archive_id = temp_descr->id;
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
+      basebackupDescr->pg_version_num = pgstream.getServerVersion();
 
       BOOST_LOG_TRIVIAL(info) << "directory handle path " << basebackupDescr->fsentry;
 
