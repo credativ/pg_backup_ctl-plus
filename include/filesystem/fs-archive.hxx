@@ -331,6 +331,11 @@ namespace credativ {
      */
     static void fsync(path syncPath);
 
+    /*
+     * Verify if a specific path exists.
+     */
+    virtual bool exists(path path);
+
   public:
 
     BackupDirectory(path handle);
@@ -343,9 +348,14 @@ namespace credativ {
     static std::string verificationCodeAsString(BaseBackupVerificationCode code);
 
     /**
+     * Check if this is an existing archive directory. 
+     */
+    virtual bool verify();
+
+    /**
      * Check if this is an existing archive directory.
      */
-    virtual void verify();
+    virtual bool exists();
 
     /**
      * Instantiate the directory (create physical directories)
