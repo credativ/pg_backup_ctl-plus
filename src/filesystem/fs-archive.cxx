@@ -131,7 +131,7 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<
   /*
    * Check if streaming directory exists.
    */
-  if (!exists(bbdescr->fsentry)) {
+  if (!boost::filesystem::exists(bbdescr->fsentry)) {
     return BASEBACKUP_DIRECTORY_MISSING;
   }
 
@@ -404,7 +404,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
   /*
    * First check if logdir is a valid handle.
    */
-  if (!exists(this->log)) {
+  if (!boost::filesystem::exists(this->log)) {
     throw CArchiveIssue("could not read from archive log directory: \""
                         + this->log.string()
                         + "\"log doesn't exist");
@@ -902,7 +902,7 @@ bool ArchiveLogDirectory::historyFileExists(int timeline,
 
   try {
 
-    result = exists(this->getPath() / tli_history_filename);
+    result = boost::filesystem::exists(this->getPath() / tli_history_filename);
 
   } catch(filesystem_error &e) {
     /* remap to CArchiveIssue which is recognized by the API */
@@ -1299,7 +1299,7 @@ void BackupDirectory::fsync_recursive(path handle) {
 void BackupDirectory::unlink_path(path backup_path) {
 
   /* backup_path should exist */
-  if (!exists(backup_path)) {
+  if (!boost::filesystem::exists(backup_path)) {
 
     ostringstream oss;
 
