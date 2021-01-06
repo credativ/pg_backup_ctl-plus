@@ -458,6 +458,11 @@ namespace credativ {
     virtual path getPath();
 
     /**
+     * Check if this is an existing log directory.
+     */
+    virtual bool exists();
+
+    /**
      * Calculates an encoded XLOG start position from the *last*
      * XLOG segment file found in the archive directory. Returns
      * an empty string in case no XLOG segments are found.

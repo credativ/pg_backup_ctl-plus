@@ -314,6 +314,10 @@ path ArchiveLogDirectory::getPath() {
   return this->log;
 }
 
+bool ArchiveLogDirectory::exists() {
+  return BackupDirectory::exists(this->log);
+}
+
 std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
                                                       unsigned int timeline,
                                                       unsigned long long wal_segment_size) {
