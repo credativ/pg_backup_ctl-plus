@@ -70,7 +70,7 @@
 /*
  * Keep that in sync with above number of cols
  */
-#define SQL_BACKUP_NCOLS 14
+#define SQL_BACKUP_NCOLS 15
 
 /*
  * Attributes belong to stream tablex
