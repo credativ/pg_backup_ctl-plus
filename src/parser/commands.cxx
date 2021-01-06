@@ -3882,7 +3882,9 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
 
     if (this->mode == ARCHIVE_LIST) {
 
-      output_config->create("list_archive.mode", "full", "full");
+      output_config->create("list_archive.mode",
+                            std::string("full"),
+                            std::string("full"));
 
       /*
        * Get a list of current registered archives in the catalog.
@@ -3901,7 +3903,9 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
       archiveList = catalog->getArchiveList(make_shared<CatalogDescr>(*this),
                                             this->affectedAttributes);
 
-      output_config->create("list_archive.mode", "filtered", "filtered");
+      output_config->create("list_archive.mode",
+                            std::string("filtered"),
+                            std::string("filtered"));
 
     } else if (this->mode == ARCHIVE_DETAIL_LIST) {
       /*
@@ -3914,7 +3918,9 @@ void ListArchiveCatalogCommand::execute(bool extendedOutput) {
        * at this point nevertheless, since we just call
        * getArchiveList with the affected NAME property attached only.
        */
-      output_config->create("list_archive.mode", "detail", "detail");
+      output_config->create("list_archive.mode",
+                            std::string("detail"),
+                            std::string("detail"));
 
       /*
        * Get a filtered list for the specified properties.
