@@ -131,7 +131,7 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<
   /*
    * Check if streaming directory exists.
    */
-  if (!exists(bbdescr->fsentry)) {
+  if (!boost::filesystem::exists(bbdescr->fsentry)) {
     return BASEBACKUP_DIRECTORY_MISSING;
   }
 
@@ -314,6 +314,10 @@ path ArchiveLogDirectory::getPath() {
   return this->log;
 }
 
+bool ArchiveLogDirectory::exists() {
+  return BackupDirectory::exists(this->log);
+}
+
 std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
                                                       unsigned int timeline,
                                                       unsigned long long wal_segment_size) {
@@ -400,7 +404,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
   /*
    * First check if logdir is a valid handle.
    */
-  if (!exists(this->log)) {
+  if (!boost::filesystem::exists(this->log)) {
     throw CArchiveIssue("could not read from archive log directory: \""
                         + this->log.string()
                         + "\"log doesn't exist");
@@ -898,7 +902,7 @@ bool ArchiveLogDirectory::historyFileExists(int timeline,
 
   try {
 
-    result = exists(this->getPath() / tli_history_filename);
+    result = boost::filesystem::exists(this->getPath() / tli_history_filename);
 
   } catch(filesystem_error &e) {
     /* remap to CArchiveIssue which is recognized by the API */
@@ -1119,26 +1123,25 @@ BackupDirectory::BackupDirectory(path handle) {
 
 BackupDirectory::~BackupDirectory() {}
 
-void BackupDirectory::verify() {
-
+bool BackupDirectory::exists(path path_handle){
   /*
    * Check the archive directory itself.
    * It makes no sense to proceed for base/ and log/
    * subdirectories as long this is not present.
    */
 
-  if (!exists(this->handle)) {
+  if (!boost::filesystem::exists(path_handle)) {
     ostringstream oss;
-    oss << "archive directory " << this->handle.string() << " does not exist";
+    oss << "archive directory " << path_handle.string() << " does not exist";
     throw CArchiveIssue(oss.str());
   }
 
   /*
    * Okay, looks like its there, but don't get fooled by a file.
    */
-  if (!is_directory(this->handle)) {
+  if (!is_directory(path_handle)) {
     ostringstream oss;
-    oss << "\"" << this->handle.string() << "\" is not a directory";
+    oss << "\"" << path_handle.string() << "\" is not a directory";
     throw CArchiveIssue(oss.str());
   }
 
@@ -1147,7 +1150,7 @@ void BackupDirectory::verify() {
    * file there.
    */
   try {
-    path magicFile = path(this->handle / PG_BACKUP_CTL_INFO_FILE);
+    path magicFile = path(path_handle / PG_BACKUP_CTL_INFO_FILE);
     CPGBackupCtlBase::writeFileReplace(magicFile.string(),
                                        BackupCatalog::magicNumber()
                                        + " | "
@@ -1161,6 +1164,15 @@ void BackupDirectory::verify() {
     throw CArchiveIssue(oss.str());
   }
 
+  return true;
+}
+
+bool BackupDirectory::verify() {
+  return exists(this->handle);
+}
+
+bool BackupDirectory::exists() {
+  return exists(this->handle);
 }
 
 std::shared_ptr<BackupFile> BackupDirectory::walfile(std::string name,
@@ -1287,7 +1299,7 @@ void BackupDirectory::fsync_recursive(path handle) {
 void BackupDirectory::unlink_path(path backup_path) {
 
   /* backup_path should exist */
-  if (!exists(backup_path)) {
+  if (!boost::filesystem::exists(backup_path)) {
 
     ostringstream oss;
 

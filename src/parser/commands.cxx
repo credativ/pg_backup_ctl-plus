@@ -3369,8 +3369,9 @@ void ApplyRetentionPolicyCommand::execute(bool flag) {
 #endif
 
       archiveLogDir->checkCleanupDescriptor(archiveCleanupDescr);
-      archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
-
+      if (archiveLogDir->exists()){
+        archiveLogDir->removeXLogs(archiveCleanupDescr, wal_segment_size);
+      }
     }
 
     /*
