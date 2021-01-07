@@ -54,6 +54,7 @@ std::vector<std::string> BackupCatalog::backupCatalogCols =
     "systemid",
     "wal_segment_size",
     "used_profile",
+    "pg_version_num",
 
     /* the following are computed columns with no materialized representation */
     "strftime('%H hours %M minutes %S seconds', julianday(stopped, 'utc') - julianday(started, 'utc'), '12:00') AS duration ",
@@ -1325,7 +1326,7 @@ void CatalogDescr::setArchiveId(int const& archive_id) {
   this->pushAffectedAttribute(SQL_ARCHIVE_ID_ATTNO);
   this->coninfo->pushAffectedAttribute(SQL_CON_ARCHIVE_ID_ATTNO);
 }
-
+//TODO setter?
 void CatalogDescr::setDSN(std::string const& dsn) {
 
   std::vector<int> attrs;
@@ -3120,6 +3121,7 @@ std::shared_ptr<BaseBackupDescr> BackupCatalog::getBaseBackup(BaseBackupRetrieve
   backupAttrs.push_back(SQL_BACKUP_PINNED_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_WAL_SEGMENT_SIZE_ATTNO);
   backupAttrs.push_back(SQL_BACKUP_USED_PROFILE_ATTNO);
+  backupAttrs.push_back(SQL_BACKUP_PG_VERSION_NUM_ATTNO);
 
   /* Safe column list to descriptor */
   result->setAffectedAttributes(backupAttrs);
@@ -4450,6 +4452,11 @@ int BackupCatalog::SQLbindBackupAttributes(std::shared_ptr<BaseBackupDescr> bbde
       sqlite3_bind_int(stmt, result,
                        bbdescr->used_profile);
       break;
+    
+    case SQL_BACKUP_PG_VERSION_NUM_ATTNO:
+      sqlite3_bind_int(stmt, result,
+                       bbdescr->pg_version_num);
+      break;
 
     case SQL_BACKUP_COMPUTED_RETENTION_DATETIME:
       /* computed values must not be bound */
@@ -5167,9 +5174,8 @@ void BackupCatalog::registerBasebackup(int archive_id,
   }
 
   rc = sqlite3_prepare_v2(this->db_handle,
-                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid,"
-                          " wal_segment_size, used_profile) "
-                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
+                          "INSERT INTO backup(archive_id, xlogpos, timeline, label, fsentry, started, systemid, wal_segment_size, used_profile, pg_version_num) "
+                          "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);",
                           -1,
                           &stmt,
                           NULL);
@@ -5192,6 +5198,7 @@ void BackupCatalog::registerBasebackup(int archive_id,
   sqlite3_bind_text(stmt, 7, backupDescr->systemid.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 8, backupDescr->wal_segment_size);
   sqlite3_bind_int(stmt, 9, backupDescr->used_profile);
+  sqlite3_bind_int(stmt, 10, backupDescr->pg_version_num);
 
   /*
    * Execute the statement.

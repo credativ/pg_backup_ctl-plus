@@ -32,6 +32,7 @@ CREATE TABLE backup(
        systemid text not null,
        wal_segment_size int not null,
        used_profile int not null,
+       pg_version_num int not null,
        FOREIGN KEY(archive_id) REFERENCES archive(id) ON DELETE CASCADE,
        FOREIGN KEY(used_profile) REFERENCES backup_profiles(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
@@ -70,7 +71,7 @@ CREATE TABLE version(
        create_date text not null);
 
 /* NOTE: version number must match CATALOG_MAGIC from include/catalog/catalog.hxx */
-INSERT INTO version VALUES(107, datetime('now'));
+INSERT INTO version VALUES(108, datetime('now'));
 
 CREATE TABLE backup_profiles(
        id integer not null,

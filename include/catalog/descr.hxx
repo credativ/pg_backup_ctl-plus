@@ -923,6 +923,7 @@ namespace credativ {
     std::string systemid;
     unsigned long long wal_segment_size = 0;
     int used_profile = -1;
+    int pg_version_num;
 
     /**
      * Static const specifiers for status flags.
