@@ -348,11 +348,6 @@ namespace credativ {
     static std::string verificationCodeAsString(BaseBackupVerificationCode code);
 
     /**
-     * Check if this is an existing archive directory. 
-     */
-    virtual bool verify();
-
-    /**
      * Check if this is an existing archive directory.
      */
     virtual bool exists();
