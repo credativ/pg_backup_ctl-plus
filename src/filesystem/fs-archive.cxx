@@ -1167,10 +1167,6 @@ bool BackupDirectory::exists(path path_handle){
   return true;
 }
 
-bool BackupDirectory::verify() {
-  return exists(this->handle);
-}
-
 bool BackupDirectory::exists() {
   return exists(this->handle);
 }

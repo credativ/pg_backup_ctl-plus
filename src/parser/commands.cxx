@@ -3763,7 +3763,7 @@ void VerifyArchiveCatalogCommand::execute(bool missingOK) {
     shared_ptr<BackupDirectory> archivedir = CPGBackupCtlFS::getArchiveDirectoryDescr(temp_descr->directory);
     std::ostringstream output;
 
-    archivedir->verify();
+    archivedir->exists();
     this->catalog->commitTransaction();
 
     (OutputFormatter::formatter(make_shared<OutputFormatConfiguration>(),
