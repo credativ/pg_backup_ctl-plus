@@ -1673,6 +1673,17 @@ void StartStreamingForArchiveCommand::finalizeStream() {
 }
 
 void StartStreamingForArchiveCommand::execute(bool noop) {
+  /*
+   * Die hard in case launcher process is not running.
+   */
+  shared_ptr<CatalogProc> procInfo = catalog->getProc(
+    -1,
+    CatalogProc::PROC_TYPE_LAUNCHER
+  );
+
+  if (launcher_is_running(procInfo)) {
+    throw CArchiveIssue("could not execute catalog command: launcher not running");
+  }
 
   /*
    * Die hard in case no catalog available.
