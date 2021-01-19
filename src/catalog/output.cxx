@@ -125,6 +125,27 @@ ConsoleOutputFormatter::ConsoleOutputFormatter(std::shared_ptr<OutputFormatConfi
 
 ConsoleOutputFormatter::~ConsoleOutputFormatter() {}
 
+void ConsoleOutputFormatter::nodeAs(std::shared_ptr<std::list<directory_entry>> fileList,
+                                    std::ostringstream &output) {
+
+  for(auto item : *fileList) {
+
+    if (is_regular_file(item.path())) {
+
+      output << CPGBackupCtlBase::makeLine(boost::format("object=%60s type=f size=%d")
+                                           % item.path() % file_size(item.path()));
+
+    } else if (is_directory(item.path())) {
+
+      output << CPGBackupCtlBase::makeLine(boost::format("object=%60s type=d")
+                                           % item.path());
+
+    }
+
+  }
+
+}
+
 void ConsoleOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<BaseBackupDescr>> &list,
                                                 std::ostringstream &output) {
 
@@ -192,6 +213,8 @@ void ConsoleOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<Base
 
     for (auto &tablespace : basebackup->tablespaces) {
 
+      output << "---" << std::endl;
+
       /* Check for parent tablespace (also known as pg_default) */
       if (tablespace->spcoid == 0) {
 
@@ -210,6 +233,8 @@ void ConsoleOutputFormatter::listBackupsVerbose(std::vector<std::shared_ptr<Base
           % "upstream size" % tablespace->spcsize << std::endl;
 
       }
+
+      output << "---" << std::endl;
 
       upstream_total_size += tablespace->spcsize;
     }
@@ -710,6 +735,79 @@ JsonOutputFormatter::JsonOutputFormatter(std::shared_ptr<OutputFormatConfigurati
   : OutputFormatter(config, catalog, catalog_descr) {}
 
 JsonOutputFormatter::~JsonOutputFormatter() {}
+
+void JsonOutputFormatter::nodeAs(std::shared_ptr<std::list<directory_entry>> fileList,
+                                 std::ostringstream &output) {
+
+  namespace pt = boost::property_tree;
+
+  pt::ptree head;
+  std::ostringstream num_objects;
+  std::map<path, std::list<pt::ptree>> directory_lookup;
+
+  num_objects << fileList->size();
+  head.put("num filesystem objects", num_objects.str());
+
+  for(auto item : *fileList) {
+
+    path item_path = item.path();
+    pt::ptree fentry;
+
+    if (is_regular_file(item_path)) {
+
+      fentry.put("name", item_path.filename().string());
+      fentry.put("size", file_size(item_path));
+      fentry.put("type", "file");
+
+      auto lookup = directory_lookup.find(item_path.parent_path());
+
+      /**
+       * Lookup directory if already visited.
+       */
+      if (lookup != directory_lookup.end()) {
+
+        lookup->second.push_back(fentry);
+
+      } else {
+
+        std::list<pt::ptree> fentry_list;
+        fentry_list.push_back(fentry);
+        directory_lookup[item_path.parent_path()] = fentry_list;
+
+      }
+
+    } else if (is_directory(item_path)) {
+
+        std::list<pt::ptree> fentry_list; /* empty list */
+        directory_lookup[item_path] = fentry_list;
+
+    }
+
+  }
+
+  for (auto path_item : directory_lookup) {
+
+    pt::ptree objects;
+
+    for (auto fileobj : path_item.second) {
+
+      if (path_item.second.size() > 0)
+        objects.add_child(pt::ptree::path_type(fileobj.get<std::string>("name"), '|'), fileobj);
+
+    }
+
+    num_objects.str("");
+    num_objects.clear();
+    num_objects << path_item.second.size();
+
+    objects.add("num files", num_objects.str());
+    head.add_child(path_item.first.string(), objects);
+
+  }
+
+  pt::write_json(output, head);
+
+}
 
 void JsonOutputFormatter::nodeAs(std::vector<std::shared_ptr<ConnectionDescr>> connections,
                                  std::ostringstream &output) {

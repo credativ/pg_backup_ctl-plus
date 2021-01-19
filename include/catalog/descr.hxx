@@ -24,6 +24,7 @@ namespace credativ {
   class UnpinDescr;
   class RetentionDescr;
   class RetentionRuleDescr;
+  class RestoreDescr;
 
   /*
    * Defines flags to characterize the
@@ -69,7 +70,9 @@ namespace credativ {
     SHOW_VARIABLE,
     SET_VARIABLE,
     RESET_VARIABLE,
-    DROP_BASEBACKUP
+    DROP_BASEBACKUP,
+    RESTORE_BACKUP,
+    STAT_ARCHIVE_BASEBACKUP
   } CatalogTag;
 
   /**
@@ -566,6 +569,12 @@ namespace credativ {
      */
     std::shared_ptr<RecoveryStreamDescr> recoveryStream = nullptr;
 
+    /**
+     * A pointer to a RestoreDescr instantiated during
+     * parsing a RESTORE command.
+     */
+    std::shared_ptr<RestoreDescr> restoreDescr = nullptr;
+
   public:
     CatalogDescr() { tag = EMPTY_DESCR; };
     virtual ~CatalogDescr();
@@ -647,6 +656,11 @@ namespace credativ {
     static std::string commandTagName(CatalogTag tag);
 
     /**
+     * Set restore descriptor.
+     */
+    void setRestoreDescr(std::shared_ptr<RestoreDescr> restoreDescr);
+
+    /**
      * Toggle print verbose mode issued to a CatalogDescr
      * object from the parser.
      */
@@ -695,6 +709,84 @@ namespace credativ {
      *       was initialized yet (see makeRecoveryStreamDescr()).
      */
     void setRecoveryStreamPort(std::string const& portnumber);
+
+    /**
+     * Returns a shared pointer to the internal
+     * recovery descriptor.
+     *
+     * NOTE: might return a nullptr reference in case
+     *       no restore descriptor was already created.
+     *
+     * A restore descriptor is usually created by parsing
+     * a RESTORE command (by calling createRestoreDescr()).
+     */
+    std::shared_ptr<RestoreDescr> getRestoreDescr();
+
+    /**
+     * Assign a new internal restore descriptor by identifier.
+     * bbident is a string identifying the basebackup by name within
+     * a specified archive (see setIdent() for the archive identifier).
+     */
+    void createRestoreDescrByBaseBackupName(std::string const& bbident);
+
+    /**
+     * Assign a new internal restore descriptor by basebackup ID.
+     * bbid is the id in its string representation and is converted
+     * accordingly into an integer internally. This API is suitable for
+     * PGBackupCtlParser, which currently works with parsed string literals
+     * only.
+     */
+    void createRestoreDescrByBaseBackupID(std::string const& bbid);
+
+    /**
+     * Prepares a tablespace oid for a formerly created restore
+     * descriptor. This method is primarily intended for use by
+     * the PGBackupCtlParser.
+     *
+     * The method creates and prepares a BackupTablespaceDescr
+     * instance for adding it to a tablespace map to
+     * the formerly created restore descriptor. It just
+     * prepared, but not finally added. This happens after
+     * calling restoreTablespaceLocationFromParserState(), which
+     * finally adds the tablespace OID and location together by
+     * saving them in the tablespace descriptor in the
+     * restore descriptors hash map.
+     *
+     * Thus, the calling sequence is just as the parser
+     * scans a RESTORE BASEBACKUP command:
+     *
+     * createRestoreDescrByBaseBackup{Name|ID}()
+     * `- restoreTablespaceOidFromParserState()
+     *   |    `- restoreTablespaceLocationFromParserState()
+     *    - -´
+     *
+     * createRestoreDescrByBaseBackupName() or createRestoreDescrByBaseBackupID()
+     * are called just once during parsing, after that multiple
+     * calls to restoreTablespaceOidFromParserState() and
+     * restoreTablespaceLocationFromParserState() are allowed.
+     *
+     * Throws in case no valid restore descriptor is
+     * attached to a CatalogDescr instance.
+     */
+    void restoreTablespaceOidFromParserState(std::string const& oid);
+
+    /**
+     * Stacks the current tablespace descr stored in the context
+     * of a valid restoreDescr into its tablespace_map after having
+     * attached the location accordingly.
+     *
+     * If unique_check is set to true, then the specified location is checked
+     * whether is already assigned to a present OID. The method will throw
+     * a CCatalogIssue then.
+     */
+    void restoreTablespaceLocationFromParserState(std::string const& location,
+                                                  bool const& unique_check);
+
+    /**
+     * Prepares the specified tablespace location as a restore target
+     * directory for *all* tablespaces in the backup.
+     */
+    void restoreTablespaceAllFromParserState(std::string const& location);
 
     /**
      * addRecoveryStreamAddress() stores the specified
@@ -1036,17 +1128,154 @@ namespace credativ {
   } BackupCatalogErrorCode;
 
   /**
+   * Restore descriptor basebackup identification
+   * mode.
+   */
+  typedef enum {
+
+    RESTORE_BASEBACKUP_BY_ID,    /* restore a basebackup identified by its ID */
+    RESTORE_BASEBACKUP_BY_NAME,  /* restore a basebackup identified by its name */
+    RESTORE_BASEBACKUP_BY_UNDEF  /* descriptor not defined yet */
+
+  } RestoreDescrIdentificationType;
+
+
+  union _restoredescr_ident {
+
+    int id;
+    std::string name;
+
+    _restoredescr_ident() {};
+    ~_restoredescr_ident() {};
+
+  };
+
+  /**
+   * Restore Descr Basebackup Identifier.
+   *
+   * For implementation details, visit src/recovery/restore.cxx
+   */
+  class RestoreDescrID {
+  private:
+    _restoredescr_ident ident;
+  public:
+
+    static constexpr const char *DESCR_NAME_CURRENT = "CURRENT";
+    static constexpr const char *DESCR_NAME_NEWEST = "NEWEST";
+    static constexpr const char *DESCR_NAME_LATEST = "LATEST";
+    static constexpr const char *DESCR_NAME_OLDEST = "OLDEST";
+
+    RestoreDescrIdentificationType type = RESTORE_BASEBACKUP_BY_UNDEF;
+
+    void getId(int &id);
+    void getId(std::string &name);
+
+    void setId(RestoreDescrIdentificationType type,
+               std::string const& name);
+
+    void setId(RestoreDescrIdentificationType type,
+               int const& id);
+
+    static BaseBackupRetrieveMode basebackupRetrieveMode(std::string const& name);
+
+  };
+
+  /**
+   * Tablespace Mapping Modes.
+   */
+  typedef enum {
+
+    TABLESPACE_MAP_ALL,
+    TABLESPACE_MAP_OID
+
+  } TablespaceMappingMode;
+
+  /**
    * A Basebackup restore descriptor.
    *
    * Holds all necessary information to restore a
-   * specific basebackup from storage over the streaming protocol
+   * specific basebackup.
+   *
+   * For implementation details, visit src/recovery/restore.cxx
    */
-  class RestoreStreamDescr {
+  class RestoreDescr {
+  private:
+
+    /**
+     * A tablespace descriptor, initialized by makeTablespaceDescr().
+     *
+     * This facility supports usage of RestoreDescr during
+     * parsing, e.g. the RESTORE BASEBACKUP command. The parser
+     * first calls prepareTablespaceDescrForMap(oid), and finalizes this phase
+     * via stackTablespaceDescrIntoMap(location), which uses the last created
+     * descriptor here to place it into the public tablespace_map.
+     */
+    std::shared_ptr<BackupTablespaceDescr> curr_tablespace_descr = nullptr;
+
   public:
 
-    std::shared_ptr<CatalogDescr> catalog = nullptr;
+    RestoreDescr();
+    RestoreDescr(std::string bbname);
+    RestoreDescr(int id);
+    virtual ~RestoreDescr();
+
+    /* Descriptor basebackup identification */
+    RestoreDescrID id;
+
     std::shared_ptr<BaseBackupDescr> basebackup = nullptr;
     std::shared_ptr<BackupProfileDescr> profile = nullptr;
+
+    /**
+     * Tablespace Mapping Mode.
+     *
+     * Set to TABLESPACE_MAP_ALL in case all tablespaces
+     * should be mapped onto an alternate directory.
+     *
+     * Set to TABLESPACE_MAP_OID (the default) in case
+     * specific tablespace OIDs are remapped.
+     *
+     * The latter adds specific OID=DIRECTORY key/value
+     * to the tablespace_map hash table.
+     */
+    TablespaceMappingMode tblspc_map_mode = TABLESPACE_MAP_OID;
+
+    /**
+     * maketablespaceDescr() prepares a pointer to a
+     * BackupTablespaceDescr instance, but doesn't place it
+     * into the tablespace_map yet. To finalize this, the caller
+     * needs to call stackTablespaceDescrIntoMap with the intended location
+     * of the tablespace prepared earlier.
+     *
+     * If the specified tablespace OID has already a correspoding member
+     * in the internal tablespace_map or is already prepared with the same OID,
+     * this method will throw.
+     */
+    void prepareTablespaceDescrForMap(unsigned int oid);
+
+    /**
+     * Returns a pointer to the currently prepared tablespace for
+     * the tablespace map. Only valid if prepareTablespaceDescrForMap()
+     * was called before!
+     */
+    std::shared_ptr<BackupTablespaceDescr> getPreparedTablespaceDescrForMap();
+
+    /**
+     * If prepareTablespaceDescrForMap() was called earlier, a caller
+     * can emplace a formerly prepared tablespace descriptor with
+     * the specified tablespace location into the public tablespace
+     * map.
+     *
+     * If prepareTablespaceDescrForMap() wasn't called before, this
+     * method will throw.
+     */
+    void stackTablespaceDescrForMap(std::string location);
+
+    /**
+     * List of tablespace locations to restore. This map
+     * usually used to generate a tablespace_map file during
+     * restore.
+     */
+    std::map<unsigned int, std::shared_ptr<BackupTablespaceDescr>> tablespace_map;
 
   };
 

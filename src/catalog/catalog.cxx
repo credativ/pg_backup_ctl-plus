@@ -630,6 +630,12 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
     this->recoveryStream = source.getRecoveryStreamDescr();
 
   /*
+   * Copy over restore descriptor, if defined.
+   */
+  if (source.restoreDescr != nullptr)
+    this->restoreDescr = source.restoreDescr;
+
+  /*
    * In case this instance was instantiated
    * by a SET <variable> parser command, copy
    * over state variable as well
@@ -641,6 +647,133 @@ CatalogDescr& CatalogDescr::operator=(CatalogDescr& source) {
   this->var_val_bool = source.var_val_bool;
 
   return *this;
+}
+
+void CatalogDescr::setRestoreDescr(std::shared_ptr<RestoreDescr> restoreDescr) {
+
+  if (restoreDescr == nullptr)
+    throw CCatalogIssue("attemp to assign undefined restore descriptor");
+
+  this->restoreDescr = restoreDescr;
+
+}
+
+void CatalogDescr::createRestoreDescrByBaseBackupName(std::string const& bbident) {
+
+  /*
+   * We don't care about a previously allocated
+   * descriptor instance, re-assigning a new instance would
+   * just decrement the reference count, so no need
+   * to do additional bookkeeping here.
+   */
+  this->restoreDescr = std::make_shared<RestoreDescr> (bbident);
+
+}
+
+void CatalogDescr::createRestoreDescrByBaseBackupID(std::string const& bbid) {
+
+  if (bbid.length() <= 0)
+    throw CCatalogIssue("cannot convert empty string to integer");
+
+  /*
+   * We don't care about a previously allocated
+   * descriptor instance, re-assigning a new instance would
+   * just decrement the reference count, so no need
+   * to do additional bookkeeping here.
+   */
+  this->restoreDescr = std::make_shared<RestoreDescr> (CPGBackupCtlBase::strToInt(bbid));
+
+}
+
+void CatalogDescr::restoreTablespaceAllFromParserState(std::string const& location) {
+
+  if (this->restoreDescr == nullptr)
+    throw CCatalogIssue("cannot assign tablespace restore location");
+
+  /*
+   * We add the invalid_oid as a place holder for "ALL".
+   */
+  restoreDescr->prepareTablespaceDescrForMap(0);
+  restoreDescr->stackTablespaceDescrForMap(location);
+
+}
+
+void CatalogDescr::restoreTablespaceOidFromParserState(std::string const& oid) {
+
+  if (this->restoreDescr == nullptr)
+    throw CCatalogIssue("cannot assign tablespace OID, restore descriptor is undefined");
+
+  unsigned int value  = CPGBackupCtlBase::strToUInt(oid);
+
+  /*
+   * A tablespace OID 0 is never allowed to be specified
+   * explicitely for flexible mapping, so make sure we deny them here.
+   *
+   * See restoreTablespaceAllFromParserState() for mapping all
+   * tablespace in TABLESPACE_MAP_ALL parser mode.
+   */
+  if (value == CPGBackupCtlBase::invalid_oid) {
+    throw CCatalogIssue("pg_default tablespace OID 0 cannot be specified explicitly");
+  }
+
+  /* Not found in map, prepare a tablespace descriptor */
+  restoreDescr->prepareTablespaceDescrForMap(value);
+
+}
+
+void CatalogDescr::restoreTablespaceLocationFromParserState(std::string const& location,
+                                                            bool const&  unique_check) {
+
+  if (this->restoreDescr == nullptr)
+    throw CCatalogIssue("cannot assign tablespace OID, restore descriptor is undefined");
+
+  /*
+   * Iff requested we had to check of all target locations
+   * aren't specified twice.
+   */
+  if (unique_check) {
+
+    for (auto loc : restoreDescr->tablespace_map) {
+
+      if (loc.second->spclocation == location) {
+
+        ostringstream err;
+
+        if (restoreDescr->getPreparedTablespaceDescrForMap() != nullptr) {
+
+          err << "location \"" << location << "\" of OID "
+              << restoreDescr->getPreparedTablespaceDescrForMap()->spcoid << " "
+              << "has already been specified by OID "
+              << loc.second->spcoid;
+
+        } else {
+
+          /*
+           * Somehow our restore descriptor wasn't prepared before. This
+           * can happen only in case the caller missed to execute prepareTablespaceDescrForMap(),
+           * so tell him that this is an invalid state
+           */
+
+          err << "invalid state of restore descriptor when parsing tablespace map";
+
+        }
+
+        throw CCatalogIssue(err.str());
+
+      }
+
+    }
+
+  }
+
+  restoreDescr->stackTablespaceDescrForMap(location);
+
+}
+
+std::shared_ptr<RestoreDescr> CatalogDescr::getRestoreDescr() {
+
+  return this->restoreDescr;
+
 }
 
 std::shared_ptr<RecoveryStreamDescr> CatalogDescr::getRecoveryStreamDescr() {
@@ -1147,6 +1280,10 @@ std::string CatalogDescr::commandTagName(CatalogTag tag) {
     return "DROP BASEBACKUP";
   case START_RECOVERY_STREAM_FOR_ARCHIVE:
     return "START RECOVERY STREAM";
+  case RESTORE_BACKUP:
+    return "RESTORE";
+  case STAT_ARCHIVE_BASEBACKUP:
+    return "STAT ARCHIVE";
 
   default:
     return "UNKNOWN";

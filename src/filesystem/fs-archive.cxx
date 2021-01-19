@@ -39,6 +39,13 @@ StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming
   this->streaming_subdir = this->basedir() / streaming_dirname;
 }
 
+StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(path streaming_directory)
+  : BackupDirectory(streaming_directory.parent_path()) {
+
+  this->streaming_subdir = streaming_directory;
+
+}
+
 StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
                                                            std::shared_ptr<BackupDirectory> parent)
   : BackupDirectory(parent->getArchiveDir()) {
@@ -160,6 +167,25 @@ size_t StreamingBaseBackupDirectory::size() {
   return result;
 }
 
+std::shared_ptr<std::list<directory_entry>> StreamingBaseBackupDirectory::stat() {
+
+  DirectoryTreeWalker dirwalker = walker();
+  std::shared_ptr<std::list<directory_entry>> result
+    = std::make_shared<std::list<directory_entry>>();
+
+  dirwalker.open();
+
+  while (! dirwalker.end() ) {
+
+    directory_entry diritem = dirwalker.next();
+    result->push_back(diritem);
+
+  }
+
+  return result;
+
+}
+
 std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string name,
                                                                      BackupProfileCompressType compression) {
 
@@ -279,24 +305,30 @@ DirectoryTreeWalker::DirectoryTreeWalker(path handle) {
 
 DirectoryTreeWalker::~DirectoryTreeWalker() {}
 
-path DirectoryTreeWalker::next() {
+directory_entry DirectoryTreeWalker::next() {
 
-  return (++this->dit)->path();
+  directory_entry value = *(this->dit);
+  this->dit++;
+
+  return value;
 
 }
 
 bool DirectoryTreeWalker::end() {
 
-  return (this->dit == directory_iterator());
+  return (this->dit == recursive_directory_iterator());
+
 }
 
 bool DirectoryTreeWalker::isOpen() {
+
   return this->opened;
+
 }
 
 void DirectoryTreeWalker::open() {
 
-  this->dit = directory_iterator(this->handle);
+  this->dit = recursive_directory_iterator(this->handle);
   this->opened = true;
 
 }

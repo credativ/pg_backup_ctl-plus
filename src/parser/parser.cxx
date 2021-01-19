@@ -223,7 +223,86 @@ namespace credativ {
                          | (
                             cmd_unpin_basebackup
                             )
+                         /*
+                          * RESTORE command
+                          */
+                         | (
+                            cmd_restore
+                            )
+                         | (
+                            cmd_stat
+                            )
                          ); /* start rule end */
+
+        /*
+         * STAT ARCHIVE <name> BASEBACKUP <ID>
+         */
+        cmd_stat = eps >> no_case[ lexeme[ lit("STAT") ] ]
+                       >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, STAT_ARCHIVE_BASEBACKUP) ]
+                       >> identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                       >> no_case[ lexeme[ lit("BASEBACKUP") ] ]
+                       >> number_ID
+          [ boost::bind(&CatalogDescr::setBasebackupID, &cmd, ::_1) ];
+
+        /*
+         * RESTORE FROM ARCHIVE <name> BASEBACKUP { <ID> | { LATEST|NEWEST|CURRENT|OLDEST } }
+         * TO DIRECTORY <directory>
+         * [ TABLESPACE MAP { <OID>=<directory>, [ ... ] | ALL=<DIRECTORY> } ]
+         */
+        cmd_restore = eps >> no_case[ lexeme[ lit("RESTORE") ] ]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, RESTORE_BACKUP) ]
+                          >> -(no_case[ lexeme[ lit("FROM") ] ] >> no_case[ lexeme[ lit("ARCHIVE") ] ])
+                          >> identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                          >> cmd_restore_type
+                          >> cmd_restore_action;
+
+        cmd_restore_type = no_case[ lexeme[ lit("BASEBACKUP") ] ]
+          >> ( ( ( no_case[ lexeme[ lit("LATEST") ] ]
+                   [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupName, &cmd, std::string("LATEST")) ]
+                   )
+                 |
+                 ( no_case[ lexeme[ lit("NEWEST") ] ]
+                   [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupName, &cmd, std::string("NEWEST")) ]
+                   )
+                 |
+                 ( no_case[ lexeme[ lit("OLDEST") ] ]
+                   [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupName, &cmd, std::string("OLDEST")) ]
+                   )
+                 |
+                 ( no_case[ lexeme[ lit("CURRENT") ] ]
+                   [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupName, &cmd, std::string("CURRENT")) ]
+                   )
+                 )
+               |
+               ( number_ID
+                 [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupID, &cmd, ::_1) ] )
+               );
+
+        cmd_restore_action = no_case[ lexeme[ lit("TO") ] ]
+          >> no_case[ lexeme[ lit("DIRECTORY") ] ]
+          >> no_case[ lexeme[ lit("=") ] ]
+          >> directory_string
+          >> -(tablespace_map);
+
+        tablespace_map = no_case[ lexeme[ lit("TABLESPACE") ] ]
+          >> no_case[ lexeme[ lit("MAP") ] ]
+          >> ( ( no_case[ lexeme[ lit("ALL") ] ]
+                 >> no_case[ lexeme[ lit("=") ] ]
+                 >> directory_string
+                 [ boost::bind(&CatalogDescr::restoreTablespaceAllFromParserState, &cmd, ::_1) ] )
+               |
+               tablespace_map_oid );
+
+        tablespace_map_oid
+          = number_ID
+          [ boost::bind(&CatalogDescr::restoreTablespaceOidFromParserState, &cmd, ::_1)]
+          >> no_case[ lexeme[ lit("=") ] ]
+          >> directory_string
+          [ boost::bind(&CatalogDescr::restoreTablespaceLocationFromParserState, &cmd, ::_1, true)]
+          >> -(tablespace_map_oid);
 
         /*
          * PIN { basebackup ID | OLDEST | NEWEST | +n }
@@ -926,6 +1005,12 @@ namespace credativ {
         cmd_list_backup_list.name("LIST BACKUPS");
         cmd_list_connection.name("LIST CONNECTION");
         cmd_list_retention.name("LIST RETENTION");
+        cmd_restore.name("RESTORE FROM ARCHIVE");
+        cmd_stat.name("STAT");
+        cmd_restore_type.name("BASEBACKUP");
+        cmd_restore_action.name("TO");
+        tablespace_map.name("TABLESPACE MAP");
+        tablespace_map_oid.name("<OID>=<DIRECTORY>");
         retention_keep_action.name("KEEP");
         retention_drop_action.name("DROP");
         retention_rule_older_datetime.name("OLDER THAN");
@@ -971,7 +1056,10 @@ namespace credativ {
        * Rule return declarations.
        */
       qi::rule<Iterator, ascii::space_type> start;
-      qi::rule<Iterator, ascii::space_type> cmd_create, cmd_drop, cmd_list, cmd_alter;
+      qi::rule<Iterator, ascii::space_type> cmd_create,
+        cmd_drop, cmd_list, cmd_alter, cmd_restore, cmd_restore_action,
+        cmd_restore_type, tablespace_map, tablespace_map_oid,
+        cmd_stat;
       qi::rule<Iterator, ascii::space_type> cmd_create_archive,
                           cmd_verify_archive,
                           cmd_drop_archive,
@@ -1345,6 +1433,14 @@ shared_ptr<CatalogDescr> PGBackupCtlCommand::getExecutableDescr() {
 
   case START_RECOVERY_STREAM_FOR_ARCHIVE:
     result = make_shared<StartRecoveryArchiveCommand>(this->catalogDescr);
+    break;
+
+  case RESTORE_BACKUP:
+    result = make_shared<RestoreFromArchiveCommandHandle>(this->catalogDescr);
+    break;
+
+  case STAT_ARCHIVE_BASEBACKUP:
+    result = make_shared<StatArchiveBaseBackupCommand>(this->catalogDescr);
     break;
 
   default:

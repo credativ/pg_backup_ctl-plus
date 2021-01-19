@@ -450,6 +450,49 @@ a basebackup, ``PIN`` supports the following action modes:
    meeting the criteria is choosen. If there aren't any, an error will be
    raised.
 
+RESTORE
+=======
+
+Syntax::
+
+  RESTORE [FROM ARCHIVE] <identifier>
+  BASEBACKUP { { CURRENT|NEWEST|LATEST|OLDEST } | <ID> }
+  TO DIRECTORY="<directory>"
+  TABLESPACE MAP { ALL="<directory>"
+                   | <OID>="<directory>" [ .... ] }
+
+To restore a basebackup locally to a directory, use the `RESTORE FROM ARCHIVE`
+command. Currently the reserved keywords `CURRENT`, `LATEST` or `NEWEST` can be used
+to specify the most recent basebackup to restore from the archive. To select
+a specific basebackup to restore, specify it by its `ID`. The `TO DIRECTORY` defines
+the target directory to restore the basebackup to. Please note that no whitespaces
+between the `TO DIRECTORY`, the following `=` and `<directory>` string are allowed.
+The `"` quotes are mandatory, too. The same rule applies to the `ALL` and `<OID`
+properties of the `TABLESPACE MAP` directive.
+
+The `TABLESPACE MAP` directory can be used to override the target directories
+for specific tablespaces (specified by their OIDs which can be found in the output
+of `LIST BASEBACKUPS ... VERBOSE`) or for every tablespaces contained in the backup.
+The latter redirects all tablespaces into `<directory>`, created as subdirectories
+there.
+
+The default tablespace (aka as `PGDATA` or `pg_default`) can't be redirected,
+multiple colliding specifications of tablespace redirections throw an error.
+
+Example::
+
+  RESTORE FROM ARCHIVE pg13 BASEBACKUP LATEST
+     TO DIRECTORY="/srv/restore";
+
+  RESTORE pg13 BASEBACKUP 3
+     TO DIRECTORY="/srv/restore/pgdata-13"
+     TABLESPACE MAP ALL="/srv/restore/tablespaces-13";
+
+  RESTORE FROM ARCHIVE pg13 BASEBACKUP OLDEST
+     TO DIRECTORY="/srv/restore/pgdata-13"
+     TABLESPACE MAP 16788="/srv/restore/tablespaces-13/tblspc1"
+                    18655="/srv/restore/tablespaces-13/tblspc2";
+
 START BASEBACKUP FOR ARCHIVE
 ============================
 
@@ -534,6 +577,23 @@ Examples::
   START STREAMING FOR ARCHIVE pg10 NODETACH;
 
   START STREAMING FOR ARCHIVE pg10 RESTART NODETACH;
+
+STAT ARCHIVE
+============
+
+Syntax::
+
+  STAT ARCHIVE <identifier> BASEBACKUP <ID>
+
+The `STAT ARCHIVE` command allows to view the filesystem contents
+of the basebackup as they are stored in the archive.
+
+Examples::
+
+  STAT ARCHIVE pg13 BASEBACKUP 3;
+
+This shows the filesystem contents of the basebackup with
+ID `3` as it is stored in the archive.
 
 UNPIN
 =====

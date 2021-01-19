@@ -108,6 +108,12 @@ namespace credativ {
     static const int version_minor_num = PG_BACKUP_CTL_MINOR;
 
     /*
+     * Some special constants which might be interesting
+     * all over the code.
+     */
+    static const unsigned int invalid_oid = 0;
+
+    /*
      * C'tor
      */
     CPGBackupCtlBase();

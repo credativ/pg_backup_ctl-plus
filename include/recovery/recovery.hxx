@@ -15,7 +15,7 @@ namespace credativ {
   public:
 
     Recovery();
-    Recovery(std::shared_ptr<RestoreStreamDescr> restoreDescr);
+    Recovery(std::shared_ptr<RestoreDescr> restoreDescr);
     virtual ~Recovery();
 
     /*
@@ -33,7 +33,7 @@ namespace credativ {
   class TarRecovery : public Recovery {
   public:
 
-    TarRecovery(std::shared_ptr<RestoreStreamDescr> restoreDescr);
+    TarRecovery(std::shared_ptr<RestoreDescr> restoreDescr);
     virtual ~TarRecovery();
 
     /*

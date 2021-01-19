@@ -572,6 +572,37 @@ namespace credativ {
     virtual void execute(bool noop);
   };
 
+  /**
+   * Implements the RESTORE FROM ARCHIVE command.
+   *
+   */
+  class RestoreFromArchiveCommandHandle : public BaseCatalogCommand {
+  private:
+  public:
+    RestoreFromArchiveCommandHandle(std::shared_ptr<BackupCatalog> catalog);
+    RestoreFromArchiveCommandHandle(std::shared_ptr<CatalogDescr> descr);
+    RestoreFromArchiveCommandHandle();
+
+    virtual ~RestoreFromArchiveCommandHandle();
+
+    virtual void execute(bool noop);
+  };
+
+  /**
+   * Implements the STAT ARCHIVE ... BASEBACKUP command.
+   */
+  class StatArchiveBaseBackupCommand : public BaseCatalogCommand {
+  public:
+
+    StatArchiveBaseBackupCommand(std::shared_ptr<CatalogDescr> descr);
+    StatArchiveBaseBackupCommand(std::shared_ptr<BackupCatalog> catalog);
+    StatArchiveBaseBackupCommand();
+
+    virtual ~StatArchiveBaseBackupCommand();
+
+    virtual void execute(bool noop);
+
+  };
 }
 
 #endif

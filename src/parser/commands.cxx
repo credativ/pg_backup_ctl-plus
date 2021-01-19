@@ -92,6 +92,10 @@ void BaseCatalogCommand::copy(CatalogDescr& source) {
   if (source.getRuntimeConfiguration() != nullptr)
     this->runtime_config = source.getRuntimeConfiguration();
 
+  /* Restore descriptor, if defined  */
+  if (source.getRestoreDescr() != nullptr)
+    this->setRestoreDescr(source.getRestoreDescr());
+
   /*
    * Copy over recovery instance descriptor, if any.
    *
@@ -147,6 +151,27 @@ void BaseCatalogCommand::assignSigIntHandler(JobSignalHandler *handler) {
 
   this->intHandler = handler;
 }
+
+RestoreFromArchiveCommandHandle::RestoreFromArchiveCommandHandle(std::shared_ptr<BackupCatalog> catalog) {
+
+}
+
+RestoreFromArchiveCommandHandle::RestoreFromArchiveCommandHandle(std::shared_ptr<CatalogDescr> descr) {
+
+}
+
+
+RestoreFromArchiveCommandHandle::~RestoreFromArchiveCommandHandle() {
+
+}
+
+void RestoreFromArchiveCommandHandle::execute(bool noop) {
+
+  if (this->restoreDescr != nullptr)
+    cout << "descriptor!" << endl;
+
+}
+
 
 DropBasebackupCatalogCommand::DropBasebackupCatalogCommand(shared_ptr<CatalogDescr> descr) {
 
@@ -4228,5 +4253,100 @@ BackgroundWorkerCommandHandle::BackgroundWorkerCommandHandle(std::shared_ptr<Cat
 }
 
 void BackgroundWorkerCommandHandle::execute(bool noop) {
+
+}
+
+StatArchiveBaseBackupCommand::StatArchiveBaseBackupCommand(std::shared_ptr<BackupCatalog> catalog) {
+
+  this->catalog = catalog;
+  this->tag = STAT_ARCHIVE_BASEBACKUP;
+
+}
+
+
+StatArchiveBaseBackupCommand::StatArchiveBaseBackupCommand(std::shared_ptr<CatalogDescr> descr) {
+
+  this->copy(*(descr.get()));
+  this->tag = STAT_ARCHIVE_BASEBACKUP;
+
+}
+
+StatArchiveBaseBackupCommand::StatArchiveBaseBackupCommand() {
+
+  this->tag = STAT_ARCHIVE_BASEBACKUP;
+
+}
+
+StatArchiveBaseBackupCommand::~StatArchiveBaseBackupCommand() {}
+
+void StatArchiveBaseBackupCommand::execute(bool noop) {
+
+  std::shared_ptr<CatalogDescr> archive_descr   = nullptr;
+  std::shared_ptr<BaseBackupDescr> backup_descr = nullptr;
+  std::shared_ptr<std::list<boost::filesystem::directory_entry>> contents;
+
+  /* Catalog access required */
+  if (catalog == NULL) {
+    throw CArchiveIssue("could not execute archive command: no catalog");
+  }
+
+  /*
+   * Open the catalog if not done yet, read only access is sufficient.
+   */
+  if (!catalog->available()) {
+    catalog->open_ro();
+  }
+
+  /*
+   * Get the archive catalog descr, error
+   * out if the specified archive does not exist.x
+   */
+  archive_descr = catalog->existsByName(this->archive_name);
+
+  if (archive_descr->id < 0) {
+
+    std::ostringstream oss;
+    oss << "archive \"" << this->archive_name << "\" does not exist";
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  /*
+   * Okay, archive_name exists, get the basebackup descriptor.
+   */
+  backup_descr = catalog->getBaseBackup(this->basebackup_id, archive_descr->id);
+
+  /*
+   * Check if the specified basebackup_id was valid.
+   */
+  if (backup_descr->id < 0) {
+
+    std::ostringstream oss;
+    oss << "basebackup ID \"" << this->basebackup_id << "\" "
+        << "does not exist in archive \""
+        << this->archive_name << "\"";
+    throw CArchiveIssue(oss.str());
+
+  }
+
+  BOOST_LOG_TRIVIAL(debug) << "STAT on directory \""
+                           << backup_descr->fsentry
+                           << "\"";
+
+  /* Basebackup exists, dump its contents */
+  StreamingBaseBackupDirectory bbdir(path(backup_descr->fsentry));
+  contents = bbdir.stat();
+
+  /*
+   * Print out file list
+   */
+  shared_ptr<OutputFormatConfiguration> output_config
+    = std::make_shared<OutputFormatConfiguration>();
+  shared_ptr<OutputFormatter> formatter = OutputFormatter::formatter(output_config,
+                                                                     catalog,
+                                                                     getOutputFormat());
+  ostringstream output;
+  formatter->nodeAs(contents, output);
+  cout << output.str();
 
 }

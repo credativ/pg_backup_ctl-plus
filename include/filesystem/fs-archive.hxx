@@ -269,7 +269,7 @@ namespace credativ {
     /**
      * Internal iterator handle.
      */
-    directory_iterator dit;
+    recursive_directory_iterator dit;
 
     /**
      * Indicates wether the iterator was already opened.
@@ -290,7 +290,7 @@ namespace credativ {
      * Return path handle from opened iterator and move
      * iterator to next element.
      */
-    virtual path next();
+    virtual directory_entry next();
 
     /**
      * Returns true if the iterator reached the end of.
@@ -605,6 +605,7 @@ namespace credativ {
                                  path archiveDir);
     StreamingBaseBackupDirectory(std::string streaming_dirname,
                                  std::shared_ptr<BackupDirectory> parent);
+    StreamingBaseBackupDirectory(path streaming_directory);
 
     virtual ~StreamingBaseBackupDirectory();
 
@@ -613,6 +614,14 @@ namespace credativ {
      * filesystem contents of a streamed base backup directory.
      */
     virtual DirectoryTreeWalker walker();
+
+    /**
+     * Returns a list of files/directories contained in the streamed base backup.
+     *
+     * Depending on the type of basebackup (PLAIN) and the size of the database instance,
+     * this list can be arbitrary large!
+     */
+    virtual std::shared_ptr<std::list<directory_entry>> stat();
 
     /**
      * Static version of walker(), can be called to derive a
