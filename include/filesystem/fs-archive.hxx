@@ -332,9 +332,12 @@ namespace credativ {
     static void fsync(path syncPath);
 
     /*
-     * Verify if a specific path exists.
+     * Verify if a specific path exists in the
+     * filesystem.
+     *
+     * checkPath
      */
-    virtual bool exists(path path);
+    virtual bool checkPathForBackup(path path);
 
   public:
 
@@ -349,6 +352,10 @@ namespace credativ {
 
     /**
      * Check if this is an existing archive directory.
+     *
+     * This method performs additional checks like placing
+     * a magic file into the archive directory.
+     *
      */
     virtual bool exists();
 

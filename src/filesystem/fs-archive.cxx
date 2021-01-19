@@ -55,7 +55,8 @@ StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming
 StreamingBaseBackupDirectory::~StreamingBaseBackupDirectory() {}
 
 void StreamingBaseBackupDirectory::create() {
-  if (!exists(this->streaming_subdir)) {
+
+  if (!boost::filesystem::exists(this->streaming_subdir)) {
 #ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating streaming basebackup directory "
                              << "\""
@@ -69,6 +70,7 @@ void StreamingBaseBackupDirectory::create() {
     oss << "directory " << this->streaming_subdir.string() << "already exists";
     throw CArchiveIssue(oss.str());
   }
+
 }
 
 void StreamingBaseBackupDirectory::fsync() {
@@ -76,18 +78,19 @@ void StreamingBaseBackupDirectory::fsync() {
   /*
    * If not a directory, error out.
    */
-  if (!exists(this->streaming_subdir)) {
+  if (!boost::filesystem::exists(this->streaming_subdir)) {
     ostringstream oss;
     oss << "archive directory " << this->handle.string() << " does not exist";
     throw CArchiveIssue(oss.str());
   }
 
   BackupDirectory::fsync(this->streaming_subdir);
+
 }
 
 void StreamingBaseBackupDirectory::remove() {
 
-  if (!exists(this->streaming_subdir)) {
+  if (!boost::filesystem::exists(this->streaming_subdir)) {
     ostringstream oss;
     oss << "archive directory " << this->handle.string() << " does not exist";
     throw CArchiveIssue(oss.str());
@@ -315,7 +318,25 @@ path ArchiveLogDirectory::getPath() {
 }
 
 bool ArchiveLogDirectory::exists() {
-  return BackupDirectory::exists(this->log);
+
+  bool result = boost::filesystem::exists(this->log);
+
+  /*
+   * Don't get fooled by an existing file
+   */
+  if (result && is_regular_file(this->log)) {
+
+    std::ostringstream err;
+
+    err << "archive log path \""
+        << this->log.string()
+        << "\" exists, but is a regular file";
+    throw CArchiveIssue(err.str());
+
+  }
+
+  return result;
+
 }
 
 std::string ArchiveLogDirectory::XLogPrevFileByRecPtr(XLogRecPtr recptr,
@@ -1081,7 +1102,7 @@ string BackupDirectory::verificationCodeAsString(BaseBackupVerificationCode code
 }
 
 void BackupDirectory::create() {
-  if (!exists(this->handle)) {
+  if (!boost::filesystem::exists(this->handle)) {
 
 #ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating backup directory structure";
@@ -1092,14 +1113,14 @@ void BackupDirectory::create() {
 
   } else {
 
-    if (!exists(this->basedir())) {
+    if (!boost::filesystem::exists(this->basedir())) {
 #ifdef __DEBUG__
       BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating basedir directory";
 #endif
       create_directory(this->basedir());
     }
 
-    if (!exists(this->logdir())) {
+    if (!boost::filesystem::exists(this->logdir())) {
 #ifdef __DEBUG__
       BOOST_LOG_TRIVIAL(debug) << "DEBUG: creating logdir directory";
 #endif
@@ -1123,7 +1144,7 @@ BackupDirectory::BackupDirectory(path handle) {
 
 BackupDirectory::~BackupDirectory() {}
 
-bool BackupDirectory::exists(path path_handle){
+bool BackupDirectory::checkPathForBackup(path path_handle){
   /*
    * Check the archive directory itself.
    * It makes no sense to proceed for base/ and log/
@@ -1131,9 +1152,7 @@ bool BackupDirectory::exists(path path_handle){
    */
 
   if (!boost::filesystem::exists(path_handle)) {
-    ostringstream oss;
-    oss << "archive directory " << path_handle.string() << " does not exist";
-    throw CArchiveIssue(oss.str());
+    return false;
   }
 
   /*
@@ -1160,15 +1179,16 @@ bool BackupDirectory::exists(path path_handle){
      * re-throw as CArchiveIssue
      */
     ostringstream oss;
-    oss << "verify command failed: " << e.what();
+    oss << "could not write magic file to archive base directory: " << e.what();
     throw CArchiveIssue(oss.str());
   }
 
   return true;
+
 }
 
 bool BackupDirectory::exists() {
-  return exists(this->handle);
+  return this->checkPathForBackup(this->handle);
 }
 
 std::shared_ptr<BackupFile> BackupDirectory::walfile(std::string name,
@@ -1313,7 +1333,7 @@ void BackupDirectory::fsync() {
   /*
    * If not a directory, error out.
    */
-  if (!exists(this->handle)) {
+  if (!boost::filesystem::exists(this->handle)) {
     ostringstream oss;
     oss << "archive directory " << this->handle.string() << " does not exist";
     throw CArchiveIssue(oss.str());
@@ -1504,13 +1524,13 @@ bool CPGBackupCtlFS::checkArchiveDirectory() {
     /*
      * Check presence of required archive and its subdirectories.
      */
-    if (!exists(this->archivePath))
+    if (!boost::filesystem::exists(this->archivePath))
       throw CArchiveIssue("archive directory doesn't exist");
 
-    if (!exists(this->archivePath / "base"))
+    if (!boost::filesystem::exists(this->archivePath / "base"))
       throw CArchiveIssue("archive base directory doesn't exist");
 
-    if (!exists(this->archivePath / "log"))
+    if (!boost::filesystem::exists(this->archivePath / "log"))
       throw CArchiveIssue("archive log directory doesn't exist");
 
     /*
