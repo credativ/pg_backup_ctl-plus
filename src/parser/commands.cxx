@@ -1706,7 +1706,7 @@ void StartStreamingForArchiveCommand::execute(bool noop) {
     CatalogProc::PROC_TYPE_LAUNCHER
   );
 
-  if (launcher_is_running(procInfo)) {
+  if (!launcher_is_running(procInfo)) {
     throw CArchiveIssue("could not execute catalog command: launcher not running");
   }
 
