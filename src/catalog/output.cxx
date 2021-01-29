@@ -553,7 +553,7 @@ void ConsoleOutputFormatter::listArchiveDetail(std::shared_ptr<std::list<std::sh
 
   for (auto& descr: *list) {
 
-    output << CPGBackupCtlBase::makeLine(80);
+    output << CPGBackupCtlBase::makeLine(80) << endl;
 
     output << boost::format("%-20s\t%-30s") % "NAME" % descr->archive_name << endl;
     output << boost::format("%-20s\t%-30s") % "DIRECTORY" % descr->directory << endl;
@@ -565,7 +565,7 @@ void ConsoleOutputFormatter::listArchiveDetail(std::shared_ptr<std::list<std::sh
     output << boost::format("%-20s\t%-30s") % "COMPRESSION" % descr->compression << endl;
     output << CPGBackupCtlBase::makeLine(80) << endl;
 
-    output << CPGBackupCtlBase::makeLine(80);
+    output << CPGBackupCtlBase::makeLine(80) << endl;
 
   }
 
