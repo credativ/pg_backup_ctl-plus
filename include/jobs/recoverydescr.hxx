@@ -21,6 +21,8 @@ namespace credativ {
   class RecoveryStreamDescr {
   public:
 
+    static const int DEFAULT_RECOVERY_STREAM_PORT = 7432;
+
     /**
      * Port number to listen on.
      */
@@ -51,7 +53,7 @@ namespace credativ {
     /**
      * Wether to use SSL certificates. Defaults to TRUE
      *
-     * NOTE: non-SSL currently *not* implemented.
+     * NOTE: SSL currently *not* implemented.
      */
     bool use_ssl = true;
 

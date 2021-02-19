@@ -13,6 +13,7 @@
  * For the boost builtin parser.
  */
 #include <boost/config/warning_disable.hpp>
+#include <boost/log/trivial.hpp>
 #include <boost/spirit/include/qi.hpp>
 #include <boost/spirit/include/phoenix_core.hpp>
 #include <boost/spirit/include/phoenix_operator.hpp>
@@ -54,6 +55,8 @@ namespace credativ {
 
     public:
 
+      std::ostringstream parser_error;
+
       credativ::CatalogDescr getCommand() { return this->cmd; }
 
       PGBackupCtlBoostParser(shared_ptr<RuntimeConfiguration> rtc)
@@ -89,7 +92,7 @@ namespace credativ {
         /*
          * Parser rule definitions
          */
-        start %= eps >> (
+        start %= eps > (
                          /* APPLY syntax */
                          (
                           cmd_apply
@@ -114,88 +117,85 @@ namespace credativ {
                          (
                           no_case[lexeme[ lit("EXEC") ]]
                           [boost::bind(&CatalogDescr::setCommandTag, &cmd, EXEC_COMMAND)]
-                          >> executable
+                          > eps > executable
                           [boost::bind(&CatalogDescr::setExecString, &cmd, ::_1)]
                           )
                          |
 
                          /* CREATE command syntax start */
                          (
-                          cmd_create >> (
-                                         cmd_create_archive
-                                         | cmd_create_backup_profile
-                                         | cmd_create_connection
-                                         | cmd_create_retention
-                                         )
+                          cmd_create > eps > (
+                                              cmd_create_archive
+                                              | cmd_create_backup_profile
+                                              | cmd_create_connection
+                                              | cmd_create_retention
+                                              )
                           )
 
                          /* LIST command syntax start */
                          | (
-                            cmd_list >> (
-                                         cmd_list_archive
-                                         | cmd_list_backup
-                                         | cmd_list_connection
-                                         | cmd_list_backup_list
-                                         | cmd_list_retention
-                                         )
+                            cmd_list > eps > (
+                                              cmd_list_archive
+                                              | cmd_list_backup
+                                              | cmd_list_connection
+                                              | cmd_list_backup_list
+                                              | cmd_list_retention
+                                              )
                             )
 
                          /* ALTER command */
                          | (
-                            cmd_alter >> (
-                                          cmd_alter_archive
-                                          | cmd_alter_backup_profile
-                                          )
+                            cmd_alter > eps > (
+                                               cmd_alter_archive
+                                               | cmd_alter_backup_profile
+                                               )
                             )
 
                          /*
                           * DROP command syntax start
                           */
                          | (
-                            cmd_drop >> (
-                                         /*
-                                          * DROP ARCHIVE <name> command
-                                          */
-                                         ( cmd_drop_archive >> identifier
-                                           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
+                            cmd_drop > eps > (
+                                              /*
+                                               * DROP ARCHIVE <name> command
+                                               */
+                                              ( cmd_drop_archive > eps > identifier
+                                                [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
 
-                                         /*
-                                          * DROP BACKUP PROFILE
-                                          */
-                                         | cmd_drop_backup_profile
+                                              /*
+                                               * DROP BACKUP PROFILE
+                                               */
+                                              | cmd_drop_backup_profile
 
-                                         /*
-                                          * DROP STREAMING CONNECTION
-                                          */
-                                         | cmd_drop_connection
+                                              /*
+                                               * DROP STREAMING CONNECTION
+                                               */
+                                              | cmd_drop_connection
 
-                                         /* DROP RETENTION POLICY */
-                                         | cmd_drop_retention
+                                              /* DROP RETENTION POLICY */
+                                              | cmd_drop_retention
 
-                                         /* DROP BASEBACKUP */
-                                         | cmd_drop_basebackup )
+                                              /* DROP BASEBACKUP */
+                                              | cmd_drop_basebackup )
                             )
 
                          /*
                           * VERIFY ARCHIVE <name> command
                           */
-                         | ( cmd_verify_archive >> identifier
+                         | ( cmd_verify_archive > eps > identifier
                              [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                             >> -verify_check_connection
+                             > eps > -verify_check_connection
                              [ boost::bind(&CatalogDescr::setVerifyOption, &cmd, VERIFY_DATABASE_CONNECTION) ] )
 
                          /*
                           * START command
                           */
                          | (
-                            cmd_start_command >> (
+                            cmd_start_command > eps > (
                                                   /*
                                                    * START BASEBACKUP FOR ARCHIVE <name> command
                                                    */
-                                                  ( cmd_start_basebackup
-                                                    >> identifier
-                                                    [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                                                    >> -(with_profile) >> -(force_systemid_update) )
+                                                  ( cmd_start_basebackup )
                                                   | ( cmd_start_launcher )
                                                   | ( cmd_start_streaming )
                                                   | ( cmd_start_recovery_stream )
@@ -237,13 +237,13 @@ namespace credativ {
         /*
          * STAT ARCHIVE <name> BASEBACKUP <ID>
          */
-        cmd_stat = eps >> no_case[ lexeme[ lit("STAT") ] ]
-                       >> no_case[ lexeme[ lit("ARCHIVE") ] ]
+        cmd_stat = no_case[ lexeme[ lit("STAT") ] ]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, STAT_ARCHIVE_BASEBACKUP) ]
-                       >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                       >> no_case[ lexeme[ lit("BASEBACKUP") ] ]
-                       >> number_ID
+          > eps > no_case[ lexeme[ lit("BASEBACKUP") ] ]
+          > eps > number_ID
           [ boost::bind(&CatalogDescr::setBasebackupID, &cmd, ::_1) ];
 
         /*
@@ -251,13 +251,14 @@ namespace credativ {
          * TO DIRECTORY <directory>
          * [ TABLESPACE MAP { <OID>=<directory>, [ ... ] | ALL=<DIRECTORY> } ]
          */
-        cmd_restore = eps >> no_case[ lexeme[ lit("RESTORE") ] ]
+        cmd_restore = no_case[ lexeme[ lit("RESTORE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, RESTORE_BACKUP) ]
-                          >> -(no_case[ lexeme[ lit("FROM") ] ] >> no_case[ lexeme[ lit("ARCHIVE") ] ])
-                          >> identifier
+          >> eps >> -(no_case[ lexeme[ lit("FROM") ] ]
+                      > eps > no_case[ lexeme[ lit("ARCHIVE") ] ])
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-                          >> cmd_restore_type
-                          >> cmd_restore_action;
+          > eps > cmd_restore_type
+          > eps > cmd_restore_action;
 
         cmd_restore_type = no_case[ lexeme[ lit("BASEBACKUP") ] ]
           >> ( ( ( no_case[ lexeme[ lit("LATEST") ] ]
@@ -281,82 +282,82 @@ namespace credativ {
                  [ boost::bind(&CatalogDescr::createRestoreDescrByBaseBackupID, &cmd, ::_1) ] )
                );
 
-        cmd_restore_action = no_case[ lexeme[ lit("TO") ] ]
-          >> no_case[ lexeme[ lit("DIRECTORY") ] ]
-          >> no_case[ lexeme[ lit("=") ] ]
-          >> directory_string
-          >> -(tablespace_map);
+        cmd_restore_action = eps > no_case[ lexeme[ lit("TO") ] ]
+          > eps > no_case[ lexeme[ lit("DIRECTORY") ] ]
+          > eps > no_case[ lexeme[ lit("=") ] ]
+          > eps > directory_string
+          > eps >> -(tablespace_map);
 
         tablespace_map = no_case[ lexeme[ lit("TABLESPACE") ] ]
-          >> no_case[ lexeme[ lit("MAP") ] ]
-          >> ( ( no_case[ lexeme[ lit("ALL") ] ]
-                 >> no_case[ lexeme[ lit("=") ] ]
-                 >> directory_string
-                 [ boost::bind(&CatalogDescr::restoreTablespaceAllFromParserState, &cmd, ::_1) ] )
-               |
-               tablespace_map_oid );
+          > eps > no_case[ lexeme[ lit("MAP") ] ]
+          > eps > ( ( no_case[ lexeme[ lit("ALL") ] ]
+                      > eps > no_case[ lexeme[ lit("=") ] ]
+                      > eps > directory_string
+                      [ boost::bind(&CatalogDescr::restoreTablespaceAllFromParserState, &cmd, ::_1) ] )
+                    |
+                    tablespace_map_oid );
 
         tablespace_map_oid
           = number_ID
           [ boost::bind(&CatalogDescr::restoreTablespaceOidFromParserState, &cmd, ::_1)]
-          >> no_case[ lexeme[ lit("=") ] ]
-          >> directory_string
+          > eps > no_case[ lexeme[ lit("=") ] ]
+          > eps > directory_string
           [ boost::bind(&CatalogDescr::restoreTablespaceLocationFromParserState, &cmd, ::_1, true)]
-          >> -(tablespace_map_oid);
+          >> eps >> -(tablespace_map_oid);
 
         /*
          * PIN { basebackup ID | OLDEST | NEWEST | +n }
          */
         cmd_pin_basebackup = no_case[ lexeme[ lit("PIN") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag,
-                        &cmd, PIN_BASEBACKUP) ]>> ( number_ID
-                                                    [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                  &cmd, ACTION_ID, ::_1) ]
-                                                    | no_case[ lexeme[ lit("OLDEST") ]  ]
-                                                    [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                  &cmd, ACTION_OLDEST) ]
-                                                    | no_case[ lexeme[ lit("NEWEST") ] ]
-                                                    [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                  &cmd, ACTION_NEWEST) ]
-                                                    | ( lexeme[ lit("+") ] >> number_ID
-                                                        [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                      &cmd, ACTION_COUNT, ::_1)]
-                                                        )
-                                                    )
-                                               >> no_case[ lexeme[ lit("IN") ] ]
-                                               >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-                                               >> identifier [ boost::bind(&CatalogDescr::setIdent,
-                                                                           &cmd,
-                                                                           ::_1) ] ;
+                        &cmd, PIN_BASEBACKUP) ] > eps > ( number_ID
+                                                          [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                        &cmd, ACTION_ID, ::_1) ]
+                                                          | no_case[ lexeme[ lit("OLDEST") ]  ]
+                                                          [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                        &cmd, ACTION_OLDEST) ]
+                                                          | no_case[ lexeme[ lit("NEWEST") ] ]
+                                                          [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                        &cmd, ACTION_NEWEST) ]
+                                                          | ( lexeme[ lit("+") ] >> number_ID
+                                                              [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                            &cmd, ACTION_COUNT, ::_1)]
+                                                              )
+                                                          )
+          > eps > no_case[ lexeme[ lit("IN") ] ]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          > eps > identifier [ boost::bind(&CatalogDescr::setIdent,
+                                           &cmd,
+                                           ::_1) ] ;
 
         /*
          * UNPIN { basebackup ID | OLDEST | NEWEST | PINNED | +n }
          */
         cmd_unpin_basebackup = no_case[ lexeme[ lit("UNPIN") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag,
-                        &cmd, UNPIN_BASEBACKUP) ] >> ( number_ID
-                                                       [ boost::bind(&CatalogDescr::makePinDescr, &cmd, ACTION_ID, ::_1) ]
-                                                       | no_case[ lexeme[ lit("OLDEST") ]  ]
-                                                       [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                     &cmd,
-                                                                     ACTION_OLDEST) ]
-                                                       | no_case[ lexeme[ lit("NEWEST") ] ]
-                                                       [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                     &cmd,
-                                                                     ACTION_NEWEST) ]
-                                                       | no_case[ lexeme[ lit("PINNED") ] ]
-                                                       [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                     &cmd,
-                                                                     ACTION_PINNED) ]
-                                                       | ( lexeme[ lit("+") ] >> number_ID
-                                                           [ boost::bind(&CatalogDescr::makePinDescr,
-                                                                         &cmd, ACTION_COUNT, ::_1)])
-                                                       )
-                                                  >> no_case[ lexeme[ lit("IN") ] ]
-                                                  >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-                                                  >> identifier [ boost::bind(&CatalogDescr::setIdent,
-                                                                              &cmd,
-                                                                              ::_1) ];
+                        &cmd, UNPIN_BASEBACKUP) ] > eps > ( number_ID
+                                                            [ boost::bind(&CatalogDescr::makePinDescr, &cmd, ACTION_ID, ::_1) ]
+                                                            | no_case[ lexeme[ lit("OLDEST") ]  ]
+                                                            [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                          &cmd,
+                                                                          ACTION_OLDEST) ]
+                                                            | no_case[ lexeme[ lit("NEWEST") ] ]
+                                                            [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                          &cmd,
+                                                                          ACTION_NEWEST) ]
+                                                            | no_case[ lexeme[ lit("PINNED") ] ]
+                                                            [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                          &cmd,
+                                                                          ACTION_PINNED) ]
+                                                            | ( lexeme[ lit("+") ] >> number_ID
+                                                                [ boost::bind(&CatalogDescr::makePinDescr,
+                                                                              &cmd, ACTION_COUNT, ::_1)])
+                                                            )
+          > eps > no_case[ lexeme[ lit("IN") ] ]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          > eps > identifier [ boost::bind(&CatalogDescr::setIdent,
+                                           &cmd,
+                                           ::_1) ];
 
         /* parses ID */
         number_ID = +char_("0-9");
@@ -364,9 +365,9 @@ namespace credativ {
         /*
          * ALTER ARCHIVE <name> command
          */
-        cmd_alter_archive_opt = identifier
+        cmd_alter_archive_opt = eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          >> ( no_case[ lexeme[ lit("SET") ] ]
+          > eps > ( no_case[ lexeme[ lit("SET") ] ] > eps
               ^ ( directory
                   [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ] )
               ^ ( ( hostname
@@ -378,7 +379,7 @@ namespace credativ {
                     ^ portnumber
                     [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
                   |
-                  ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
+                  ( no_case[ lexeme[ lit("DSN") ]] > eps > -lit("=") > eps > dsn_connection_string
                     [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) ) );
 
         /*
@@ -386,48 +387,48 @@ namespace credativ {
          */
         cmd_start_launcher = no_case[lexeme[ lit("LAUNCHER") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_LAUNCHER) ]
-          ^ no_case[lexeme[ lit("NODETACH") ]]
+          > eps ^ no_case[lexeme[ lit("NODETACH") ]]
           [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ];
 
         /*
          * APPLY command
          */
         cmd_apply = no_case[lexeme[ lit("APPLY") ] ]
-          >> cmd_apply_retention;
+          > eps > cmd_apply_retention;
 
         /*
          * APPLY RETENTION POLICY <identifier> TO ARCHIVE <identifier>
          */
         cmd_apply_retention = no_case[ lexeme[ lit("RETENTION") ]]
-          >> no_case[ lexeme[ lit("POLICY") ]]
+          > eps > no_case[ lexeme[ lit("POLICY") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, APPLY_RETENTION_POLICY) ]
-          >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setRetentionName, &cmd, ::_1) ]
-          >> no_case[ lexeme[ lit("TO") ]]
-          >> no_case[ lexeme[ lit("ARCHIVE") ]]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("TO") ]]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ]]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /* SET <class.variable name> = <variable value> */
         cmd_set = no_case[ lexeme[ lit("SET") ]]
-          >> no_case[ lexeme[ lit("VARIABLE") ] ]
+          > eps > no_case[ lexeme[ lit("VARIABLE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, SET_VARIABLE) ]
-          >> cmd_set_variable;
+          > eps > cmd_set_variable;
 
         cmd_set_variable = variable_name
           [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ]
-          >> no_case[ lexeme[ lit("=") ] ]
-          >> (
+          > eps > no_case[ lexeme[ lit("=") ] ]
+          > eps > (
               ( variable_value )
               | ( no_case[ lexeme[ lit("\"") ] ]
-                  >> variable_value_string
+                  > eps > variable_value_string
                   [ boost::bind(&CatalogDescr::setVariableValueString, &cmd, ::_1) ]
-                  >> no_case[ lexeme[ lit("\"") ] ] )
+                  > eps > no_case[ lexeme[ lit("\"") ] ] )
               );
 
         variable_name = repeat(1, boost::spirit::inf)[char_("0-9A-Za-z_")]
-          >> char_(".")
-          >> repeat(1, boost::spirit::inf)[char_("A-Za-z_")];
+          > eps > char_(".")
+          > eps > repeat(1, boost::spirit::inf)[char_("A-Za-z_")];
 
         variable_value = ( ( no_case[ lexeme [ lit("on") ] ]
                              [ boost::bind(&CatalogDescr::setVariableValueBool, &cmd, true) ]
@@ -447,14 +448,14 @@ namespace credativ {
 
         /* RESET <runtime variable> */
         cmd_reset = no_case[ lexeme[ lit("RESET") ] ]
-          >> no_case[ lexeme[ lit("VARIABLE") ] ]
+          > eps > no_case[ lexeme[ lit("VARIABLE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, RESET_VARIABLE) ]
-          >> variable_name
+          > eps > variable_name
           [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ];
 
         /* SHOW ( VARIABLES | WORKERS | <runtime variable> ) */
         cmd_show = no_case[lexeme[ lit("SHOW") ]]
-          >> show_command_type;
+          > eps > show_command_type;
 
         show_command_type
           = ( no_case[lexeme[ lit("WORKERS") ]]
@@ -467,38 +468,40 @@ namespace credativ {
 
           | ( no_case[ lexeme[ lit("VARIABLE") ] ]
               [ boost::bind(&CatalogDescr::setCommandTag, &cmd, SHOW_VARIABLE) ]
-              >> variable_name
+              > eps > variable_name
               [ boost::bind(&CatalogDescr::setVariableName, &cmd, ::_1) ] );
 
         /* START RECOVERY command */
 
         cmd_start_recovery_stream = no_case[ lexeme[ lit("RECOVERY") ] ]
           [ boost::bind(&CatalogDescr::makeRecoveryStreamDescr, &cmd) ]
-          >> no_case[ lexeme[ lit("STREAM") ] ]
+          > eps > no_case[ lexeme[ lit("STREAM") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_RECOVERY_STREAM_FOR_ARCHIVE) ]
-          >> no_case[ lexeme[ lit("FOR") ] ]
-          >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("FOR") ] ]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          >  eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          >> -(no_case[ lexeme[ lit("PORT") ] ] >> number_ID
+          > eps > -(no_case[ lexeme[ lit("PORT") ] ] > eps > number_ID
                [ boost::bind(&CatalogDescr::setRecoveryStreamPort, &cmd, ::_1) ])
-          >> -(stream_listen_on)
-          >> -( no_case[ lexeme[ lit("NODETACH") ] ]
-                [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
+          > eps > -(stream_listen_on)
+          > eps > -( no_case[ lexeme[ lit("NODETACH") ] ]
+                     [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
 
         stream_listen_on = no_case[ lexeme[ lit("LISTEN_ON") ] ]
-          >> ip_address_list;
+          > eps > ip_address_list;
 
         ip_address_list = lexeme[ lit("(") ]
-          >> ip_address
+          > eps > ip_address
           [ boost::bind(&CatalogDescr::setRecoveryStreamAddr, &cmd, ::_1) ]
-          >> -(ip_address_item)
-          >> lexeme[ lit(")") ];
+          > eps > -(ip_address_item)
+          > eps > lexeme[ lit(")") ];
 
         ip_address_item = lexeme[ lit(",") ]
-          >> ip_address
+          > eps > ip_address
           [ boost::bind(&CatalogDescr::setRecoveryStreamAddr, &cmd, ::_1) ]
-          >> -(ip_address_item);
+          /* XXX: Multiple bind addresses not yet supported */
+          > eps > -(ip_address_item);
+        ;
 
         ip_address = +char_("0-9a-zA-Z.:");
 
@@ -507,13 +510,13 @@ namespace credativ {
          */
         cmd_start_streaming = no_case[lexeme[ lit("STREAMING") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_STREAMING_FOR_ARCHIVE) ]
-          >> no_case[ lexeme[ lit("FOR ARCHIVE") ] ]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("FOR ARCHIVE") ] ]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          >> -( no_case[lexeme[ lit("RESTART") ]]
+          > eps > -( no_case[lexeme[ lit("RESTART") ]]
                [ boost::bind(&CatalogDescr::setStreamingForceXLOGPositionRestart, &cmd, true) ] )
-          >> -( no_case[lexeme[ lit("NODETACH") ]]
-               [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
+          > eps > -( no_case[lexeme[ lit("NODETACH") ]]
+                     [ boost::bind(&CatalogDescr::setJobDetachMode, &cmd, false) ] );
 
         /*
          * CREATE, DROP, ALTER, START and LIST tokens...
@@ -536,12 +539,12 @@ namespace credativ {
          * LIST RETENTION { POLICIES | POLICY <identifier> }
          */
         cmd_list_retention = no_case[ lexeme[ lit("RETENTION") ]]
-          >> ( ( no_case[ lexeme[ lit("POLICIES") ] ]
-                [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICIES) ] )
+          > eps > ( ( no_case[ lexeme[ lit("POLICIES") ] ]
+                      [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICIES) ] )
               |
               ( no_case[ lexeme[ lit("POLICY") ] ]
                 [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_RETENTION_POLICY) ]
-                >> identifier
+                > eps > identifier
                 [ boost::bind(&CatalogDescr::setRetentionName, &cmd, ::_1) ] ) );
 
         /*
@@ -549,8 +552,8 @@ namespace credativ {
          */
         cmd_list_connection = no_case[ lexeme[ lit("CONNECTION") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_CONNECTION) ]
-          >> no_case[ lexeme[ lit("FOR ARCHIVE") ]]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("FOR ARCHIVE") ]]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
@@ -558,10 +561,10 @@ namespace credativ {
          */
         cmd_list_backup_list = no_case[ lexeme[ lit("BASEBACKUPS") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_LIST) ]
-          >> no_case[ lexeme[ lit("IN") ]] > no_case[ lexeme[ lit("ARCHIVE") ] ]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("IN") ]] > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          >> -(no_case[ lexeme[ lit("VERBOSE") ] ])
+          > eps > -(no_case[ lexeme[ lit("VERBOSE") ] ])
           [ boost::bind(&CatalogDescr::setPrintVerbose, &cmd, true) ];
 
         /*
@@ -570,12 +573,12 @@ namespace credativ {
          */
         cmd_list_backup = no_case[ lexeme[ lit("BACKUP") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_CATALOG) ]
-          >> ( ( no_case[ lexeme[ lit("CATALOG") ] ]
-                 >> identifier
-                 [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
+          > eps > ( ( no_case[ lexeme[ lit("CATALOG") ] ]
+                      > eps > identifier
+                      [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ] )
                | ( no_case[lexeme [ lit("PROFILE") ] ]
                    [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE) ]
-                   >> -(identifier)
+                   > eps > -(identifier)
                    [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
                    [  boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_BACKUP_PROFILE_DETAIL) ] ) );
 
@@ -585,18 +588,18 @@ namespace credativ {
          */
         cmd_list_archive = no_case[ lexeme[ lit("ARCHIVE") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, LIST_ARCHIVE) ]
-          >> -(identifier)
+          > eps > -(identifier)
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * CREATE BACKUP PROFILE <name> command
          */
         cmd_create_backup_profile = no_case[lexeme [ lit("BACKUP") ]]
-          >> no_case[lexeme [ lit("PROFILE") ]]
+          > eps > no_case[lexeme [ lit("PROFILE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_BACKUP_PROFILE) ]
-          >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ]
-          >> backup_profile_opts;
+          > eps >> backup_profile_opts;
 
         backup_profile_opts =
           -(profile_compression_option)
@@ -607,8 +610,7 @@ namespace credativ {
           >> -(profile_checkpoint_option)
           >> -(profile_wait_for_wal_option)
           >> -(profile_noverify_checksums_option)
-          >> -(profile_manifest_option)
-          >> -(profile_manifest_checksums_option);
+          >> -(profile_manifest_option);
 
         /*
          * CREATE RETENTION POLICY <identifier>
@@ -616,87 +618,88 @@ namespace credativ {
         cmd_create_retention =
           no_case[ lexeme[ lit("RETENTION") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_RETENTION_POLICY) ]
-          >> no_case[ lexeme[ lit("POLICY") ] ]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("POLICY") ] ]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-          >> ( retention_keep_action
-               | retention_drop_action
-               | retention_cleanup_basebackups
-               /*
-                * CREATE RETENTION POLICY ... CLEANUP is a DROP action
-                *
-                * NOTE: Even though the parser set a specific value here, the cleanup
-                *       retention policy implementation doesn't depend on it. But the
-                *       catalog representation requires a valid string value here, so
-                *       use "cleanup" as a placeholder here.
-                */
-               [ boost::bind(&CatalogDescr::makeRetentionRule, &cmd, RETENTION_CLEANUP, string("cleanup")) ] );
+          > eps > ( retention_keep_action
+                    | retention_drop_action
+                    | retention_cleanup_basebackups
+                    /*
+                     * CREATE RETENTION POLICY ... CLEANUP is a DROP action
+                     *
+                     * NOTE: Even though the parser set a specific value here, the cleanup
+                     *       retention policy implementation doesn't depend on it. But the
+                     *       catalog representation requires a valid string value here, so
+                     *       use "cleanup" as a placeholder here.
+                     */
+                    [ boost::bind(&CatalogDescr::makeRetentionRule, &cmd, RETENTION_CLEANUP, string("cleanup")) ] );
 
         retention_keep_action =
           no_case[ lexeme[ lit("KEEP") ] ]
           [ boost::bind(&CatalogDescr::setRetentionAction, &cmd, RETENTION_ACTION_KEEP) ]
-          >> ( ( retention_rule_with_label
-                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
-               |
-               retention_rule_newer_datetime
-               |
-               ( retention_rule_num_basebackups
-                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_NUM) ] )
-               );
+          > eps >> ( ( retention_rule_with_label
+                       [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
+                     |
+                     retention_rule_newer_datetime
+                     |
+                     ( retention_rule_num_basebackups
+                       [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_NUM) ] )
+                     );
 
         retention_drop_action =
           no_case[ lexeme[ lit("DROP") ] ]
           [ boost::bind(&CatalogDescr::setRetentionAction, &cmd, RETENTION_ACTION_DROP) ]
-          >> ( ( retention_rule_with_label
-                 [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
-               |
-               retention_rule_older_datetime
-               |
-               retention_rule_num_basebackups
-               );
+          > eps >> ( ( retention_rule_with_label
+                       [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ] )
+                     |
+                     retention_rule_older_datetime
+                     |
+                     retention_rule_num_basebackups
+                     );
 
         retention_cleanup_basebackups = no_case[lexeme[ lit("CLEANUP") ]];
 
-        retention_rule_num_basebackups = lexeme[ lit("+") ] >> number_ID
+        retention_rule_num_basebackups = lexeme[ lit("+") ] > eps > number_ID
           [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_NUM) ]
           [ boost::bind(&CatalogDescr::makeRuleFromParserState, &cmd, ::_1) ];
 
         retention_rule_with_label =
           no_case[ lexeme[ lit("WITH") ] ]
-          >> no_case[ lexeme[ lit("LABEL") ] ]
+          > eps > no_case[ lexeme[ lit("LABEL") ] ]
           [ boost::bind(&CatalogDescr::setRetentionActionModifier, &cmd, RETENTION_MODIFIER_LABEL) ]
-          >> regexp_expression
+          > eps > regexp_expression
           [ boost::bind(&CatalogDescr::makeRuleFromParserState, &cmd, ::_1) ];
 
         retention_rule_older_datetime =
-          no_case[ lexeme[ lit("OLDER") ] ] >> ( no_case[ lexeme[ lit("THAN") ] ]
-                                                 /* boost::bind() cannot bind an overloaded method easily, so
-                                                  * just create a policy with an empty rule. Use retentionIntervalExprFromParserState()
-                                                  * later to compile the correct rule. */
-                                                 [ boost::bind(&CatalogDescr::setRetentionActionModifier,
-                                                               &cmd, RETENTION_MODIFIER_OLDER_DATETIME) ] )
-                                            >> ( retention_datetime_spec );
+          no_case[ lexeme[ lit("OLDER") ] ] > eps > ( no_case[ lexeme[ lit("THAN") ] ]
+                                                      /* boost::bind() cannot bind an overloaded method easily, so
+                                                       * just create a policy with an empty rule. Use retentionIntervalExprFromParserState()
+                                                       * later to compile the correct rule. */
+                                                      [ boost::bind(&CatalogDescr::setRetentionActionModifier,
+                                                                    &cmd, RETENTION_MODIFIER_OLDER_DATETIME) ] )
+          > eps > retention_datetime_spec ;
 
         retention_rule_newer_datetime =
-          no_case[ lexeme[ lit("NEWER") ] ] >> ( no_case[ lexeme[ lit("THAN") ] ]
-                                                 /* boost::bind() cannot bind an overloaded method easily, so
-                                                  * just create a policy with an empty rule. Use addRetentionIntervalExpr()
-                                                  * later to compile the correct rule. */
-                                                 [ boost::bind(&CatalogDescr::setRetentionActionModifier,
-                                                               &cmd, RETENTION_MODIFIER_NEWER_DATETIME) ] )
-                                            >> ( retention_datetime_spec );
+          no_case[ lexeme[ lit("NEWER") ] ] > eps > ( no_case[ lexeme[ lit("THAN") ] ]
+                                                      /* boost::bind() cannot bind an overloaded method easily, so
+                                                       * just create a policy with an empty rule. Use retentionIntervalExprFromParserState()
+                                                       * later to compile the correct rule. */
+                                                      [ boost::bind(&CatalogDescr::setRetentionActionModifier,
+                                                                    &cmd, RETENTION_MODIFIER_NEWER_DATETIME) ] )
+          > eps > retention_datetime_spec ;
 
         retention_datetime_spec =
-          -(retention_datetime_years
-            [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "years") ])
-          ^ (retention_datetime_months
-             [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "months") ])
-          ^ (retention_datetime_days
-             [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "days") ])
-          ^ (retention_datetime_hours
-             [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "hours") ])
-          ^ (retention_datetime_minutes
-             [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "minutes") ]);
+          repeat(1, 5)[( (retention_datetime_years
+                          [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "years") ])
+                         | (retention_datetime_months
+                            [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "months") ])
+                         | (retention_datetime_days
+                            [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "days") ])
+                         | (retention_datetime_hours
+                            [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "hours") ])
+                         | (retention_datetime_minutes
+                            [ boost::bind(&CatalogDescr::retentionIntervalExprFromParserState, &cmd, ::_1, "minutes") ])
+                         )];
 
         retention_datetime_years = +(char_("0-9")) >> no_case[ lexeme[ lit("YEARS") ] ];
         retention_datetime_months = +(char_("0-9")) >> no_case[ lexeme[ lit("MONTHS") ] ];
@@ -713,22 +716,22 @@ namespace credativ {
         cmd_create_connection =
           no_case[ lexeme[ lit("STREAMING") ]]
           [ boost::bind(&CatalogDescr::setConnectionType, &cmd, ConnectionDescr::CONNECTION_TYPE_STREAMER) ]
-          >> no_case[ lexeme[ lit("CONNECTION") ]]
+          > eps > no_case[ lexeme[ lit("CONNECTION") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_CONNECTION) ]
-          >> no_case[ lexeme[ lit("FOR ARCHIVE") ]]
-          >> ( identifier
-              [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
-              ^ ( ( hostname
-                    [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-                    ^ database
-                    [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-                    ^ username
-                    [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-                    ^ portnumber
-                    [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
-                  |
-                  ( no_case[ lexeme[ lit("DSN") ]] > -lit("=") > dsn_connection_string
-                    [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) ) );
+          > eps > no_case[ lexeme[ lit("FOR ARCHIVE") ]]
+          > eps > ( identifier
+                    [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+                    ^ ( ( hostname
+                          [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                          ^ database
+                          [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                          ^ username
+                          [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                          ^ portnumber
+                          [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+                        |
+                        ( no_case[ lexeme[ lit("DSN") ]] > eps > -lit("=") > eps > dsn_connection_string
+                          [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1) ] ) ) );
 
         /*
          * CREATE ARCHIVE <name> command
@@ -736,33 +739,33 @@ namespace credativ {
         cmd_create_archive = no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, CREATE_ARCHIVE) ]
 
-          >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
 
-          >> ( no_case[ lexeme[ lit("PARAMS") ] ]
+          > eps > ( no_case[ lexeme[ lit("PARAMS") ] ]
 
-               >> directory
-               [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
-               >> ( ( hostname
-                     [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
-                      >> database
-                      [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
-                      >> username
-                      [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
-                      >> portnumber
-                      [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
-                    /* alternative DSN syntax */
-                    | ( no_case[ lexeme[ lit("DSN") ] ]
-                        >> -lit("=")
-                        >> dsn_connection_string
-                        [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1)] )
-                    ) /* hostname / DSN alternative */
-               );
+                    > eps > directory
+                    [ boost::bind(&CatalogDescr::setDirectory, &cmd, ::_1) ]
+                    >> eps >> ( ( hostname
+                                  [ boost::bind(&CatalogDescr::setHostname, &cmd, ::_1) ]
+                                  > eps > database
+                                  [ boost::bind(&CatalogDescr::setDbName, &cmd, ::_1) ]
+                                  > eps > username
+                                  [ boost::bind(&CatalogDescr::setUsername, &cmd, ::_1) ]
+                                  > eps > portnumber
+                                  [ boost::bind(&CatalogDescr::setPort, &cmd, ::_1) ] )
+                                /* alternative DSN syntax */
+                                | ( no_case[ lexeme[ lit("DSN") ] ]
+                                    > eps > -lit("=")
+                                    > eps > dsn_connection_string
+                                    [ boost::bind(&CatalogDescr::setDSN, &cmd, ::_1)] )
+                                ) /* hostname / DSN alternative */
+                    );
 
-        dsn_connection_string = '"' >> no_skip[+(char_ - ('"'))] >> '"';
+        dsn_connection_string = '"' > eps > no_skip[+(char_ - ('"'))] > eps > '"';
 
         cmd_verify_archive = no_case[lexeme[ lit("VERIFY") ]]
-          >> no_case[lexeme [ lit("ARCHIVE") ]]
+          > eps > no_case[lexeme [ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, VERIFY_ARCHIVE) ];
 
         /*
@@ -770,19 +773,20 @@ namespace credativ {
          */
         cmd_drop_basebackup = no_case[ lexeme[ lit("BASEBACKUP") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_BASEBACKUP) ]
-          >> number_ID
+          > eps > number_ID
           [ boost::bind(&CatalogDescr::setBasebackupID, &cmd, ::_1) ]
-          >> no_case[ lexeme[ lit("FROM") ] ] >> no_case[ lexeme[ lit("ARCHIVE") ] ]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("FROM") ] ]
+          > eps > no_case[ lexeme[ lit("ARCHIVE") ] ]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
          * DROP RETENTION POLICY <identifier>
          */
         cmd_drop_retention = no_case[ lexeme[ lit("RETENTION") ] ]
-          >> no_case[ lexeme[ lit("POLICY") ] ]
+          > eps > no_case[ lexeme[ lit("POLICY") ] ]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_RETENTION_POLICY) ]
-          >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         /*
@@ -790,16 +794,16 @@ namespace credativ {
          */
         cmd_drop_connection = no_case[ lexeme[ lit("STREAMING") ]]
           [ boost::bind(&CatalogDescr::setConnectionType, &cmd, ConnectionDescr::CONNECTION_TYPE_STREAMER) ]
-          >> no_case[ lexeme[ lit("CONNECTION") ]]
+          > eps > no_case[ lexeme[ lit("CONNECTION") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_CONNECTION) ]
-          >> no_case[ lexeme[ lit("FROM ARCHIVE") ]]
-          >> identifier
+          > eps > no_case[ lexeme[ lit("FROM ARCHIVE") ]]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ];
 
         cmd_drop_backup_profile = no_case[lexeme[ lit("BACKUP") ]]
-          >> no_case[lexeme[ lit("PROFILE") ]]
+          > eps > no_case[lexeme[ lit("PROFILE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, DROP_BACKUP_PROFILE) ]
-          >> identifier
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
 
         cmd_drop_archive = no_case[lexeme[ lit("ARCHIVE") ]]
@@ -810,46 +814,52 @@ namespace credativ {
           >> cmd_alter_archive_opt;
 
         cmd_start_basebackup = no_case[lexeme[ lit("BASEBACKUP") ]]
-          >> no_case[lexeme[ lit("FOR") ]] >> no_case[lexeme[ lit("ARCHIVE") ]]
-          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_BASEBACKUP) ];
+          > eps > no_case[lexeme[ lit("FOR") ]]
+          > eps > no_case[lexeme[ lit("ARCHIVE") ]]
+          [ boost::bind(&CatalogDescr::setCommandTag, &cmd, START_BASEBACKUP) ]
+          > eps > identifier
+          [ boost::bind(&CatalogDescr::setIdent, &cmd, ::_1) ]
+          > eps > -(with_profile)
+          > eps > -(force_systemid_update);
 
         cmd_stop_streaming = no_case[lexeme[ lit("STREAMING") ]]
-          >> no_case[lexeme[ lit("FOR") ]] >> no_case[lexeme[ lit("ARCHIVE") ]]
+          > eps > no_case[lexeme[ lit("FOR") ]]
+          > eps > no_case[lexeme[ lit("ARCHIVE") ]]
           [ boost::bind(&CatalogDescr::setCommandTag, &cmd, STOP_STREAMING_FOR_ARCHIVE) ];
 
         /*
          * Property clauses
          */
         property_string = lexeme [ +(graph - (",;[]{} ")) ];
-        hostname = no_case[lexeme[ lit("PGHOST") ]] > -lit("=") > property_string;
-        database = no_case[lexeme[ lit("PGDATABASE") ]] > -lit("=") > property_string;
-        username = no_case[lexeme[ lit("PGUSER") ]] > -lit("=") > property_string;
-        directory = no_case[lexeme[ lit("DIRECTORY") ]] > -lit("=") > directory_string;
-        portnumber = no_case[lexeme[ lit("PGPORT") ]] > -lit("=") > +(char_("0-9"));
+        hostname = no_case[lexeme[ lit("PGHOST") ]] > eps > -lit("=") > eps > property_string;
+        database = no_case[lexeme[ lit("PGDATABASE") ]] > eps > -lit("=") > eps > property_string;
+        username = no_case[lexeme[ lit("PGUSER") ]] > eps > -lit("=") > eps > property_string;
+        directory = no_case[lexeme[ lit("DIRECTORY") ]] > eps > -lit("=") > eps > directory_string;
+        portnumber = no_case[lexeme[ lit("PGPORT") ]] > eps > -lit("=") > eps > +(char_("0-9"));
 
         /*
          * Rule to read in COMPRESSION=<BACKUP_COMPRESSION_TYPE>
          */
         profile_compression_option =
           no_case[lexeme[ lit("COMPRESSION") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("GZIP") ]]
-              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_GZIP) ]
-              | no_case[lexeme[ lit("NONE") ]]
-              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_NONE) ]
-              | no_case[lexeme[ lit("ZSTD") ]]
-              [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_ZSTD) ]
-              | no_case[lexeme[ lit("XZ") ]]
-              [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_XZ)]
-              | no_case[lexeme[ lit("PLAIN") ]]
-              [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PLAIN)]);
+          > eps > -lit("=")
+          > eps > (no_case[lexeme[ lit("GZIP") ]]
+                   [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_GZIP) ]
+                   | no_case[lexeme[ lit("NONE") ]]
+                   [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_NONE) ]
+                   | no_case[lexeme[ lit("ZSTD") ]]
+                   [ boost::bind(&CatalogDescr::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_ZSTD) ]
+                   | no_case[lexeme[ lit("XZ") ]]
+                   [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_XZ)]
+                   | no_case[lexeme[ lit("PLAIN") ]]
+                   [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PLAIN)]);
 
         /*
          * CREATE BACKUP PROFILE ...  MAX_RATE=<kbps>
          */
         profile_max_rate_option = no_case[lexeme[ lit("MAX_RATE") ]]
-          >> -lit("=")
-          >> +(char_("0-9"));
+          > eps > -lit("=")
+          > eps > +(char_("0-9"));
 
         /*
          * CREATE BACKUP PROFILE ... LABEL="<label>"
@@ -858,84 +868,91 @@ namespace credativ {
          * label.
          */
         profile_backup_label_option = no_case[lexeme[ lit("LABEL") ]]
-          >> -lit("=")
-          >> directory_string
+          > eps > -lit("=")
+          > eps > label_string
           [boost::bind(&CatalogDescr::setProfileBackupLabel, &cmd, ::_1)];
 
         /*
          * CREATE BACKUP PROFILE ... WAL=<INCLUDED|EXCLUDED>
          */
         profile_wal_option = no_case[lexeme[ lit("WAL") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("INCLUDED") ]]
-              [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, true) ]
-              |
-              no_case[lexeme[ lit("EXCLUDED") ]]
-              [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, false) ]
-              );
+          > eps > -lit("=")
+          > eps > (no_case[lexeme[ lit("INCLUDED") ]]
+                   [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, true) ]
+                   |
+                   no_case[lexeme[ lit("EXCLUDED") ]]
+                   [ boost::bind(&CatalogDescr::setProfileWALIncluded, &cmd, false) ]
+                   );
 
         /*
          * CREATE BACKUP PROFILE ... CHECKPOINT=FAST|DELAYED
          */
         profile_checkpoint_option = no_case[lexeme[ lit("CHECKPOINT") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("FAST") ]]
-              [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, true) ]
-              | no_case[lexeme[ lit("DELAYED") ]]
-              [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, false) ]
-              );
+          > eps > -lit("=")
+          > eps > (no_case[lexeme[ lit("FAST") ]]
+                   [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, true) ]
+                   | no_case[lexeme[ lit("DELAYED") ]]
+                   [ boost::bind(&CatalogDescr::setProfileCheckpointMode, &cmd, false) ]
+                   );
 
         /*
          * CREATE BACKUP PROFILE ... WAIT_FOR_WAL=TRUE|FALSE
          */
         profile_wait_for_wal_option = no_case[lexeme[ lit("WAIT_FOR_WAL") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("TRUE") ]]
-              [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, true) ]
-              | no_case[lexeme[ lit("FALSE") ]]
-              [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, false) ]
-              );
+          > eps > -lit("=")
+          > eps > (no_case[lexeme[ lit("TRUE") ]]
+                   [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, true) ]
+                   | no_case[lexeme[ lit("FALSE") ]]
+                   [ boost::bind(&CatalogDescr::setProfileWaitForWAL, &cmd, false) ]
+                   );
 
         /*
          * CREATE BACKUP PROFILE ... NOVERIFY
          */
         profile_noverify_checksums_option = no_case[lexeme[ lit("NOVERIFY") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("TRUE") ]]
-              [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, true) ]
-              | no_case[lexeme[ lit("FALSE") ]]
-              [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, false) ]
-              );
+          > eps > -lit("=")
+          > eps > (no_case[lexeme[ lit("TRUE") ]]
+                   [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, true) ]
+                   | no_case[lexeme[ lit("FALSE") ]]
+                   [ boost::bind(&CatalogDescr::setProfileNoVerify, &cmd, false) ]
+                   );
 
         /*
-         * CREATE BACKUP PROFILE ... MANIFEST { TRUE | FALSE }
+         * CREATE BACKUP PROFILE ... MANIFEST { INCLUDED | EXCLUDED }
          */
         profile_manifest_option = no_case[lexeme[ lit("MANIFEST") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("TRUE") ]]
-              [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, true) ]
-              | no_case[lexeme[ lit("FALSE") ]]
-              [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, false) ]
-              );
+          > eps > -lit("=")
+          > eps > ( profile_manifest_include_option
+                    |
+                    profile_manifest_exclude_option
+                    );
 
-        /*
-         * CREATE BACKUP PROFILE ... MANIFEST_CHECKSUM <checksum method>
-         */
-        profile_manifest_checksums_option = no_case[lexeme[ lit("MANIFEST_CHECKSUMS") ]]
-          >> -lit("=")
-          >> (no_case[lexeme[ lit("CRC32C") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("CRC32C"))]
-              | no_case[lexeme[ lit("NONE") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("NONE"))]
-              | no_case[lexeme[ lit("SHA224") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA224"))]
-              | no_case[lexeme[ lit("SHA256") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA256"))]
-              | no_case[lexeme[ lit("SHA384") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA384"))]
-              | no_case[lexeme[ lit("SHA512") ]]
-              [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA512"))]
-              );
+        profile_manifest_include_option =
+          no_case[lexeme[ lit("INCLUDED") ]]
+          [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, true) ]
+          > -(eps >> profile_manifest_checksums_option);
+
+        profile_manifest_exclude_option =
+          no_case[lexeme[ lit("EXCLUDED") ]]
+          [ boost::bind(&CatalogDescr::setProfileManifest, &cmd, false) ];
+
+        profile_manifest_checksums_option =
+          (no_case[ lexeme[ lit("WITH CHECKSUMS") ] ]
+           > eps > -lit("=")
+           > eps > (no_case[lexeme[ lit("CRC32C") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("CRC32C"))]
+                    | no_case[lexeme[ lit("NONE") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("NONE"))]
+                    | no_case[lexeme[ lit("SHA224") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA224"))]
+                    | no_case[lexeme[ lit("SHA256") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA256"))]
+                    | no_case[lexeme[ lit("SHA384") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA384"))]
+                    | no_case[lexeme[ lit("SHA512") ]]
+                    [boost::bind(&CatalogDescr::setProfileManifestChecksumsIdent, &cmd, std::string("SHA512"))]
+                    )
+           );
 
         /*
          * We try to support both, quoted and unquoted identifiers. With quoted
@@ -944,14 +961,16 @@ namespace credativ {
         identifier = ( lexeme [ '"' >> +(char_("a-zA-Z0-9")) >> '"' ]
                        | lexeme [ +(char_("a-zA-Z0-9")) ] );
 
-        /* We enforce quoting for path strings */
-        directory_string = no_skip[ '"' >> +(char_ - ('"') ) >> '"' ];
+        /* We enforce quoting for path and label strings */
+        directory_string = no_skip[ '"' > eps > +(char_ - ('"') ) > eps > '"' ];
+        label_string     = no_skip[ '"' > eps > +(char_ - ('"') ) > eps > '"' ];
 
         /* A binary name (executable without full path */
         executable = +(char_("a-zA-Z0-9_-+/"));
 
         /* PROFILE property */
-        with_profile = no_case[lexeme [ lit("PROFILE") ]] >> identifier
+        with_profile = no_case[lexeme [ lit("PROFILE") ]]
+          > eps > identifier
           [ boost::bind(&CatalogDescr::setProfileName, &cmd, ::_1) ];
 
         /* handle FORCE_SYSTEMID_UPDATE option */
@@ -962,8 +981,8 @@ namespace credativ {
          * error handling
          */
         on_error<fail>(start,
-                       std::cerr
-                       << val("Error! Expecting ")
+                       parser_error
+                       << val("expecting ")
                        << qi::_4
                        << val(" here: \"")
                        << construct<std::string>(qi::_3, qi::_2)
@@ -981,44 +1000,45 @@ namespace credativ {
         cmd_start_command.name("START");
         cmd_start_launcher.name("LAUNCHER");
         cmd_start_streaming.name("STREAMING");
-        cmd_start_recovery_stream.name("START RECOVERY STREAM FOR ARCHIVE");
+        cmd_start_recovery_stream.name("RECOVERY STREAM FOR ARCHIVE");
         cmd_stop_command.name("STOP");
         cmd_stop_streaming.name("STREAMING FOR ARCHIVE");
         cmd_show.name("SHOW");
         cmd_set.name("SET");
         cmd_set_variable.name("VARIABLE");
         cmd_reset.name("RESET");
-        cmd_create_archive.name("CREATE ARCHIVE");
-        cmd_create_backup_profile.name("CREATE BACKUP PROFILE");
-        cmd_create_connection.name("CREATE STREAMING CONNECTION");
-        cmd_create_retention.name("CREATE RETENTION POLICY");
+        cmd_create_archive.name("ARCHIVE");
+        cmd_create_backup_profile.name("BACKUP PROFILE");
+        cmd_create_connection.name("STREAMING CONNECTION");
+        cmd_create_retention.name("RETENTION POLICY");
         cmd_verify_archive.name("VERIFY ARCHIVE");
-        cmd_drop_archive.name("DROP ARCHIVE");
-        cmd_drop_backup_profile.name("DROP BACKUP_PROFILE");
-        cmd_drop_connection.name("DROP STREAMING CONNECTION");
-        cmd_drop_retention.name("DROP RETENTION POLICY");
+        cmd_drop_archive.name("ARCHIVE");
+        cmd_drop_backup_profile.name("BACKUP_PROFILE");
+        cmd_drop_connection.name("STREAMING CONNECTION");
+        cmd_drop_retention.name("RETENTION POLICY");
         cmd_alter_archive.name("ALTER ARCHIVE");
         cmd_alter_archive_opt.name("ALTER ARCHIVE options");
-        cmd_start_basebackup.name("START BASEBACKUP");
-        cmd_list_archive.name("LIST ARCHIVE");
-        cmd_list_backup.name("LIST BASEBACKUPS");
-        cmd_list_backup_list.name("LIST BACKUPS");
-        cmd_list_connection.name("LIST CONNECTION");
-        cmd_list_retention.name("LIST RETENTION");
+        cmd_start_basebackup.name("BASEBACKUP");
+        cmd_list_archive.name("ARCHIVE");
+        cmd_list_backup.name("BACKUP CATALOG");
+        cmd_list_backup_list.name("BASEBACKUPS");
+        cmd_list_connection.name("CONNECTION");
+        cmd_list_retention.name("RETENTION");
         cmd_restore.name("RESTORE FROM ARCHIVE");
         cmd_stat.name("STAT");
         cmd_restore_type.name("BASEBACKUP");
         cmd_restore_action.name("TO");
         tablespace_map.name("TABLESPACE MAP");
         tablespace_map_oid.name("<OID>=<DIRECTORY>");
+        label_string.name("<label string>");
         retention_keep_action.name("KEEP");
         retention_drop_action.name("DROP");
         retention_rule_older_datetime.name("OLDER THAN");
-        retention_rule_older_datetime.name("NEWER THAN");
+        retention_rule_newer_datetime.name("NEWER THAN");
         retention_datetime_spec.name("[nnn YEARS] [nn MONTHS] [nnn DAYS] [nn HOURS] [nn MINUTES]");
         retention_rule_num_basebackups.name("nnn");
         retention_cleanup_basebackups.name("CLEANUP");
-        identifier.name("object identifier");
+        identifier.name("identifier");
         executable.name("executable name");
         hostname.name("ip or hostname");
         profile_compression_option.name("COMPRESSION=GZIP|NONE");
@@ -1039,7 +1059,9 @@ namespace credativ {
         verify_check_connection.name("CONNECTION");
         profile_noverify_checksums_option.name("NOVERIFY");
         profile_manifest_option.name("MANIFEST");
-        profile_manifest_checksums_option.name("MANIFEST_CHECKSUMS");
+        profile_manifest_exclude_option.name("EXCLUDED");
+        profile_manifest_include_option.name("INCLUDED");
+        profile_manifest_checksums_option.name("WITH CHECKSUMS {NONE|CRC32|SHA224|SHA256|SHA384|SHA512}");
         retention_rule_with_label.name("WITH LABEL");
         regexp_expression.name("<regular expression>");
         force_systemid_update.name("FORCE_SYSTEMID_UPDATE");
@@ -1047,9 +1069,11 @@ namespace credativ {
         variable_value.name("<variable value>");
         cmd_drop_basebackup.name("BASEBACKUP");
         ip_address.name("<IP>");
-        ip_address_list.name("(<IP>[, <IP>, ...])");
+        ip_address_list.name("(<IP>)"); /* XXX: Might be adjusted once we support multiple bind addresses ... */
         ip_address_item.name(", <IP>");
         stream_listen_on.name("LISTEN_ON");
+        number_ID.name("<number>"),
+        variable_value_string.name("<string>");
       }
 
       /*
@@ -1097,6 +1121,8 @@ namespace credativ {
                           show_command_type,
                           profile_noverify_checksums_option,
                           profile_manifest_option,
+                          profile_manifest_include_option,
+                          profile_manifest_exclude_option,
                           backup_profile_opts,
                           retention_keep_action,
                           retention_drop_action,
@@ -1131,6 +1157,7 @@ namespace credativ {
                           ip_address;
       qi::rule<Iterator, std::string(), ascii::space_type> property_string,
                           directory_string,
+                          label_string,
                           number_ID,
                           variable_name,
                           variable_value,
@@ -1506,11 +1533,10 @@ void PGBackupCtlParser::parseLine(std::string in) {
   PGBackupCtlBoostParser myparser(this->runtime_config);
 
   std::string::iterator iter = in.begin();
-  std::string::iterator end  = in.end();
 
-  bool parse_result = phrase_parse(iter, end, myparser, space);
+  bool parse_result = phrase_parse(iter, in.end(), myparser, space);
 
-  if (parse_result && iter == end) {
+  if (parse_result && iter == in.end()) {
 
     CatalogDescr cmd = myparser.getCommand();
     this->command = make_shared<PGBackupCtlCommand>(cmd);
@@ -1518,7 +1544,7 @@ void PGBackupCtlParser::parseLine(std::string in) {
 
   }
   else
-    throw CParserIssue("aborted due to parser error");
+    throw CParserIssue("parsing command failed: " + myparser.parser_error.str());
 
 }
 

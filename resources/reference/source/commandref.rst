@@ -203,6 +203,8 @@ Syntax::
     [WAIT_FOR_WAL { TRUE|FALSE }]
     [WAL { EXCLUDED|INCLUDED }]
     [NOVERIFY { TRUE|FALSE }]
+    [MANIFEST { INCLUDED [ WITH CHECKSUMS {NONE|CRC32C|SHA224|SHA256|SHA384|SHA512 } ]
+                | EXCLUDED } ]
 
 A backup profile is basically as set of configuration options on how
 to perform basebackups. The PostgreSQL streaming protocol for basebackups
@@ -239,9 +241,11 @@ The specific options are:
 |            +----------+------------------------------------------------------------+          |
 |            | FALSE    | Leaves checksum checking during backup on                  |          |
 +------------+----------+------------------------------------------------------------+----------+
-| MANIFEST   | TRUE     | Include backup manifest file                               | FALSE    |
+| MANIFEST   | INCLUDED | Include backup manifest file                               |          |
+|            +----------+------------------------------------------------------------+ EXCLUDED |
+|            |            WITH CHECKSUMS {NONE|CRC32C|SHA224|SHA256|SHA384|SHA512}   |          |
 |            +----------+------------------------------------------------------------+          |
-|            | FALSE    | Omit backup manifest file                                  |          |
+|            | EXCLUDED | Omit backup manifest file                                  |          |
 +------------+----------+------------------------------------------------------------+----------+
 | MANIFEST_CHECKSUMS    | Specifies a string identifying the method to be used       | CRC32    |
 |                       | to create file checksums used in the manifest file         |          |
@@ -253,6 +257,12 @@ The specific options are:
    is used (see the ``START BASEBACKUP`` command reference for details) with options not supported
    by the PostgreSQL version, the option will be ignored. This behavior should avoid having
    special profiles for all kind of different PostgreSQL versions.
+
+.. note::
+
+   The `MANIFEST` option can optionally specify the checksums used to validate
+   the contents of a basebackup. The default (if `INCLUDED` is specified) is `CRC32C`, `NONE`
+   turns checksums off. Per default, `MANIFEST` is `EXCLUDED`.
 
 LIST ARCHIVE
 ============
@@ -524,7 +534,7 @@ START RECOVERY STREAM
 Syntax::
 
   START RECOVERY STREAM FOR ARCHIVE <identifier>
-  [ { LISTEN_ON <ip address> } ] PORT <port number>
+  [ PORT <port number> ] [ { LISTEN_ON <ip address } ]
 
 This command starts a recovery background process attached to the
 specified archive identified by ``<identifier>``. The recovery background

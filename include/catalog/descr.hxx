@@ -147,6 +147,15 @@ namespace credativ {
     RetentionParsedAction action = RETENTION_NO_ACTION;
     RetentionParsedModifier modifier = RETENTION_NO_MODIFIER;
 
+    /*
+     * Interval modifiers like DAYS, MINUTES already
+     * parsed...
+     *
+     * Primarily used to lookup already parsed modifiers
+     * for error handling.
+     */
+    std::unordered_set<std::string> parsed_intv_mods;
+
   } RetentionParserState;
 
   /**

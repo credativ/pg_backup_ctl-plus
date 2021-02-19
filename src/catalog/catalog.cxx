@@ -279,7 +279,7 @@ std::string RetentionIntervalDescr::sqlite3_datetime() {
   if (this->opr_list.size() == 0)
     return string("");
 
-  result << "datetime('now', 'localtime',";
+  result << "datetime('now','localtime',";
 
   for (std::vector<RetentionIntervalOperand>::size_type i = 0;
        i != this->opr_list.size(); i++) {
@@ -818,7 +818,19 @@ void CatalogDescr::setRecoveryStreamAddr(std::string const& address) {
   if (address.length() == 0)
     throw CCatalogIssue("cannot add empty address to recovery stream descriptor");
 
+  /*
+   * XXX: Currently we only support one bind address for recovery
+   *      stream instances. So error out in cases multiple
+   *      where specified.
+   */
+  if (this->recoveryStream->listen_on.size() >= 1) {
+    throw CCatalogIssue("multiple bind addresses not supported yet");
+  }
+
   BOOST_LOG_TRIVIAL(debug) << "adding listener address " << address;
+  BOOST_LOG_TRIVIAL(debug) << "currently " << this->recoveryStream->listen_on.size()
+                           << " in list";
+
   this->recoveryStream->listen_on.push_back(address);
 
 }
@@ -1030,6 +1042,24 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
   }
 
   /*
+   * Check if specified intv_mod was already parsed.
+   * If not, record it into the current parser state.
+   */
+  auto gotit = this->rps.parsed_intv_mods.find(intv_mod);
+
+  if (gotit != this->rps.parsed_intv_mods.end()) {
+
+    std::ostringstream err;
+    err << "interval modifier \"" << intv_mod << "\" already specified";
+    throw CCatalogIssue(err.str());
+
+  } else {
+
+    this->rps.parsed_intv_mods.insert(intv_mod);
+
+  }
+
+  /*
    * We must always operate on the last rule in the retention
    * rule list, since that's the current one.
    *
@@ -1128,10 +1158,8 @@ void CatalogDescr::retentionIntervalExprFromParserState(std::string const& expr_
 
   }
 
-#ifdef __DEBUG__
-  BOOST_LOG_TRIVIAL(debug) << "DEBUG: retention interval expression already parsed: "
+  BOOST_LOG_TRIVIAL(debug) << "retention interval expression already parsed: "
                            << rule->value;
-#endif
 
   /*
    * Parse current value of the RetentionRuleDescr, if present, so that the interval
