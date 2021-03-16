@@ -8,10 +8,10 @@
 #include <pgsql-proto.hxx>
 #include <pgbckctl_exception.hxx>
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
-namespace credativ {
+namespace pgbckctl {
 
   /* Forwarded declarations */
   class PGProtoCopy;

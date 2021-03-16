@@ -5,7 +5,7 @@
 //#include <BackupCatalog.hxx>
 #include <commands.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   class BaseCatalogCommand;
 

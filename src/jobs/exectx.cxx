@@ -5,7 +5,7 @@
 #include <pgbckctl_exception.hxx>
 #include <copyprotocolcontext.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 using namespace pgprotocol;
 
 /* ****************************************************************************

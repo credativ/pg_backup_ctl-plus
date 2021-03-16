@@ -17,7 +17,7 @@ extern "C" {
 #include <pg_config_manual.h>
 }
 
-namespace credativ {
+namespace pgbckctl {
 
   /*
    * Forwarded class declarations.

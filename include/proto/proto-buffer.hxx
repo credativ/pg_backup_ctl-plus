@@ -3,7 +3,7 @@
 
 #include <memorybuffer.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   class ProtocolBuffer;
 

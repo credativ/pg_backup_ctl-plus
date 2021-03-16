@@ -4,8 +4,8 @@
 #include <boost/log/trivial.hpp>
 #include <pgiosocketcontext.hxx>
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
 /* ****************************************************************************
  * PGSocketIOContextInterface

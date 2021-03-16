@@ -2,7 +2,7 @@
 #include <daemon.hxx>
 #include <backuplockinfo.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /* ****************************************************************************
  * Class BackupLockInfoAggregator

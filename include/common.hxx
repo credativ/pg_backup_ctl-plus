@@ -66,7 +66,7 @@ uint64_hton_sendbuf(char *buf, uint64_t val) {
 /*
  * Common objects starts here.
  */
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Range of integer values

@@ -31,13 +31,13 @@
 using namespace boost::filesystem;
 
 /*
- * This is the core parser implementation for credativ::boostparser
+ * This is the core parser implementation for pgbckctl::boostparser
  *
  * Internal parser implementation
  * uses boost::spirit. Make them private to the
  * parser module within their own namespace.
  */
-namespace credativ {
+namespace pgbckctl {
   namespace boostparser {
 
     namespace qi      = boost::spirit::qi;
@@ -51,13 +51,13 @@ namespace credativ {
 
     private:
 
-      credativ::CatalogDescr cmd;
+      pgbckctl::CatalogDescr cmd;
 
     public:
 
       std::ostringstream parser_error;
 
-      credativ::CatalogDescr getCommand() { return this->cmd; }
+      pgbckctl::CatalogDescr getCommand() { return this->cmd; }
 
       PGBackupCtlBoostParser(shared_ptr<RuntimeConfiguration> rtc)
         : PGBackupCtlBoostParser::base_type(start, "pg_backup_ctl command") {
@@ -1525,7 +1525,7 @@ void PGBackupCtlParser::parseLine(std::string in) {
 
   using boost::spirit::ascii::space;
   typedef std::string::iterator iterator_type;
-  typedef credativ::boostparser::PGBackupCtlBoostParser<iterator_type> PGBackupCtlBoostParser;
+  typedef pgbckctl::boostparser::PGBackupCtlBoostParser<iterator_type> PGBackupCtlBoostParser;
 
   /*
    * establish internal boost parser instance.

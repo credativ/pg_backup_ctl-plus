@@ -4,7 +4,7 @@
 #include <proto-catalog.hxx>
 #include <pgproto-commands.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 

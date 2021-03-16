@@ -7,7 +7,7 @@
 #include <fs-archive.hxx>
 #include <jobhandles.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * A special archive file which just

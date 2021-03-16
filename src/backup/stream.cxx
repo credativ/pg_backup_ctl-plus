@@ -10,7 +10,7 @@
 
 #include <stream.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 std::string ERRCODE_DUPLICATE_OBJECT("42710");
 

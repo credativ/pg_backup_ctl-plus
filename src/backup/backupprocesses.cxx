@@ -12,7 +12,7 @@ extern "C" {
 #include <unistd.h>
 }
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /******************************************************************************
  * Implementation of WALStreamerProcess

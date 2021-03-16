@@ -2,7 +2,7 @@
 #include <ostream>
 #include <pgproto-copy.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 /* *****************************************************************************
  * Base class PGProtoCopyFormat
  * *****************************************************************************/

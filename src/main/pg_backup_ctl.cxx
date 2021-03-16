@@ -23,7 +23,7 @@
 #include <parser.hxx>
 #include <rtconfig.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 using namespace std;
 
 #define PG_BACKUP_CTL_SUCCESS 0

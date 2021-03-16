@@ -4,8 +4,8 @@
 #include <pgproto-commands.hxx>
 #include <proto-catalog.hxx>
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
 
 /* ****************************************************************************

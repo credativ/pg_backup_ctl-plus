@@ -7,9 +7,9 @@
 #include <rtconfig.hxx>
 #include <BackupCatalog.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Format options descriptor.

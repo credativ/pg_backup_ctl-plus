@@ -11,7 +11,7 @@ char **keyword_completion(const char *input, int start, int end);
  * Initializes readline machinery.
  */
 void init_readline(std::string catalog_name,
-                   std::shared_ptr<credativ::RuntimeConfiguration> rtc);
+                   std::shared_ptr<pgbckctl::RuntimeConfiguration> rtc);
 
 
 /*

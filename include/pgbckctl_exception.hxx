@@ -3,7 +3,7 @@
 
 #include <string>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Base exception class

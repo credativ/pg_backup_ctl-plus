@@ -4,7 +4,7 @@
 #include <common.hxx>
 #include <descr.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Base class for recovery/restore implementations.

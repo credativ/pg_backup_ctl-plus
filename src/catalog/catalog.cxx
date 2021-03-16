@@ -8,7 +8,7 @@
 #include <BackupCatalog.hxx>
 #include <stream.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 using namespace std;
 
 /*
@@ -1397,7 +1397,7 @@ void CatalogDescr::setExecString(std::string const& execStr) {
   this->execString = execStr;
 }
 
-void CatalogDescr::setCommandTag(credativ::CatalogTag const& tag) {
+void CatalogDescr::setCommandTag(pgbckctl::CatalogTag const& tag) {
   this->tag = tag;
 
   /*

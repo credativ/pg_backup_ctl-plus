@@ -1,7 +1,7 @@
 #include "common.hxx"
 #include "signalhandler.hxx"
 
-using namespace credativ;
+using namespace pgbckctl;
 
 JobSignalHandler::JobSignalHandler() {}
 

@@ -202,7 +202,7 @@ completion_word *compl_variable(completion_word *& compl_list,
 
   for(; it_start != it_end; ++it_start) {
 
-    std::shared_ptr<credativ::ConfigVariable> var = it_start->second;
+    std::shared_ptr<pgbckctl::ConfigVariable> var = it_start->second;
 
     compl_list[counter].name = var->getName();
     compl_list[counter].type = COMPL_IDENTIFIER;

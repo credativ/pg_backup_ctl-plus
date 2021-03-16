@@ -1,7 +1,7 @@
 #ifndef __HAVE_BACKGROUND_ROLE_TYPE_HXX__
 #define __HAVE_BACKGROUND_ROLE_TYPE_HXX__
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Describes the role of a process.

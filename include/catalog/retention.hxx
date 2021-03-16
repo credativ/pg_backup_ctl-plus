@@ -7,7 +7,7 @@
 #include <backuplockinfo.hxx>
 #include <backupcleanupdescr.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Retention exception with a HINT.

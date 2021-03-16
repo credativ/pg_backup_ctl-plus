@@ -4,7 +4,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <exectx.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 

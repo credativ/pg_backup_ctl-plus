@@ -1,7 +1,7 @@
 #ifndef __HAVE_MEMORY_BUFFER__
 #define __HAVE_MEMORY_BUFFER__
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * A very lightweight in-memory buffer

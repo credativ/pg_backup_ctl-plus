@@ -10,7 +10,7 @@
 /* special descriptors */
 #include <recoverydescr.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /*
    * Forwarded declarations
@@ -910,7 +910,7 @@ namespace credativ {
 
     void setDbName(std::string const& db_name);
 
-    void setCommandTag(credativ::CatalogTag const& tag);
+    void setCommandTag(pgbckctl::CatalogTag const& tag);
 
     void setIdent(std::string const& ident);
 

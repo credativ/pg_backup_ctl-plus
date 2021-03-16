@@ -1,8 +1,8 @@
 #include <ostream>
 #include <pgproto-commands.hxx>
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
 ProtocolCommandHandler::ProtocolCommandHandler(std::shared_ptr<PGProtoCmdDescr> descr,
                                                std::shared_ptr<PGProtoCatalogHandler> catalogHandler,

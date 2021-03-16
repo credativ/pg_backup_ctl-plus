@@ -3,7 +3,7 @@
 #include <common.hxx>
 #include <BackupCatalog.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 BOOST_AUTO_TEST_CASE(TestBackupCatalogSetup)
 {

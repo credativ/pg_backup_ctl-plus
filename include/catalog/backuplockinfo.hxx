@@ -4,7 +4,7 @@
 #include <catalog.hxx>
 #include <shm.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Locking exception with a HINT.

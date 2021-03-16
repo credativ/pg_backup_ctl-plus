@@ -9,7 +9,7 @@
 #include <descr.hxx>
 #include <stream.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /*
    * Base catalog exception.

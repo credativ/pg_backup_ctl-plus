@@ -6,7 +6,7 @@
 #include <fs-archive.hxx>
 #include <xlogdefs.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   class BackupFile;
   class BackupDirectory;

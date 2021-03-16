@@ -4,7 +4,7 @@
 #include <BackupCatalog.hxx>
 #include <shm.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   class background_reaper {
   public:

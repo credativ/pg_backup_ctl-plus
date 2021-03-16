@@ -12,7 +12,7 @@
 #define DAEMON_STATUS_UPDATE 3
 #define DAEMON_FAILURE 4
 
-namespace credativ {
+namespace pgbckctl {
 
   /* Forwarded declarations */
   class BackgroundWorker;
@@ -23,7 +23,7 @@ namespace credativ {
    * Launcher errors are mapped to
    * LauncherFailure exceptions.
    */
-  class LauncherFailure : public credativ::CPGBackupCtlFailure {
+  class LauncherFailure : public pgbckctl::CPGBackupCtlFailure {
   public:
     LauncherFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     LauncherFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
@@ -33,7 +33,7 @@ namespace credativ {
    * Worker errors are mapped to
    * WorkerFailure exceptions.
    */
-  class WorkerFailure : public credativ::CPGBackupCtlFailure {
+  class WorkerFailure : public pgbckctl::CPGBackupCtlFailure {
   public:
     WorkerFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     WorkerFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
@@ -136,7 +136,7 @@ namespace credativ {
      *
      * This should be called after a fork of
      * a background worker to release the launcher role, e.g.
-     * like credativ::worker_command() does.
+     * like pgbckctl::worker_command() does.
      *
      * Basically the release_launcher_role() leaves the
      * background launcher shared memory.

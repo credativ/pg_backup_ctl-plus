@@ -10,9 +10,9 @@
 
 #include <vector>
 
-using namespace credativ;
+using namespace pgbckctl;
 
-namespace credativ {
+namespace pgbckctl {
 
   /* forwarded declarations */
   class BackupCatalog;
