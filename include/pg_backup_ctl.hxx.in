@@ -45,4 +45,9 @@
 #define shmatt_t int
 #endif
 
+/*
+ * Define io_uring support via liburing
+ */
+@PG_BACKUP_CTL_HAS_LIBURING@
+
 #endif

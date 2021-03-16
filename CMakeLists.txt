@@ -108,6 +108,7 @@ add_library (pgbckctl-common SHARED
   src/jobs/daemon.cxx
   src/jobs/server.cxx
   src/filesystem/fs-archive.cxx
+  src/filesystem/io_uring_instance.cxx
   src/catalog/catalog.cxx
   src/catalog/backuplockinfo.cxx
   src/catalog/retention.cxx
@@ -238,6 +239,21 @@ if (libpq_FOUND)
 else()
    message(FATAL_ERROR "libpq development header and PostgreSQL server includes required")
 endif(libpq_FOUND)
+
+##
+## Optionally compile with io_uring support
+##
+find_package(liburing OPTIONAL_COMPONENTS)
+if(liburing_FOUND)
+  message("using io_uring support")
+  set(PG_BACKUP_CTL_HAS_LIBURING "#define PG_BACKUP_CTL_HAS_LIBURING 1")
+  include_directories(${liburing_INCLUDE_DIR})
+  target_link_libraries(pgbckctl-common ${liburing_LIBRARIES})
+  message("linking liburing in ${liburing_LIBRARIES}")
+else()
+  message("liburing not available, disabling io_uring support")
+  set(PG_BACKUP_CTL_HAS_LIBURING "#undef PG_BACKUP_CTL_HAS_LIBURING")
+endif()
 
 ##
 ## Force GNU/gettext
@@ -378,6 +394,16 @@ if(BUILD_UNIT_TESTS)
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
     )
   add_test(NAME TestParser COMMAND test_parser)
+
+  add_executable(test_copymgr test/src/test_copymgr.cxx)
+  target_link_libraries (test_copymgr
+    pgbckctl-common
+    pgbckctl-proto
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+    )
+  add_test(NAME TestCopyMgr COMMAND test_copymgr)
 
   add_executable(test_pgmessage test/src/test_pgmessage.cxx)
   target_link_libraries (test_pgmessage

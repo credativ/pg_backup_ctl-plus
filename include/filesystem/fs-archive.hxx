@@ -31,6 +31,9 @@ namespace credativ {
   /* Forwarded class definitions */
   class ArchiveLogDirectory;
 
+  /**
+   * Encodes XLOG LSN information
+   */
   typedef struct XLOGLocation {
     string startXLOG;
     string stopXLOG;
@@ -39,7 +42,7 @@ namespace credativ {
     bool segment_avail;
   } XLOGLocation;
 
-    /**
+  /**
    * Describes types of WAL segment files that
    * can be live within a log/ directory represented
    * by an ArchiveLogDirectory instance.
@@ -71,10 +74,9 @@ namespace credativ {
     BASEBACKUP_DIRECTORY_MISMATCH,
     BASEBACKUP_GENERIC_VERIFICATION_FAILURE
 
-
   } BaseBackupVerificationCode;
 
-  /*
+  /**
    * Base archive exception.
    */
   class CArchiveIssue : public CPGBackupCtlFailure {
@@ -83,7 +85,7 @@ namespace credativ {
     CArchiveIssue(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};
   };
 
-  /*
+  /**
    * Base class for archive files
    */
   class BackupFile : public CPGBackupCtlBase {
@@ -93,10 +95,10 @@ namespace credativ {
     bool compressed = false;
     bool available = false;
 
-    /* boost::filesystem handle */
+    /** boost::filesystem handle */
     path   handle;
 
-    /*
+    /**
      * Current internal position in file.
      * initialized by read(), lseek() and write().
      */
@@ -140,6 +142,10 @@ namespace credativ {
 
   };
 
+  /**
+   * Derived from BackupFile, this implements a basic file
+   * in the backup archive.
+   */
   class ArchiveFile : public BackupFile {
   private:
     FILE  *fp = NULL;
@@ -198,6 +204,9 @@ namespace credativ {
 
 #ifdef PG_BACKUP_CTL_HAS_ZLIB
 
+  /**
+   * A compressed archive file, using gzip
+   */
   class CompressedArchiveFile : public BackupFile {
   private:
     gzFile zh = NULL;
@@ -693,7 +702,7 @@ namespace credativ {
                                                                      path archiveDir);
   };
 
-  /*
+  /**
    * Class which represents a backup history file.
    *
    * This method is somewhat special in the regard that it
@@ -767,7 +776,7 @@ namespace credativ {
     virtual off_t lseek(off_t offset, int whence);
   };
 
-  /*
+  /**
    * Class for filesystem level access of the
    * backup archive.
    */
