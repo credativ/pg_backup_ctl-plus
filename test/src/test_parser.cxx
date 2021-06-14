@@ -4,7 +4,7 @@
 #include <parser.hxx>
 #include <BackupCatalog.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /*
  * Number of successful parser command checks.

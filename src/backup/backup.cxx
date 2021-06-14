@@ -2,7 +2,7 @@
 #include <backup.hxx>
 #include <boost/log/trivial.hpp>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 Backup::Backup(const std::shared_ptr<CatalogDescr>& descr) {}
 

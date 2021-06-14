@@ -8,7 +8,7 @@
 #include <exception>
 
 
-using namespace credativ;
+using namespace pgbckctl;
 
 BOOST_AUTO_TEST_CASE(TestPGMessageCopyResponseSetup)
 {

@@ -1,8 +1,8 @@
 #include <iostream>
 #include <pgmessage.hxx>
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
 size_t PGMessageCopyData::setData(std::string &in_buffer){
 

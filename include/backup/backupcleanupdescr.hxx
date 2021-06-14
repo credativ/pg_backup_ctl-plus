@@ -1,7 +1,7 @@
 #ifndef __HAVE_BACKUPCLEANUP_DESCR_
 #define __HAVE_BACKUPCLEANUP_DESCR_
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Define WAL cleanup modes.

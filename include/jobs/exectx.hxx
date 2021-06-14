@@ -5,7 +5,7 @@
 #include <proto-buffer.hxx>
 #include <exectx.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 

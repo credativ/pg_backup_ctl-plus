@@ -8,7 +8,7 @@
 #include <BackupCatalog.hxx>
 #include <pgsql-proto.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * A catalog handler instance encapsulates various

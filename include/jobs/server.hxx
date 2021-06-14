@@ -20,7 +20,7 @@
 
 #include <recoverydescr.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /* Forward class declarations */
   class PGBackupCtlStreamingServer;

@@ -5,7 +5,7 @@
 /* For PGconn */
 #include <libpq-fe.h>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /* ****************************************************************************
  * XLOGStreamMessage - Base class for all XLOG message classes.

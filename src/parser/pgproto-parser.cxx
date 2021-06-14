@@ -40,7 +40,7 @@
  * a shared pointer to an instantiated command in the same order
  * as parsed from the multi command string.
  */
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 
@@ -216,8 +216,8 @@ namespace credativ {
 
 }
 
-using namespace credativ;
-using namespace credativ::pgprotocol;
+using namespace pgbckctl;
+using namespace pgbckctl::pgprotocol;
 
 /* ****************************************************************************
  * PostgreSQLStreamingParser
@@ -236,7 +236,7 @@ PGProtoCommandExecutionQueue PostgreSQLStreamingParser::parse(std::shared_ptr<PG
 
   using boost::spirit::ascii::space;
   typedef std::string::iterator iterator_type;
-  typedef credativ::pgprotocol::PGProtoStreamingParser<iterator_type> PGProtoStreamingParser;
+  typedef pgbckctl::pgprotocol::PGProtoStreamingParser<iterator_type> PGProtoStreamingParser;
 
   /*
    * Dispose previous command handler...

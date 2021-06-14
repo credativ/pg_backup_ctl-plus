@@ -6,7 +6,7 @@
 #include <pgproto-copy.hxx>
 #include <pgmessage.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 BOOST_AUTO_TEST_CASE(TestPGProtCopyBothStateReadNoInputBuffer)
 {

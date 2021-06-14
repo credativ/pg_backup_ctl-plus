@@ -1,6 +1,6 @@
 #include <rtconfig.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 using namespace std;
 
 /* *****************************************************************************

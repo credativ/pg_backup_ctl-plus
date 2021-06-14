@@ -16,9 +16,9 @@ extern "C" {
 
 #define MAXXLOGFNAMELEN MAXFNAMELEN
 
-using namespace credativ;
+using namespace pgbckctl;
 
-namespace credativ {
+namespace pgbckctl {
 
   /* forwarded declarations */
   class FeedbackMessage;

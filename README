@@ -1,4 +1,6 @@
- pg_backup_ctl-plus is a rewrite of the old sophisticated pg_backup_ctl script.
+pg_backup_ctl-plus is a rewrite of the old sophisticated pg_backup_ctl script.
+
+THIS SOFTWARE IS UNDER HEAVY DEVELOPMENT AND NOT PRODUCTION READY. USE WITH CARE!
 
 Compiling:
 ==========

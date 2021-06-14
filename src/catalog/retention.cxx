@@ -3,7 +3,7 @@
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/log/trivial.hpp>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 Retention::Retention(std::shared_ptr<CatalogDescr> archiveDescr,
                      std::shared_ptr<BackupCatalog> catalog) {

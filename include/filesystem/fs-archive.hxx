@@ -20,13 +20,13 @@
 #include <zlib.h>
 #endif
 
-using namespace credativ;
+using namespace pgbckctl;
 using namespace std;
 using namespace boost::filesystem;
 using namespace boost::posix_time;
 using namespace boost::iostreams;
 
-namespace credativ {
+namespace pgbckctl {
 
   /* Forwarded class definitions */
   class ArchiveLogDirectory;

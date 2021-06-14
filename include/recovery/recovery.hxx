@@ -3,10 +3,9 @@
 
 #include <common.hxx>
 #include <descr.hxx>
-
 #include <io_uring_instance.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Base class for recovery/restore implementations.

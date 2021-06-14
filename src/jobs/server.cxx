@@ -32,7 +32,7 @@ extern "C" {
 
 #define SOCKET_P(ptr) (*((ptr)->soc))
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /*
  * Import external global variable to tell
@@ -47,7 +47,7 @@ extern BackgroundJobType _pgbckctl_job_type;
  *
  * https://www.boost.org/doc/libs/1_53_0/doc/html/boost_asio/example/fork/process_per_connection.cpp
  */
-namespace credativ {
+namespace pgbckctl {
 
   namespace ba = boost::asio;
   namespace ip = boost::asio::ip;

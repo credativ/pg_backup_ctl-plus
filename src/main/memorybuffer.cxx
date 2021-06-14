@@ -4,7 +4,7 @@
 #include <pgbckctl_exception.hxx>
 #include <memorybuffer.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 MemoryBuffer::MemoryBuffer(size_t initialsz) {
 

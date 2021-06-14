@@ -7,7 +7,7 @@
 #include <pgsql-proto.hxx>
 #include <pgproto-copy.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * PGMessage

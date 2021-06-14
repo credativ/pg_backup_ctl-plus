@@ -14,7 +14,7 @@
 
 #define MAXXLOGFNAMELEN MAXFNAMELEN
 
-namespace credativ {
+namespace pgbckctl {
 
   /* forward declarations */
   class BackupDirectory;

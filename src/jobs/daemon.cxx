@@ -28,7 +28,7 @@ extern "C" {
 
 #define MSG_QUEUE_MAX_TOKEN_SZ 255
 
-using namespace credativ;
+using namespace pgbckctl;
 
 volatile sig_atomic_t _pgbckctl_shutdown_mode = DAEMON_RUN;
 extern int errno;
@@ -1759,7 +1759,7 @@ static pid_t daemonize(job_info &info) {
 
 }
 
-bool credativ::launcher_is_running(std::shared_ptr<CatalogProc> procInfo) {
+bool pgbckctl::launcher_is_running(std::shared_ptr<CatalogProc> procInfo) {
 
   shmatt_t nattach;
 
@@ -1793,7 +1793,7 @@ bool credativ::launcher_is_running(std::shared_ptr<CatalogProc> procInfo) {
 
 }
 
-void credativ::establish_launcher_cmd_queue(job_info& info) {
+void pgbckctl::establish_launcher_cmd_queue(job_info& info) {
 
   std::string message_queue_name;
 
@@ -1828,7 +1828,7 @@ void credativ::establish_launcher_cmd_queue(job_info& info) {
 
 }
 
-void credativ::send_launcher_cmd(job_info& info, std::string command) {
+void pgbckctl::send_launcher_cmd(job_info& info, std::string command) {
 
   using namespace boost::interprocess;
 
@@ -1870,7 +1870,7 @@ void credativ::send_launcher_cmd(job_info& info, std::string command) {
   }
 }
 
-std::string credativ::recv_launcher_cmd(job_info &info, bool &cmd_received) {
+std::string pgbckctl::recv_launcher_cmd(job_info &info, bool &cmd_received) {
 
   using namespace boost::interprocess;
 
@@ -1915,7 +1915,7 @@ std::string credativ::recv_launcher_cmd(job_info &info, bool &cmd_received) {
  * multiple times per catalog instance, since they are going
  * to share the same message queue otherwise.
  */
-pid_t credativ::launch(job_info& info) {
+pid_t pgbckctl::launch(job_info& info) {
 
   daemonize(info);
   return info.pid;
@@ -1939,7 +1939,7 @@ pid_t credativ::launch(job_info& info) {
  * is set to background_exec, as we do in run_process. The specified
  * command handle will always be executed in a separate process.
  */
-pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
+pid_t pgbckctl::worker_command(BackgroundWorker &worker, std::string command) {
 
   job_info info = worker.jobInfo();
   pid_t pid;
@@ -2137,7 +2137,7 @@ pid_t credativ::worker_command(BackgroundWorker &worker, std::string command) {
  * This also allows to pass down complex commands
  * with shell interactions, e.g. redirect et al.
  */
-FILE * credativ::run_pipelined_command(job_info &info) {
+FILE * pgbckctl::run_pipelined_command(job_info &info) {
 
   ostringstream cmd;
 
@@ -2182,7 +2182,7 @@ FILE * credativ::run_pipelined_command(job_info &info) {
  * a bidirectional pipe where the caller
  * can write to and read from.
  */
-pid_t credativ::run_process(job_info& info) {
+pid_t pgbckctl::run_process(job_info& info) {
 
   pid_t pid;
 

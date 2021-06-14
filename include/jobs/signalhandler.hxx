@@ -3,7 +3,7 @@
 
 #include <signal.h>
 
-namespace credativ {
+namespace pgbckctl {
 
   class JobSignalHandler {
   public:

@@ -12,7 +12,7 @@
 #include <proto-descr.hxx>
 #include <proto-catalog.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 

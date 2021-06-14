@@ -4,7 +4,7 @@
 #include <boost/interprocess/managed_xsi_shared_memory.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 
-namespace credativ {
+namespace pgbckctl {
 
 #define WORKER_SHM_CRITICAL_SECTION_START_P(shm) \
   { \
@@ -18,7 +18,7 @@ namespace credativ {
   /**
    * Exception class for shared memory errors.
    */
-  class SHMFailure : public credativ::CPGBackupCtlFailure {
+  class SHMFailure : public pgbckctl::CPGBackupCtlFailure {
   public:
     SHMFailure(const char *errstr) throw() : CPGBackupCtlFailure(errstr) {};
     SHMFailure(std::string errstr) throw() : CPGBackupCtlFailure(errstr) {};

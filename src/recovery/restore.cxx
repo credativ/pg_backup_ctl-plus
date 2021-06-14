@@ -1,7 +1,7 @@
 #include <recovery.hxx>
 #include <fs-archive.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /* *************************************************************************** *
  * Implementation of class RestoreDescrID

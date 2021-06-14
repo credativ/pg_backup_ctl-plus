@@ -3,7 +3,7 @@
 
 #include <pgiosocketcontext.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   namespace pgprotocol {
 		/**

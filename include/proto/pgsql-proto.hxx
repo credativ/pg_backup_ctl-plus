@@ -14,7 +14,7 @@
 #define PG_PROTOCOL_MINOR(v)    ((v) & 0x0000ffff)
 #define PG_PROTOCOL(m,n)        (((m) << 16) | (n))
 
-namespace credativ {
+namespace pgbckctl {
 
   typedef enum {
 
@@ -547,12 +547,12 @@ namespace credativ {
 
 }
 
-#define MESSAGE_HDR_BYTE (sizeof(credativ::pgprotocol::PGMessageType))
+#define MESSAGE_HDR_BYTE (sizeof(pgbckctl::pgprotocol::PGMessageType))
 #define MESSAGE_HDR_LENGTH_SIZE (sizeof(unsigned int))
 #define MESSAGE_HDR_SIZE (MESSAGE_HDR_LENGTH_SIZE + MESSAGE_HDR_BYTE)
 #define MESSAGE_HDR_DATA_LENGTH(hdr) ((hdr).length - MESSAGE_HDR_LENGTH_SIZE)
 #define MESSAGE_DATA_LENGTH(msg) (((msg).hdr).length - MESSAGE_HDR_LENGTH_SIZE)
-#define MESSAGE_LENGTH_OFFSET ((off_t) sizeof(credativ::pgprotocol::PGMessageType))
+#define MESSAGE_LENGTH_OFFSET ((off_t) sizeof(pgbckctl::pgprotocol::PGMessageType))
 #define MESSAGE_DATA_OFFSET (MESSAGE_LENGTH_OFFSET + MESSAGE_HDR_LENGTH_SIZE)
 
 /**

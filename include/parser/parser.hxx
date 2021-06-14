@@ -12,9 +12,9 @@
 #include <boost/heap/binomial_heap.hpp>
 #include <boost/filesystem.hpp>
 
-using namespace credativ;
+using namespace pgbckctl;
 
-namespace credativ {
+namespace pgbckctl {
 
   /*
    * Base archive exception.

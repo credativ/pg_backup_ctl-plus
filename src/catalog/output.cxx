@@ -8,7 +8,7 @@
 #include <output.hxx>
 #include <retention.hxx>
 
-using namespace credativ;
+using namespace pgbckctl;
 
 /* ****************************************************************************
  * Implementation of OutputFormatter

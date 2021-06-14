@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * pg_backup_ctl SSL Context.

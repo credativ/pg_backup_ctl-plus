@@ -4,7 +4,7 @@
 /* for XLogRecPtr */
 #include <postgres.hxx>
 
-namespace credativ {
+namespace pgbckctl {
 
   /**
    * Represents an identified streaming connection.
