@@ -121,7 +121,29 @@ add_library (pgbckctl-common SHARED
   src/recovery/restore.cxx
   src/main/memorybuffer.cxx
   src/catalog/output.cxx
-)
+        src/filesystem/copymgr.cxx)
+
+## Make sure we build with the proper precompiler definitions
+## To compare the build types correctly, convert them to lower case first,
+## got that idea from
+## https://stackoverflow.com/questions/57022145/how-to-define-preprocessor-definition-for-each-configuration-in-clion#57026786
+if (CMAKE_CONFIGURATION_TYPES)
+    string(TOLOWER "${CMAKE_CONFIGURATION_TYPES}" CMAKE_CONFIGURATION_TYPES_LOWER)
+else()
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_CONFIGURATION_TYPES_LOWER)
+endif()
+
+foreach(config ${CMAKE_CONFIGURATION_TYPES_LOWER})
+    if (${config} MATCHES "debug")
+        #add preprocessor definition something like this bellow
+        target_compile_definitions(pg_backup_ctl++ PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+        target_compile_definitions(pgbckctl-common PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+        target_compile_definitions(pgbckctl-proto PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+    elseif(${config} MATCHES "release")
+        # release builds normally set the sqlite3 database default definition
+        # but this is left to packagers. keep the default here.
+    endif()
+endforeach()
 
 IF(APPLE)
    target_link_libraries (pg_backup_ctl++ pthread pgbckctl-proto pgbckctl-common)
@@ -363,7 +385,7 @@ if(BUILD_UNIT_TESTS)
   ## which is the main part for the unit tests against the sqlite database.
 
   add_custom_command(OUTPUT .pg_backup_ctl.sqlite
-    COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql"
+    COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../../src/sql/catalog.sql"
     DEPENDS src/sql/catalog.sql)
 
   add_custom_target(createdb
