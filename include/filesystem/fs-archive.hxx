@@ -458,7 +458,7 @@ namespace pgbckctl {
      * isn't present in version below 1.60. To still support older boost version
      * we implement our own method here.
      */
-    static path relative_path(const path dirFrom, path dirTo);
+    static path relative_path(const path &dirFrom, const path &dirTo);
 
     /**
      * Fsync the backup directory contents.

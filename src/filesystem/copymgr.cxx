@@ -86,6 +86,8 @@ void BaseCopyManager::assignSigIntHandler(JobSignalHandler *handler) {
 
 }
 
+#ifdef PG_BACKUP_CTL_HAS_LIBURING
+
 /* **************************************************************************
  * IOUringCopyManager
  * **************************************************************************/
@@ -333,3 +335,16 @@ void IOUringCopyManager::stop() {
   ops.exit = true;
 
 }
+
+#else
+
+/* **************************************************************************
+ * LegacyCopyManager
+ * **************************************************************************/
+
+LegacyCopyManager::LegacyCopyManager(std::shared_ptr<BackupDirectory> in, std::shared_ptr<TargetDirectory> out)
+        : BaseCopyManager(in, out) {
+
+}
+
+#endif

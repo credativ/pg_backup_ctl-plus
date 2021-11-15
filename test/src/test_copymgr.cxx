@@ -5,6 +5,8 @@
 
 using namespace pgbckctl;
 
+#ifdef PG_BACKUP_CTL_HAS_LIBURING
+
 BOOST_AUTO_TEST_CASE(TestTempFile)
 {
 
@@ -51,8 +53,8 @@ BOOST_AUTO_TEST_CASE(TestTempFile)
 BOOST_AUTO_TEST_CASE(TestCopyManager)
 {
 
-#ifdef PG_BACKUP_CTL_HAS_LIBURING
   //std::shared_ptr<BackupCopyManager> copyMgr = std::make_shared<BackupCopyManager>(nullptr, nullptr);
-#endif
 
 }
+
+#endif

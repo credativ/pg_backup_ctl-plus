@@ -1237,7 +1237,7 @@ path BackupDirectory::system_temp_directory() {
 
 }
 
-path BackupDirectory::relative_path(const path dirFrom, const path dirTo) {
+path BackupDirectory::relative_path(const path &dirFrom, const path &dirTo) {
 
 }
 

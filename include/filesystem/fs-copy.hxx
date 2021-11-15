@@ -2,6 +2,7 @@
 #define HAVE_FS_COPY
 
 #include <pg_backup_ctl.hxx>
+#include "fs-archive.hxx"
 
 #ifdef PG_BACKUP_CTL_HAS_LIBURING
 #include <io_uring_instance.hxx>
@@ -223,6 +224,8 @@ namespace pgbckctl {
 
   class LegacyCopyManager : public BaseCopyManager {
   public:
+    LegacyCopyManager(std::shared_ptr<BackupDirectory> in,
+                      std::shared_ptr<TargetDirectory> out);
     void start() {}
     void stop() {}
   };
