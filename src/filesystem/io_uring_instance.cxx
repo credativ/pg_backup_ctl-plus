@@ -2,12 +2,18 @@
 
 #ifdef PG_BACKUP_CTL_HAS_LIBURING
 
-using namespace credativ;
+using namespace pgbckctl;
 
 vectored_buffer::vectored_buffer(unsigned int bufsize,
                                  unsigned int count) {
 
   unsigned int i;
+
+  if (bufsize == 0)
+    throw CIOUringIssue("vectored buffer must not be 0");
+
+  if (count == 0)
+    throw CIOUringIssue("number of buffers in vectored buffers must not be 0");
 
   this->iovecs = new struct iovec[count];
 
@@ -30,7 +36,6 @@ unsigned int vectored_buffer::getBufferSize() {
 }
 
 ssize_t vectored_buffer::getSize() {
-
   return (num_buffers * buffer_size);
 
 }
@@ -84,8 +89,24 @@ vectored_buffer::~vectored_buffer() {
 
 }
 
+IOUringInstance::IOUringInstance(unsigned int     queue_depth,
+                                 size_t           block_size,
+                                 struct io_uring *ring) {
+
+  if (ring == NULL)
+    throw CIOUringIssue("could not instantiate io_uring instance with undefined ring");
+
+  this->ring = ring;
+
+  this->queue_depth = queue_depth;
+  this->block_size = block_size;
+
+  this->initialized = true;
+
+}
+
 IOUringInstance::IOUringInstance(unsigned int queue_depth,
-                                 size_t block_size) {
+                                 size_t       block_size) {
 
   this->ring = NULL;
   this->queue_depth = queue_depth;
@@ -104,6 +125,10 @@ IOUringInstance::~IOUringInstance() {}
 void IOUringInstance::setup(std::shared_ptr<BackupFile> file) {
 
   int result;
+
+  if (available()) {
+    throw CIOUringIssue("io_uring already setup, call exit() before");
+  }
 
   if (! file->isOpen() ) {
     throw CIOUringIssue("could not establish io_uring instance: file not opened");
@@ -129,7 +154,24 @@ struct io_uring *IOUringInstance::getRing() {
 
 }
 
-void IOUringInstance::read(std::shared_ptr<vectored_buffer> buf) {
+void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
+                           std::shared_ptr<vectored_buffer> buf) {
+
+  struct io_uring_sqe *sqe = NULL;
+
+  /*
+   * Is this a valid archive file handle?
+   */
+  if (!file->isOpen()) {
+    throw CIOUringIssue("file not opened");
+  }
+
+  /*
+   * File must be opened in binary read mode
+   */
+  if (file->getOpenMode() != "rb") {
+    throw CIOUringIssue("file not opened in binary read mode");
+  }
 
   /*
    * Must match queue depth and blocksize
@@ -137,15 +179,64 @@ void IOUringInstance::read(std::shared_ptr<vectored_buffer> buf) {
   if ( (this->queue_depth != buf->getNumberOfBuffers())
        || (this->block_size != buf->getBufferSize()) ) {
 
-    throw CIOUringIssue("queue depth and buffer sizes should match io_uring initialization");
+    throw CIOUringIssue("queue depth and buffer sizes must match io_uring initialization");
 
   }
 
-  
+  /* get a submission queue entry item */
+  sqe = io_uring_get_sqe(this->ring);
+
+  if (!sqe) {
+    throw CIOUringIssue("could not get a submission queue entry");
+  }
+
+  /* submit read request */
+  io_uring_prep_readv(sqe,
+                      file->getFileno(),
+                      buf->iovecs,
+                      buf->getNumberOfBuffers(),
+                      buf->getBufferSize());
 
 }
 
-void IOUringInstance::write(std::shared_ptr<vectored_buffer> buf) {
+void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
+                            std::shared_ptr<vectored_buffer> buf) {
+
+  struct io_uring_sqe *sqe = NULL;
+
+  /*
+   * File needs to be valid and opened.
+   */
+  if (!file->isOpen()) {
+    throw CIOUringIssue("file not opened");
+  }
+
+  if (file->getOpenMode() != "wb") {
+    throw CIOUringIssue("file not opened in binary write mode");
+  }
+
+  /*
+   * Must match queue depth and block size.
+   */
+  if ( (this->queue_depth != buf->getNumberOfBuffers())
+       || (this->block_size != buf->getBufferSize()) ) {
+
+    throw CIOUringIssue("queue depth and buffer sizes must match io_uring initialization");
+
+  }
+
+  sqe = io_uring_get_sqe(this->ring);
+
+  if (!sqe) {
+    throw CIOUringIssue("could not get a submission queue entry");
+  }
+
+  /* submit write request */
+  io_uring_prep_writev(sqe,
+                       file->getFileno(),
+                       buf->iovecs,
+                       buf->getNumberOfBuffers(),
+                       buf->getBufferSize());
 
 }
 
@@ -187,7 +278,9 @@ bool IOUringInstance::available() {
   return initialized;
 }
 
-void IOUringInstance::wait() {
+int IOUringInstance::wait(struct io_uring_cqe **cqe) {
+
+  return io_uring_wait_cqe(this->ring, cqe);
 
 }
 

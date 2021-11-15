@@ -69,6 +69,7 @@ namespace pgbckctl {
     virtual void close();
     virtual off_t lseek(off_t offset, int whence);
     virtual void setOpenMode(std::string mode);
+    virtual std::string getOpenMode();
 
     /*
      * Special setter/getter methods

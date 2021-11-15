@@ -14,6 +14,8 @@ namespace pgbckctl {
    */
   class ConfigVariable {
   protected:
+
+    /* Identifier of a ConfigVariable object instance */
     std::string name = "unknown";
 
     /*

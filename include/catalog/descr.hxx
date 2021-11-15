@@ -1038,8 +1038,6 @@ namespace pgbckctl {
      */
     bool elected_for_deletion = false;
 
-    /************* computed columns by SQL *************/
-
     /**
      * Set to TRUE in case this basebackup
      * exceeds a retention policy (see
@@ -1047,11 +1045,14 @@ namespace pgbckctl {
      */
     bool exceeds_retention_rule = false;
 
+    /* List of tablespaces descriptors in backup */
+    std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;
+
+    /************* computed columns by SQL *************/
+
     /** Duration of the basebackup*/
     std::string duration = "N/A";
 
-    /* List of tablespaces descriptors in backup */
-    std::vector<std::shared_ptr<BackupTablespaceDescr>> tablespaces;
   };
 
   /*

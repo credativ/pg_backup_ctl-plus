@@ -322,8 +322,8 @@ completion_word create_bck_prof_manifest_checksums_setting[]
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word create_bck_prof_manifest_setting[]
-= { { "TRUE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 8, NULL },
-    { "FALSE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 8, NULL },
+= { { "INCLUDED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 8, NULL },
+    { "EXCLUDED", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word create_bck_prof_noverify_setting[]
@@ -761,6 +761,11 @@ completion_word start_keyword[]
     { "RESET", COMPL_KEYWORD, COMPL_STATIC_ARRAY, reset_completion, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } /* marks end of list */ };
 
+completion_word bck_prof_with_checksum[]
+= { { "CHECKSUMS", COMPL_KEYWORD, COMPL_STATIC_ARRAY,
+      create_bck_prof_manifest_checksums_setting, NULL },
+    { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
+
 /* global buffer to hold completed input for readline callbacks */
 std::vector<completion_word> completed_keywords = {};
 
@@ -944,7 +949,7 @@ void init_readline(std::string catalog_name,
   completion_word create_bck_prof_w7
     = { "MANIFEST", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_manifest_setting, NULL } ;
   completion_word create_bck_prof_w8
-    = { "MANIFEST_CHECKSUMS", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_manifest_checksums_setting, NULL } ;
+    = { "WITH", COMPL_KEYWORD, COMPL_STATIC_ARRAY, bck_prof_with_checksum, NULL } ;
   completion_word create_bck_prof_w9
     = { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } ;
 

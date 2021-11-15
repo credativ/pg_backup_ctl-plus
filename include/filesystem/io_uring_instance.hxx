@@ -14,7 +14,7 @@ extern "C" {
 #include <sys/uio.h>
 }
 
-namespace credativ {
+namespace pgbckctl {
 
   class CIOUringIssue : public CArchiveIssue {
   private:
@@ -171,7 +171,11 @@ namespace credativ {
     /* C'tor */
     IOUringInstance();
     IOUringInstance(unsigned int queue_depth,
-                    size_t block_size);
+                    size_t       block_size);
+    IOUringInstance(unsigned int     queue_depth,
+                    size_t           block_size,
+                    struct io_uring *ring);
+
 
     /* D'tor */
     virtual ~IOUringInstance();
@@ -222,7 +226,8 @@ namespace credativ {
      * must be smaller or equal to queue depth and buffer size must match
      * block size.
      */
-    virtual void read(std::shared_ptr<vectored_buffer> buf);
+    virtual void read(std::shared_ptr<ArchiveFile> file,
+                      std::shared_ptr<vectored_buffer> buf);
 
     /**
      * Vectored write requests.
@@ -231,12 +236,13 @@ namespace credativ {
      * must be smaller or equal to queue depth and buffer size must match
      * block size.
      */
-    virtual void write(std::shared_ptr<vectored_buffer> buf);
+    virtual void write(std::shared_ptr<ArchiveFile> file,
+                       std::shared_ptr<vectored_buffer> buf);
 
     /**
      * Wait for consumer submissions
      */
-    virtual void wait();
+    virtual int wait(struct io_uring_cqe **cqe);
 
     /**
      * Tear down io_uring instance and free all internal

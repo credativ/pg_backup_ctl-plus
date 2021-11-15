@@ -88,12 +88,13 @@ namespace pgbckctl {
   /**
    * Base class for archive files
    */
-  class BackupFile : public CPGBackupCtlBase {
+  class BackupFile {
 
   protected:
 
     bool compressed = false;
     bool available = false;
+    bool temporary = false;
 
     /** boost::filesystem handle */
     path   handle;
@@ -122,12 +123,15 @@ namespace pgbckctl {
     virtual bool exists();
     virtual void rename(path& newname) = 0;
     virtual void setOpenMode(std::string mode) = 0;
+    virtual std::string getOpenMode() = 0;
     virtual size_t write(const char *buf, size_t len) = 0;
     virtual size_t read(char *buf, size_t len) = 0;
     virtual void remove() = 0;
     virtual size_t size();
     virtual off_t lseek(off_t offset, int whence) = 0;
     virtual off_t current_position();
+    virtual void setTemporary();
+    virtual bool isTemporary();
 
     /**
      * Returns the filename as a string.
@@ -184,6 +188,11 @@ namespace pgbckctl {
      */
     virtual void setOpenMode(std::string mode);
 
+    /**
+     * Returns the mode an ArchiveFile instance was opened with.
+     */
+    virtual std::string getOpenMode();
+
     /*
      * Returns the internal file stream pointer.
      */
@@ -232,7 +241,7 @@ namespace pgbckctl {
     virtual void setCompressed(bool compressed);
     virtual bool isOpen();
 
-    /*
+    /**
      * Opens a compressed gzip handle.
      */
     virtual void open();
@@ -244,10 +253,15 @@ namespace pgbckctl {
     virtual off_t lseek(off_t offset, int whence);
     virtual void remove();
 
-    /*
+    /**
      * Set open mode for this file. The default is "rb"
      */
     virtual void setOpenMode(std::string mode);
+
+    /**
+     * Returns the mode this file instance was opened with.
+     */
+    virtual std::string getOpenMode();
 
     /*
      * Returns the internal file stream pointer.
@@ -315,6 +329,77 @@ namespace pgbckctl {
   };
 
   /**
+   * RootDirectory implements basic functionality for root directory
+   * classes. If a directory handle is to be created,
+   * these implementations can inherit and get some basic functionaliy
+   * like recursive fsync() and more ...
+   */
+   class RootDirectory {
+   protected:
+
+     /*
+      * Internal boost::filesystem handle
+      */
+     path handle;
+
+   public:
+
+     RootDirectory(path handle);
+     virtual ~RootDirectory();
+
+     /*
+      * Fsync a specific path.
+      */
+     static void fsync(path syncPath);
+
+     /*
+      * Fsync the directory referenced by this
+      * object instance.
+      */
+     virtual void fsync();
+
+     /**
+      * Recursively fsync the directory contents and
+      * the directory itself.
+      *
+      * This can also be used to fsync a file.
+      *
+      * This might be an expensive operation, if the
+      * the directory was just created and contains many
+      * new or large files.
+      */
+     static void fsync_recursive(path handle);
+
+     /**
+      * Returns the effective path handle this directory
+      * currently points to.
+      */
+     virtual path getPath();
+
+     /**
+      * Returns a list of files/directories contained in the streamed base backup.
+      *
+      * Depending on the type of basebackup (PLAIN) and the size of the database instance,
+      * this list can be arbitrary large!
+      */
+     virtual std::shared_ptr<std::list<directory_entry>> stat();
+
+     /**
+      * Returns a directory tree walker instance to traverse
+      * filesystem contents of a streamed base backup directory.
+      */
+     virtual DirectoryTreeWalker walker();
+
+     /**
+      * Static version of walker(), can be called to derive a
+      * directory tree walker on an arbitrary path handle.
+      *
+      * Throws in case handle is not a valid directory path.
+      */
+     static DirectoryTreeWalker walker(path handle);
+   };
+
+  /**
    * Base class for archive directories. Also encapsulates
    * the complete archive directory tree with the following layout:
    *
@@ -322,23 +407,14 @@ namespace pgbckctl {
    *            `- path(log/)
    *            `- path(base/)
    */
-  class BackupDirectory : public CPGBackupCtlBase {
+  class BackupDirectory : public RootDirectory {
   protected:
-    /*
-     * Internal boost::filesystem handle
-     */
-    path handle;
 
     /*
      * Subdirectory handles.
      */
     path base;
     path log;
-
-    /*
-     * Fsync a specific path.
-     */
-    static void fsync(path syncPath);
 
     /*
      * Verify if a specific path exists in the
@@ -360,6 +436,40 @@ namespace pgbckctl {
     static std::string verificationCodeAsString(BaseBackupVerificationCode code);
 
     /**
+     * Returns the system temp directory path
+     *
+     * Throws in case the path doesn't exist already or
+     * cannot be determined.
+     */
+    static path system_temp_directory();
+
+    /**
+     * Returns a generated temporary filename.
+     *
+     * This uses boost::filesystem::unique_path() internally,
+     * so the returned path object is a generated filename
+     * according to the rules defined there.
+     */
+    static path temp_filename();
+
+    /**
+     * Returns the relative path of dirTo compared to dirFrom. This helper
+     * function is implemented in addition to boost's relative_path() method which
+     * isn't present in version below 1.60. To still support older boost version
+     * we implement our own method here.
+     */
+    static path relative_path(const path dirFrom, path dirTo);
+
+    /**
+     * Fsync the backup directory contents.
+     *
+     * This recursively fsyncs the log and base directories
+     * as well as the contents of the backup directory
+     * itself.
+     */
+    virtual void fsync();
+
+    /**
      * Check if this is an existing archive directory.
      *
      * This method performs additional checks like placing
@@ -373,23 +483,17 @@ namespace pgbckctl {
      */
     virtual void create();
 
-    /*
+    /**
      * Returns a copy of the internal base directory
      * path handle.
      */
     virtual path basedir();
 
-    /*
+    /**
      * Returns a copy of the internal log directory
      * path handle.
      */
     virtual path logdir();
-
-    /*
-     * Fsync the directory referenced by this
-     * object instance.
-     */
-    virtual void fsync();
 
     /**
      * Removes the specified path from the backup directory
@@ -398,18 +502,6 @@ namespace pgbckctl {
     static void unlink_path(path backup_path);
 
     /**
-     * Recursively fsync the directory contents and
-     * the directory itself.
-     *
-     * This can also be used to fsync a file.
-     *
-     * This might be an expensive operation, if the
-     * the directory was just created and contains many
-     * new or large files.
-     */
-    static void fsync_recursive(path handle);
-
-    /*
      * Returns the path handle this object instance
      * points to.
      */
@@ -420,7 +512,7 @@ namespace pgbckctl {
      */
     virtual std::shared_ptr<ArchiveLogDirectory> logdirectory();
 
-    /*
+    /**
      * Returns a WAL segment file belonging to this directory.
      *
      * Internally, nothing special happens. The returned
@@ -430,7 +522,7 @@ namespace pgbckctl {
     virtual std::shared_ptr<BackupFile> walfile(std::string name,
                                                 BackupProfileCompressType compression);
 
-    /*
+    /**
      * Factory method returns a new basebackup file handle.
      *
      * This will create a file handle pointing into
@@ -618,28 +710,6 @@ namespace pgbckctl {
 
     virtual ~StreamingBaseBackupDirectory();
 
-    /**
-     * Returns a directory tree walker instance to traverse
-     * filesystem contents of a streamed base backup directory.
-     */
-    virtual DirectoryTreeWalker walker();
-
-    /**
-     * Returns a list of files/directories contained in the streamed base backup.
-     *
-     * Depending on the type of basebackup (PLAIN) and the size of the database instance,
-     * this list can be arbitrary large!
-     */
-    virtual std::shared_ptr<std::list<directory_entry>> stat();
-
-    /**
-     * Static version of walker(), can be called to derive a
-     * directory tree walker on an arbitrary path handle.
-     *
-     * Throws in case handle is not a valid directory path.
-     */
-    static DirectoryTreeWalker walker(path handle);
-
     /*
      * Returns the path to the streaming base backup
      * directory.
@@ -768,6 +838,7 @@ namespace pgbckctl {
     virtual void close();
     virtual void fsync();
     virtual void setOpenMode(std::string mode);
+    virtual std::string getOpenMode();
     virtual size_t write(const char *buf, size_t len);
     virtual size_t read(char *buf, size_t len);
     virtual bool isOpen();
