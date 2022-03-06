@@ -47,6 +47,26 @@ namespace pgbckctl {
     } buffer_pos;
 
     /**
+     * Effective usable size of data in buffer array.
+     *
+     * This is effectively the amount of usable bytes in the
+     * complete buffer set. For example, after read operations, this
+     * could be set to the bytes read into buffer which can be used.
+     * Note that this could be fairly less than the total amount
+     * of bytes a buffer array can handle. Larger settings aren't
+     * supported. See also setter/getter methods
+     * @pgbckctl::vectored_buffered::setEffectiveSize() and
+     * @pgbckctl::vectored_buffer::getEffectiveSize().
+     *
+     * This allows to reuse the current buffer for repeated read/write
+     * operations. After write or reading a buffer which for example is
+     * not fully instrumented up to his maximum size, the caller can
+     * reinitialize the effective_size to reflect its current number
+     * of bytes in effect.
+     */
+    ssize_t effective_size = 0;
+
+    /**
      * Returns the absolute offset into the vectorized
      * buffer array.
      */
@@ -61,7 +81,7 @@ namespace pgbckctl {
   public:
     std::vector<std::shared_ptr<MemoryBuffer>> buffers;
 
-    vectored_buffer(unsigned int bufsize, unsigned int count);
+    explicit vectored_buffer(unsigned int bufsize, unsigned int count);
     virtual ~vectored_buffer();
 
     /**
@@ -76,11 +96,31 @@ namespace pgbckctl {
      */
     struct iovec* iovecs;
 
+    /**
+     * Gets the current effective number of bytes usable in the
+     * buffer array.
+     */
+    virtual ssize_t getEffectiveSize();
+
+    /**
+     * Sets the effective number of bytes usable in the buffer array. This will
+     * throw in case a negative size is specified or the argument exceeds the
+     * maximum number of bytes the buffer array can hold.
+     */
+    virtual void setEffectiveSize(const ssize_t size, bool with_iovec = false);
+
     /*
      * Returns the overall size of allocated buffers
      * in an vectorized buffer instance.
      */
     ssize_t getSize();
+
+    /**
+     * Clear buffer contents.
+     *
+     * The buffer remain fully allocated, but it's contents are cleared with NULL bytes.
+     */
+    void clear();
 
     /**
      * Returns the size of a single I/O buffer
@@ -154,7 +194,7 @@ namespace pgbckctl {
 
   protected:
 
-    struct io_uring *ring = NULL;
+    struct io_uring ring;
 
   public:
 
@@ -174,7 +214,7 @@ namespace pgbckctl {
                     size_t       block_size);
     IOUringInstance(unsigned int     queue_depth,
                     size_t           block_size,
-                    struct io_uring *ring);
+                    struct io_uring  ring);
 
 
     /* D'tor */
@@ -198,6 +238,11 @@ namespace pgbckctl {
      * this will throw.
      */
     virtual void setQueueDepth(unsigned int queue_depth);
+
+    /**
+     * Returns the queue depth of a ring instance.
+     */
+    virtual unsigned int getQueueDepth();
 
     /**
      * Returns an allocated, aligned vectorized_buffer suitable
@@ -227,7 +272,14 @@ namespace pgbckctl {
      * block size.
      */
     virtual void read(std::shared_ptr<ArchiveFile> file,
-                      std::shared_ptr<vectored_buffer> buf);
+                      std::shared_ptr<vectored_buffer> buf,
+                      off_t pos);
+
+    /**
+     * Handles an I/O operation by waiting for completion and
+     * sets internal buffer properties.
+     */
+    virtual ssize_t handle_current_io(std::shared_ptr<vectored_buffer> buffer);
 
     /**
      * Vectored write requests.
@@ -237,10 +289,11 @@ namespace pgbckctl {
      * block size.
      */
     virtual void write(std::shared_ptr<ArchiveFile> file,
-                       std::shared_ptr<vectored_buffer> buf);
+                       std::shared_ptr<vectored_buffer> buf,
+                       off_t pos);
 
     /**
-     * Wait for consumer submissions
+     * Wait for consumer completion
      */
     virtual int wait(struct io_uring_cqe **cqe);
 
@@ -251,11 +304,16 @@ namespace pgbckctl {
     virtual void exit();
 
     /**
+     * Must be called after wait() to finalize a CQE completion item.
+     */
+    void seen(struct io_uring_cqe **cqe);
+
+    /**
      * Returns the io_uring handle used by this instance.
      *
      * Throws in case setup() wasn't called before.
      */
-    virtual struct io_uring *getRing();
+    virtual struct io_uring getRing();
 
   };
 

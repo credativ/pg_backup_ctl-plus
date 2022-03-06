@@ -15,16 +15,54 @@ vectored_buffer::vectored_buffer(unsigned int bufsize,
   if (count == 0)
     throw CIOUringIssue("number of buffers in vectored buffers must not be 0");
 
-  this->iovecs = new struct iovec[count];
+  BOOST_LOG_TRIVIAL(debug) << "allocated buffer bufsize = " << bufsize << " num blocks = " << count;
 
-  for (i = 0; i < count; count++) {
-    buffers.push_back(std::make_shared<MemoryBuffer>(bufsize));
+  num_buffers = count;
+  buffer_size = bufsize;
+  effective_size = 0;
+
+  iovecs = new struct iovec[this->num_buffers];
+
+  for (i = 0; i < this->num_buffers; i++) {
+    buffers.push_back(std::make_shared<MemoryBuffer>(buffer_size));
 
     /* Prepare IO vectors suitable for preadv()/pwritev() */
-    this->iovecs[i].iov_base = buffers[i]->ptr();
-    this->iovecs[i].iov_len = bufsize;
+    iovecs[i].iov_base = buffers[i]->ptr();
+    iovecs[i].iov_len = buffer_size;
   }
 
+}
+
+void vectored_buffer::clear() {
+
+  for(auto buf : buffers) {
+    buf->clear();
+  }
+
+}
+
+void vectored_buffer::setEffectiveSize(const ssize_t size, bool with_iovec) {
+
+  if ( (size < 0) || (size > getSize()) ) {
+    ostringstream oss;
+    oss << "cannot set effective number of bytes("
+        << size <<") "
+        << "larger than maximum size("
+        << getSize() << ")";
+    throw CIOUringIssue(oss.str());
+  }
+
+  effective_size = size;
+
+  /* If we are called to reset iovec, don't forget that */
+  if (with_iovec) {
+    iovecs->iov_len = size;
+  }
+
+}
+
+ssize_t vectored_buffer::getEffectiveSize() {
+  return effective_size;
 }
 
 unsigned int vectored_buffer::getNumberOfBuffers() {
@@ -91,10 +129,7 @@ vectored_buffer::~vectored_buffer() {
 
 IOUringInstance::IOUringInstance(unsigned int     queue_depth,
                                  size_t           block_size,
-                                 struct io_uring *ring) {
-
-  if (ring == NULL)
-    throw CIOUringIssue("could not instantiate io_uring instance with undefined ring");
+                                 struct io_uring  ring) {
 
   this->ring = ring;
 
@@ -108,19 +143,19 @@ IOUringInstance::IOUringInstance(unsigned int     queue_depth,
 IOUringInstance::IOUringInstance(unsigned int queue_depth,
                                  size_t       block_size) {
 
-  this->ring = NULL;
   this->queue_depth = queue_depth;
   this->block_size = block_size;
 
 }
 
-IOUringInstance::IOUringInstance() {
+IOUringInstance::IOUringInstance() {}
 
-  this->ring = NULL;
+IOUringInstance::~IOUringInstance() {
+
+  if (initialized)
+    io_uring_queue_exit(&this->ring);
 
 }
-
-IOUringInstance::~IOUringInstance() {}
 
 void IOUringInstance::setup(std::shared_ptr<BackupFile> file) {
 
@@ -134,28 +169,34 @@ void IOUringInstance::setup(std::shared_ptr<BackupFile> file) {
     throw CIOUringIssue("could not establish io_uring instance: file not opened");
   }
 
-  result = io_uring_queue_init(this->queue_depth, this->ring, 0);
+  result = io_uring_queue_init(this->queue_depth, &this->ring, 0);
 
   if (result < 0) {
     throw CIOUringIssue(strerror(-result), result);
   }
 
   this->file = file;
-  this->initialized = ( (this->ring != NULL) && result >= 0 );
+  this->initialized = ( result >= 0 );
 
 }
 
-struct io_uring *IOUringInstance::getRing() {
+void IOUringInstance::seen(struct io_uring_cqe **cqe) {
+  io_uring_cqe_seen(&ring, *cqe);
+  *cqe = NULL;
+}
+
+struct io_uring IOUringInstance::getRing() {
 
   if (!available())
     throw CIOUringIssue("could not return IO uring instance handle, you need to setup() before");
 
-  return this->ring;
+  return ring;
 
 }
 
 void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
-                           std::shared_ptr<vectored_buffer> buf) {
+                           std::shared_ptr<vectored_buffer> buf,
+                           off_t pos) {
 
   struct io_uring_sqe *sqe = NULL;
 
@@ -164,13 +205,6 @@ void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
    */
   if (!file->isOpen()) {
     throw CIOUringIssue("file not opened");
-  }
-
-  /*
-   * File must be opened in binary read mode
-   */
-  if (file->getOpenMode() != "rb") {
-    throw CIOUringIssue("file not opened in binary read mode");
   }
 
   /*
@@ -184,7 +218,7 @@ void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
   }
 
   /* get a submission queue entry item */
-  sqe = io_uring_get_sqe(this->ring);
+  sqe = io_uring_get_sqe(&ring);
 
   if (!sqe) {
     throw CIOUringIssue("could not get a submission queue entry");
@@ -195,12 +229,49 @@ void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
                       file->getFileno(),
                       buf->iovecs,
                       buf->getNumberOfBuffers(),
-                      buf->getBufferSize());
+                      pos);
+
+  io_uring_submit(&ring);
+
+}
+
+ssize_t IOUringInstance::handle_current_io(std::shared_ptr<vectored_buffer> buffer) {
+
+  io_uring_cqe *cqe = NULL;
+  ssize_t result = (size_t) 0;
+
+  if (!available())
+    throw CIOUringIssue("could not handle I/O request, uring not available");
+
+  /* wait for any completions */
+  wait(&cqe);
+
+  /* check return codes */
+  if (cqe->res >= 0) {
+
+    result = cqe->res;
+    buffer->setEffectiveSize(cqe->res, true);
+    BOOST_LOG_TRIVIAL(debug) << "handle_current_io(): effective size  " << cqe->res;
+    seen(&cqe);
+
+  } else {
+
+    seen(&cqe);
+
+    /* handle error condition */
+    ostringstream oss;
+    oss << "could not handle I/O request: " << strerror(cqe->res);
+    throw CIOUringIssue(oss.str());
+
+  }
+
+  return result;
 
 }
 
 void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
-                            std::shared_ptr<vectored_buffer> buf) {
+                            std::shared_ptr<vectored_buffer> buf,
+                            off_t pos) {
 
   struct io_uring_sqe *sqe = NULL;
 
@@ -209,10 +280,6 @@ void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
    */
   if (!file->isOpen()) {
     throw CIOUringIssue("file not opened");
-  }
-
-  if (file->getOpenMode() != "wb") {
-    throw CIOUringIssue("file not opened in binary write mode");
   }
 
   /*
@@ -225,7 +292,7 @@ void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
 
   }
 
-  sqe = io_uring_get_sqe(this->ring);
+  sqe = io_uring_get_sqe(&ring);
 
   if (!sqe) {
     throw CIOUringIssue("could not get a submission queue entry");
@@ -236,14 +303,19 @@ void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
                        file->getFileno(),
                        buf->iovecs,
                        buf->getNumberOfBuffers(),
-                       buf->getBufferSize());
+                       pos);
 
+  io_uring_submit(&ring);
 }
 
 void IOUringInstance::setBlockSize(size_t block_size) {
 
   this->block_size = block_size;
 
+}
+
+unsigned int IOUringInstance::getQueueDepth() {
+  return this->queue_depth;
 }
 
 size_t IOUringInstance::getBlockSize() {
@@ -260,8 +332,8 @@ void IOUringInstance::alloc_buffer(std::shared_ptr<vectored_buffer> &vbuf) {
   if (!available())
     throw CIOUringIssue("cannot allocate buffer if IOUringInstance is not setup correctly");
 
-  vbuf = std::make_shared<vectored_buffer>(this->block_size,
-                                           this->queue_depth);
+  vbuf = std::make_shared<vectored_buffer>(block_size,
+                                           queue_depth);
 
 }
 
@@ -280,13 +352,16 @@ bool IOUringInstance::available() {
 
 int IOUringInstance::wait(struct io_uring_cqe **cqe) {
 
-  return io_uring_wait_cqe(this->ring, cqe);
+  return io_uring_wait_cqe(&ring, cqe);
 
 }
 
 void IOUringInstance::exit() {
 
-  io_uring_queue_exit(this->ring);
+  if (!available())
+    throw CArchiveIssue("attempt to tear down uninitialized io_uring");
+
+  io_uring_queue_exit(&ring);
   initialized = false;
   file = nullptr;
 

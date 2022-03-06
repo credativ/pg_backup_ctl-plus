@@ -93,23 +93,13 @@ namespace pgbckctl {
       /** Exit forced */
       bool exit_forced = false;
 
-      /** input file to read */
-      std::shared_ptr<ArchiveFile> inFile;
-
-      /** output file to write contents of input file to */
-      std::shared_ptr<ArchiveFile> outFile;
-
       /** I/O thread */
       std::shared_ptr<std::thread> io_thread = nullptr;
 
-      /** io_uring instance belonging to this copy item, read queue */
-      std::shared_ptr<IOUringInstance> read_ring = nullptr;
-
-      /** io_uring instance belonging to this copy item, write queue */
-      std::shared_ptr<IOUringInstance> write_ring = nullptr;
-
       /** I/O Thread legwork method */
-      void work();
+      void work(IOUringCopyManager::_copyOperations &ops_handler,
+                std::shared_ptr<ArchiveFile> in,
+                std::shared_ptr<ArchiveFile> out) const;
 
     public:
 
@@ -118,14 +108,7 @@ namespace pgbckctl {
        * input/output file handles. the caller needs to setup the uring queues
        * manually via IOUringInstance::setup() ...
        */
-      _copyItem(int slot);
-
-      /**
-       * Initializes a fully usable copy item instance.
-       */
-      _copyItem(std::shared_ptr<ArchiveFile> in,
-                std::shared_ptr<ArchiveFile> out,
-                int slot);
+      explicit _copyItem(int slot);
 
       /** Destructor, stops copy operation and frees all resources */
       virtual ~_copyItem();
@@ -138,7 +121,9 @@ namespace pgbckctl {
       /**
        * Does the legwork of copying the queued file
        */
-      void go(IOUringCopyManager::_copyOperations &ops_handler);
+      void go(IOUringCopyManager::_copyOperations &ops_handler,
+              std::shared_ptr<ArchiveFile> in,
+              std::shared_ptr<ArchiveFile> out);
 
     };
 
@@ -158,10 +143,10 @@ namespace pgbckctl {
        * the processing loop (see @link IOUringCopyManager::start()) we just atomically check
        * which slots are available, protected by the active_ops_mutex.
        */
-      std::stack<int> ops_free;
+      std::stack<unsigned int> ops_free;
 
       /**
-       * The condition_variable notify is responsible to notify operations
+       * The condition_variable notify_cv is responsible to notify operations
        * that something is to do and otherwise having to wait.
        */
       std::condition_variable notify_cv;
@@ -191,7 +176,20 @@ namespace pgbckctl {
      * can be started up to the maximum number of max_copy_instances which effectively
      * sums up to #total_threads = (max_copy_instances * 2).
      */
-     virtual void performCopy();
+    virtual void performCopy();
+
+    /**
+     * Creates a new _copyItem for the specified directory entry.
+     * slot is the slot ID within the operations manager.
+     *
+     * @param dentry: directory entry to work on (regular file)
+     * @param slot: the ID of the slot within the operations manager.
+     *
+     * NOTE: it is dangerous to call this method outside a critical section. The
+     *       caller has to make sure a critical section was established before entering.
+     */
+    virtual void makeCopyItem(const directory_entry &dentry,
+                              const unsigned int slot);
 
   public:
 
@@ -240,6 +238,9 @@ namespace pgbckctl {
 
 #endif
 
+  /**
+   * Copy Manager instance. Encapsulates all the logic to copy files/directories locally.
+   */
   class BackupCopyManager : public CopyManager {
   public:
     BackupCopyManager(std::shared_ptr<BackupDirectory> in,

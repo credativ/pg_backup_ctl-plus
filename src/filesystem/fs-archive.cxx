@@ -1237,7 +1237,30 @@ path BackupDirectory::system_temp_directory() {
 
 }
 
-path BackupDirectory::relative_path(const path &dirFrom, const path &dirTo) {
+path BackupDirectory::relative_path(const path &aDir, const path &bDir) {
+
+  path result("");
+  auto bit = bDir.begin();
+
+  for (auto ait = aDir.begin(); ait != aDir.end(); ++ait) {
+
+    if (bit == bDir.end()) {
+
+      result /= *ait;
+      continue;
+
+    }
+
+    cout << "compairing " << ait->string() << " == " << bit->string() << endl;
+    if (ait->string() != bit->string()) {
+      result /= *ait;
+    }
+
+    ++bit;
+
+  }
+
+  return result;
 
 }
 

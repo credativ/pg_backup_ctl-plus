@@ -453,12 +453,20 @@ namespace pgbckctl {
     static path temp_filename();
 
     /**
-     * Returns the relative path of dirTo compared to dirFrom. This helper
-     * function is implemented in addition to boost's relative_path() method which
+     * Returns the path component from aDir relative to bDir. Effectively, the result
+     * of this method is like this:
+     *
+     * Suppose aDir is "/a/b/c/d" and bDir is "/a/b", the relative_path() will return
+     * "c/d" which is the relative part of aDir to bDir.
+     *
+     * relative_path() always checks only the path components of aDir to bDir. If there aren't
+     * any common components in the path, the whole path of aDir will be effectively returned.
+     *
+     * This helper function is implemented in addition to boost's relative_path() method which
      * isn't present in version below 1.60. To still support older boost version
      * we implement our own method here.
      */
-    static path relative_path(const path &dirFrom, const path &dirTo);
+    static path relative_path(const path &aDir, const path &bDir);
 
     /**
      * Fsync the backup directory contents.
