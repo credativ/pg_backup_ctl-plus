@@ -140,9 +140,9 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<
   return BASEBACKUP_OK;
 }
 
-size_t StreamingBaseBackupDirectory::size() {
+ssize_t StreamingBaseBackupDirectory::size() {
 
-  size_t result = 0;
+  ssize_t result = 0;
 
   for(recursive_directory_iterator it(this->streaming_subdir);
       it != recursive_directory_iterator(); ++it) {
@@ -449,8 +449,8 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
     std::string direntname = entry.path().filename().string();
 
-    unsigned int current_tli = 0;
-    unsigned int current_segno = 0;
+    long unsigned int current_tli = 0;
+    long unsigned int current_segno = 0;
     WALSegmentFileStatus current_status = WAL_SEGMENT_UNKNOWN;
 
     current_status = determineXlogSegmentStatus(entry.path());
@@ -1251,7 +1251,6 @@ path BackupDirectory::relative_path(const path &aDir, const path &bDir) {
 
     }
 
-    cout << "compairing " << ait->string() << " == " << bit->string() << endl;
     if (ait->string() != bit->string()) {
       result /= *ait;
     }
@@ -1973,7 +1972,7 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
 size_t ArchivePipedProcess::read(char *buf, size_t len) {
 
-  size_t result = 0;
+  ssize_t result = 0;
 
   if (this->path_is_directory) {
     throw CArchiveIssue("write into a piped archive handle with a directory is not supported");
@@ -2637,7 +2636,7 @@ size_t CompressedArchiveFile::write(const char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
   }
 
-  int wbytes = gzwrite(this->zh, buf, len);
+  ssize_t wbytes = gzwrite(this->zh, buf, len);
 
   /*
    * NOTE: return value 0 means for
@@ -2687,7 +2686,7 @@ size_t CompressedArchiveFile::read(char *buf, size_t len) {
    * In opposite to gzwrite, an error from gzread is indicated
    * with a return code -1.
    */
-  int rbytes = gzread(this->zh, buf, len);
+  ssize_t rbytes = gzread(this->zh, buf, len);
 
   if (rbytes < 0) {
 
@@ -2807,11 +2806,11 @@ void BackupHistoryFile::rename(path& newname) {
   throw CArchiveIssue("renaming backup history files not supported");
 }
 
-size_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
+ssize_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
   throw CArchiveIssue("not yet implemented");
 }
 
-size_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
+ssize_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
   throw CArchiveIssue("not yet implemented");
 }
 

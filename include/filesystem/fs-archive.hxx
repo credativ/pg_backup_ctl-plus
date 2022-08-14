@@ -749,7 +749,7 @@ namespace pgbckctl {
      * If the streaming basebackup does not exist, size() will
      * throw.
      */
-    virtual size_t size();
+    virtual ssize_t size();
 
     /**
      * Fsync directories.
@@ -812,8 +812,8 @@ namespace pgbckctl {
     BackupHistoryFile(path handle, bool readFile);
     virtual ~BackupHistoryFile();
 
-    virtual size_t write_mem(MemoryBuffer &mybuffer);
-    virtual size_t read_mem(MemoryBuffer &mybuffer);
+    virtual ssize_t write_mem(MemoryBuffer &mybuffer);
+    virtual ssize_t read_mem(MemoryBuffer &mybuffer);
 
     virtual void read();
     virtual string getBackupStartTime();

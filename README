@@ -7,7 +7,10 @@ Compiling:
 
 Checkout the repository:
 
-$ git clone git@gitlab.credativ.com:bhe/pg_backup_ctl-plus.git
+github:
+
+$ git@github.com:psoo/pg_backup_ctl-plus.git
+
 $ cd pg_backup_ctl-plus
 $ mkdir build
 
@@ -36,18 +39,6 @@ If everything is present, type
     $ cd build
     $ cmake ..
     $ make
-
-Notes on OSX:
-=============
-
-Tested with MacPorts and AppleClang C++ compiler. Other compilers
-(especially the ones from MacPorts) aren't supported!.
-
-Linux: clang/g++ seem to work
-
-If you want some debugging output information, use:
-
-    $ CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" cmake ..
 
 Preparation steps:
 ==================

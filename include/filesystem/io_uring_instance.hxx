@@ -38,12 +38,14 @@ namespace pgbckctl {
 
   class vectored_buffer {
   private:
-    unsigned int buffer_size = 0;
-    unsigned int num_buffers = 0;
+    ssize_t buffer_size = 0;
+    ssize_t num_buffers = 0;
+    ssize_t mysize  = 0;
 
     struct _buffer_pos {
       off_t offset = 0;
       unsigned int index = 0;
+      unsigned int effective_buffers = 0;
     } buffer_pos;
 
     /**
@@ -73,15 +75,14 @@ namespace pgbckctl {
     off_t bufferOffset();
 
     /**
-     * Calculates the new absolute offset, but does not
-     * assign it.
+     * Calculates the new absolute offset.
      */
-    off_t calculateOffset(off_t offset);
+    void calculateOffset(off_t offset);
 
   public:
     std::vector<std::shared_ptr<MemoryBuffer>> buffers;
 
-    explicit vectored_buffer(unsigned int bufsize, unsigned int count);
+    explicit vectored_buffer(size_t total_size, unsigned int bufsize);
     virtual ~vectored_buffer();
 
     /**
@@ -96,24 +97,11 @@ namespace pgbckctl {
      */
     struct iovec* iovecs;
 
-    /**
-     * Gets the current effective number of bytes usable in the
-     * buffer array.
-     */
-    virtual ssize_t getEffectiveSize();
-
-    /**
-     * Sets the effective number of bytes usable in the buffer array. This will
-     * throw in case a negative size is specified or the argument exceeds the
-     * maximum number of bytes the buffer array can hold.
-     */
-    virtual void setEffectiveSize(const ssize_t size, bool with_iovec = false);
-
     /*
      * Returns the overall size of allocated buffers
      * in an vectorized buffer instance.
      */
-    ssize_t getSize();
+    ssize_t getSize(bool recalculate = false);
 
     /**
      * Clear buffer contents.
@@ -133,6 +121,17 @@ namespace pgbckctl {
     unsigned int getNumberOfBuffers();
 
     /**
+     * During write operations, getEffectiveNumberOfBuffers() can be
+     * used during short read/writes to determine the current number of
+     * buffers left for read/write operations. E.g. after a short read/write operation
+     * setOffset() can be called to set the number of bytes effectively worked on, which also
+     * calculates the correct offset within the buffer array.
+     *
+     * @return number of buffers effectively left for further read/write operations.
+     */
+    unsigned int getEffectiveNumberOfBuffers();
+
+    /**
      * Returns the current offset.
      *
      * This is the absolute offset into the
@@ -143,11 +142,21 @@ namespace pgbckctl {
     off_t getOffset();
 
     /**
+     * Returns a pointer into the current iovec array based on positional
+     * information set during read/write operations.
+     *
+     * setOffset() adjusts this to the current offset read or written,
+     * so this is suitable to be passed directly to [p]readv()/[p]writev(), e.g.
+     * after short read/write.
+     */
+    struct iovec *iovec_ptr() ;
+
+    /**
      * Advance the position into the vectorized buffer with
      * the given value. If the specified value is out of bounds,
      * this will throw.
      */
-    void setOffset(off_t offset);
+    void setOffset(ssize_t offset);
 
     /**
      * Returns a pointer to the current
@@ -159,6 +168,22 @@ namespace pgbckctl {
      * Returns the current Buffer handle in the vector.
      */
     std::shared_ptr<MemoryBuffer> buffer();
+
+    /**
+     * Set the effective number of usable bytes within the I/O buffers. If _adjust_buflen_ is
+     * set to _true_, _setEffectiveSize() will also recalculate the iovec's length. This is
+     * useful if someone wants to reuse the buffer contents for read/write.
+     *
+     * The caller *must* call clear() after having used the buffer instance.
+     */
+     void setEffectiveSize(const ssize_t usable, bool adjust_buflen = false);
+
+     /**
+      * Returns the effective usable number of bytes in the current buffers. This
+      * number reflect the bytes written/read by the caller and is *not* the total amount
+      * of allocated bytes.
+      */
+     ssize_t getEffectiveSize(bool recalculate = false);
 
   };
 
@@ -174,11 +199,6 @@ namespace pgbckctl {
      * by exit(). See available() for a public accessor.
      */
     bool initialized = false;
-
-    /**
-     * Backup file to read from or write to.
-     */
-    std::shared_ptr<BackupFile> file;
 
     /**
      * Internal queue depth, see setQueueDepth()
@@ -248,7 +268,7 @@ namespace pgbckctl {
      * Returns an allocated, aligned vectorized_buffer suitable
      * for use for an io_uring instance.
      */
-    virtual void alloc_buffer(std::shared_ptr<vectored_buffer> &vbuf);
+    virtual void alloc_buffer(std::shared_ptr<vectored_buffer> &vbuf, size_t size);
 
     /**
      * Returns true if the ring is available. This is
@@ -259,10 +279,9 @@ namespace pgbckctl {
     virtual bool available();
 
     /**
-     * Setup an io_uring instance which uses the specified file
-     * for read/write I/O. Throws on error.
+     * Setup an io_uring instance.
      */
-    virtual void setup(std::shared_ptr<BackupFile> file);
+    virtual void setup();
 
     /**
      * Vectored read requests.
@@ -279,7 +298,7 @@ namespace pgbckctl {
      * Handles an I/O operation by waiting for completion and
      * sets internal buffer properties.
      */
-    virtual ssize_t handle_current_io(std::shared_ptr<vectored_buffer> buffer);
+    virtual ssize_t handle_current_io(std::shared_ptr<vectored_buffer> rbuf, bool set_position = false);
 
     /**
      * Vectored write requests.

@@ -4,12 +4,19 @@
 #include <pg_backup_ctl.hxx>
 #include "fs-archive.hxx"
 
+/* warning seems very aggressive here, but we want to know
+ * during compilation which module is active here */
 #ifdef PG_BACKUP_CTL_HAS_LIBURING
-#include <io_uring_instance.hxx>
+#warning using experimental io_uring library support
+#endif
+
 #include <stack>
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+
+#ifdef PG_BACKUP_CTL_HAS_LIBURING
+#include <io_uring_instance.hxx>
 #endif
 
 namespace pgbckctl {
@@ -27,79 +34,33 @@ namespace pgbckctl {
 
   class BaseCopyManager {
   protected:
-    std::shared_ptr<BackupDirectory> source = nullptr;
-    std::shared_ptr<TargetDirectory> target = nullptr;
-
-    /** A SIGTERM signal handler */
-    JobSignalHandler *stopHandler = nullptr;
-
-    /** A SIGINT signal handler */
-    JobSignalHandler *intHandler  = nullptr;
-  public:
-
-    BaseCopyManager(std::shared_ptr<BackupDirectory> in,
-                    std::shared_ptr<TargetDirectory> out);
-    virtual ~BaseCopyManager();
-
-    /**
-     * Abstract start() method to start a copy operation.
-     */
-    virtual void start() = 0;
-
-    /**
-     * Abstract stop() method to stop a copy operation.
-     */
-    virtual void stop() = 0;
-
-    /**
-     * Assign source directory.
-     */
-    virtual void setSourceDirectory(std::shared_ptr<BackupDirectory> in);
-
-    /**
-     * Assign target directory.
-     */
-    virtual void setTargetDirectory(std::shared_ptr<TargetDirectory> out);
-
-    /** Factory method */
-    static std::shared_ptr<BackupCopyManager> get(std::shared_ptr<StreamingBaseBackupDirectory> in,
-                                                  std::shared_ptr<TargetDirectory> out);
-
-    /**
-     * Assign a stop signal handler to signal aborting a copy operation.
-     */
-     void assignSigStopHandler(JobSignalHandler *handler);
-
-     /**
-      * Assign an interruption signal handler.
-      */
-      void assignSigIntHandler(JobSignalHandler *handler);
-  };
-
-#ifdef PG_BACKUP_CTL_HAS_LIBURING
-
-  class IOUringCopyManager : public BaseCopyManager {
-  private:
 
     /* Forwarded declaration */
     class _copyOperations;
 
+    /**
+     * Maximum copy instances to use.
+     */
+    unsigned short max_copy_instances = 1;
+
     class _copyItem {
     private:
-
-      /** internal slot reference for copy operations list */
-      int slot = -1;
 
       /** Exit forced */
       bool exit_forced = false;
 
+    protected:
+
       /** I/O thread */
       std::shared_ptr<std::thread> io_thread = nullptr;
 
+      /** internal slot reference for copy operations list */
+      int slot = -1;
+
       /** I/O Thread legwork method */
-      void work(IOUringCopyManager::_copyOperations &ops_handler,
-                std::shared_ptr<ArchiveFile> in,
-                std::shared_ptr<ArchiveFile> out) const;
+      virtual void work(BaseCopyManager::_copyOperations &ops_handler,
+                        path inputFileName,
+                        path outFileName) const = 0;
 
     public:
 
@@ -116,14 +77,14 @@ namespace pgbckctl {
       /**
        * Request abort of copy operation.
        */
-      void exitForced();
+      virtual void exitForced();
 
       /**
        * Does the legwork of copying the queued file
        */
-      void go(IOUringCopyManager::_copyOperations &ops_handler,
-              std::shared_ptr<ArchiveFile> in,
-              std::shared_ptr<ArchiveFile> out);
+      virtual void go(BaseCopyManager::_copyOperations &ops_handler,
+                      path inputFileName,
+                      path outputFileName) = 0;
 
     };
 
@@ -155,28 +116,87 @@ namespace pgbckctl {
       /** Protects concurrent access to operations */
       std::mutex active_ops_mutex;
 
+      /*
+       * Flag set if no more files left to process. We set this to true as soon as there
+       * are no files left to process. This allows the BackupCopyManager to call wait()
+       * to finalize any remaining copy operations safely, since no concurrent creation of new
+       * copy items happen anymore. See the start() implementations of the various copy
+       * managers.
+       */
+      bool finalize = false;
+
       /** Abort operations requested */
       bool exit = false;
     };
 
     _copyOperations ops;
 
-    /**
-     * Maximum copy instances to use.
-     */
-    unsigned short max_copy_instances = 1;
+    std::shared_ptr<BackupDirectory> source = nullptr;
+    std::shared_ptr<TargetDirectory> target = nullptr;
+
+    /** A SIGTERM signal handler */
+    JobSignalHandler *stopHandler = nullptr;
+
+    /** A SIGINT signal handler */
+    JobSignalHandler *intHandler  = nullptr;
+
+  public:
+
+    BaseCopyManager(std::shared_ptr<BackupDirectory> in,
+                    std::shared_ptr<TargetDirectory> out);
+    virtual ~BaseCopyManager();
 
     /**
-     * Perform copy operation. This is the internal entry point to start
-     * copying a directory structure into the instance target directory.
-     *
-     * copy() essentially prepares the io_uring infrastructure and starts two
-     * threads, one for reading the source file and write to the uring, the other
-     * to consume the data and write it out to the target. These pair of copy threads
-     * can be started up to the maximum number of max_copy_instances which effectively
-     * sums up to #total_threads = (max_copy_instances * 2).
+     * Abstract start() method to start a copy operation.
      */
-    virtual void performCopy();
+    virtual void start() = 0;
+
+    /**
+     * Abstract stop() method to stop a copy operation.
+     */
+    virtual void stop() = 0;
+
+    /**
+     * Waits for copy operation to finish.
+     */
+    virtual void wait() = 0;
+
+    /**
+     * Assign source directory.
+     */
+    void setSourceDirectory(std::shared_ptr<BackupDirectory> in);
+
+    /**
+     * Assign target directory.
+     */
+    void setTargetDirectory(std::shared_ptr<TargetDirectory> out);
+
+    /** Factory method */
+    static std::shared_ptr<BackupCopyManager> get(std::shared_ptr<StreamingBaseBackupDirectory> in,
+                                                  std::shared_ptr<TargetDirectory> out);
+
+    /**
+     * Assign a stop signal handler to signal aborting a copy operation.
+     */
+     void assignSigStopHandler(JobSignalHandler *handler);
+
+     /**
+      * Assign an interruption signal handler.
+      */
+      void assignSigIntHandler(JobSignalHandler *handler);
+
+      /** Returns the number of configured parallel copy threads */
+      virtual unsigned short getNumberOfCopyInstances();
+
+      /** Sets the number of parallel workers */
+      virtual void setNumberOfCopyInstances(unsigned short instances);
+
+  };
+
+#ifdef PG_BACKUP_CTL_HAS_LIBURING
+
+  class IOUringCopyManager : public BaseCopyManager {
+  private:
 
     /**
      * Creates a new _copyItem for the specified directory entry.
@@ -191,6 +211,33 @@ namespace pgbckctl {
     virtual void makeCopyItem(const directory_entry &dentry,
                               const unsigned int slot);
 
+  protected:
+
+    /**
+     * io_uring specific implementation of internal copy management
+     */
+    class _iouring_copyItem final : public BaseCopyManager::_copyItem {
+    protected:
+
+      /** I/O Thread legwork method */
+      virtual void work(BaseCopyManager::_copyOperations &ops_handler,
+                        path inputFileName,
+                        path outFileName) const;
+
+    public:
+
+      _iouring_copyItem(unsigned int slot) noexcept;
+      ~_iouring_copyItem() final;
+
+      /**
+       * Does the legwork of copying the queued file
+       */
+      virtual void go(BaseCopyManager::_copyOperations &ops_handler,
+                      path inputFileName,
+                      path outputFileName);
+
+    };
+
   public:
 
     IOUringCopyManager(std::shared_ptr<BackupDirectory> in,
@@ -204,9 +251,7 @@ namespace pgbckctl {
 
     virtual void start();
     virtual void stop();
-
-    virtual void setNumberOfCopyInstances(unsigned short instances);
-    virtual unsigned short getNumberOfCopyInstances();
+    virtual void wait();
 
   };
 
@@ -221,13 +266,52 @@ namespace pgbckctl {
 #else
 
   class LegacyCopyManager : public BaseCopyManager {
+  private:
+
+    /**
+     * Creates a new _copyItem for the specified directory entry.
+     * slot is the slot ID within the operations manager.
+     *
+     * @param dentry: directory entry to work on (regular file)
+     * @param slot: the ID of the slot within the operations manager.
+     *
+     * NOTE: it is dangerous to call this method outside a critical section. The
+     *       caller has to make sure a critical section was established before entering.
+     */
+    virtual void makeCopyItem(const directory_entry &de,
+                              const unsigned int slot);
+
+  protected:
+
+    class _legacy_copyItem final : public BaseCopyManager::_copyItem {
+    protected:
+
+      /** I/O Thread legwork method */
+      virtual void work(BaseCopyManager::_copyOperations &ops_handler,
+                        path inputFileName,
+                        path outFileName) const;
+
+    public:
+
+      _legacy_copyItem(unsigned int slot) noexcept;
+      ~_legacy_copyItem();
+
+      /**
+       * Does the legwork of copying the queued file
+       */
+      virtual void go(BaseCopyManager::_copyOperations &ops_handler,
+                      path inputFileName,
+                      path outputFileName);
+
+    };
+
   public:
     LegacyCopyManager(std::shared_ptr<BackupDirectory> in,
                       std::shared_ptr<TargetDirectory> out);
-    void start() {}
-    void stop() {}
+    virtual void start();
+    virtual void stop();
+    virtual void wait();
   };
-
 
   class CopyManager : public LegacyCopyManager {
   public:

@@ -4,65 +4,136 @@
 
 using namespace pgbckctl;
 
-vectored_buffer::vectored_buffer(unsigned int bufsize,
-                                 unsigned int count) {
+vectored_buffer::vectored_buffer(size_t total_size,
+                                 unsigned int bufsize) {
 
   unsigned int i;
+  unsigned int extra_bytes = 0;
+
+  if (total_size == 0)
+    throw CIOUringIssue("vectored buffer size must not be 0");
 
   if (bufsize == 0)
-    throw CIOUringIssue("vectored buffer must not be 0");
+    throw CIOUringIssue("vectored block size must not be 0");
 
-  if (count == 0)
-    throw CIOUringIssue("number of buffers in vectored buffers must not be 0");
-
-  BOOST_LOG_TRIVIAL(debug) << "allocated buffer bufsize = " << bufsize << " num blocks = " << count;
-
-  num_buffers = count;
+  num_buffers = (total_size / bufsize);
   buffer_size = bufsize;
-  effective_size = 0;
+  effective_size = total_size;
+  mysize         = total_size;
+
+  /* We need an additional buffer in case some remaining bytes are left */
+  if (total_size % bufsize) {
+    num_buffers++;
+    extra_bytes = total_size % bufsize;
+  }
 
   iovecs = new struct iovec[this->num_buffers];
 
   for (i = 0; i < this->num_buffers; i++) {
-    buffers.push_back(std::make_shared<MemoryBuffer>(buffer_size));
 
     /* Prepare IO vectors suitable for preadv()/pwritev() */
-    iovecs[i].iov_base = buffers[i]->ptr();
-    iovecs[i].iov_len = buffer_size;
+
+    if (i < (num_buffers)) {
+      buffers.push_back(std::make_shared<MemoryBuffer>(buffer_size));
+      iovecs[i].iov_base = buffers[i]->ptr();
+      iovecs[i].iov_len = buffer_size;
+    } else {
+      buffers.push_back(std::make_shared<MemoryBuffer>(extra_bytes));
+      iovecs[i].iov_base = buffers[i]->ptr();
+      iovecs[i].iov_len = extra_bytes;
+    }
+
   }
+
+}
+
+void vectored_buffer::setEffectiveSize(const ssize_t usable, bool adjust_buflen) {
+
+  ssize_t extra_bytes = 0;
+  int i;
+
+  if (usable > this->mysize) {
+    std::ostringstream oss;
+
+    oss << "number of effective bytes("
+        << usable << ") "
+        << "in a vectored buffer cannot be larger than inital size("
+        << mysize << ")";
+    throw CIOUringIssue(oss.str());
+  }
+
+  if (num_buffers == 0) {
+    throw CIOUringIssue("invalid number of buffers (0) to set effective size");
+  }
+
+  num_buffers = (usable / buffer_size);
+  effective_size = usable;
+
+  /* We need an additional buffer in case some remaining bytes are left */
+  if (usable % buffer_size) {
+    num_buffers++;
+    extra_bytes = usable % buffer_size;
+  }
+
+  if (adjust_buflen) {
+
+    for (i = 0; i < this->num_buffers; i++) {
+
+      /* Prepare IO vectors suitable for preadv()/pwritev() */
+
+      if (i < (num_buffers - 1)) {
+        iovecs[i].iov_len = buffer_size;
+      } else {
+        iovecs[i].iov_len = extra_bytes;
+      }
+    }
+
+  }
+
+}
+
+ssize_t vectored_buffer::getEffectiveSize(bool recalculate) {
+
+  ssize_t result = 0;
+
+  if (!recalculate) {
+
+    if (effective_size == mysize)
+      result = mysize;
+    else
+      result = effective_size;
+
+  } else {
+
+    for (int i = 0; i < num_buffers; i++) {
+      result += iovecs->iov_len;
+    }
+
+  }
+
+  return result;
 
 }
 
 void vectored_buffer::clear() {
 
+  unsigned int cur = 0;
+  buffer_pos.index = 0;
+  buffer_pos.offset = 0;
+
+  num_buffers = buffers.size();
+
   for(auto buf : buffers) {
+
     buf->clear();
+
+    /* readjust pointers to buffer vector */
+    iovecs[cur].iov_base = buf->ptr();
+    iovecs[cur].iov_len = getBufferSize();
+    cur++;
+
   }
 
-}
-
-void vectored_buffer::setEffectiveSize(const ssize_t size, bool with_iovec) {
-
-  if ( (size < 0) || (size > getSize()) ) {
-    ostringstream oss;
-    oss << "cannot set effective number of bytes("
-        << size <<") "
-        << "larger than maximum size("
-        << getSize() << ")";
-    throw CIOUringIssue(oss.str());
-  }
-
-  effective_size = size;
-
-  /* If we are called to reset iovec, don't forget that */
-  if (with_iovec) {
-    iovecs->iov_len = size;
-  }
-
-}
-
-ssize_t vectored_buffer::getEffectiveSize() {
-  return effective_size;
 }
 
 unsigned int vectored_buffer::getNumberOfBuffers() {
@@ -73,33 +144,73 @@ unsigned int vectored_buffer::getBufferSize() {
   return this->buffer_size;
 }
 
-ssize_t vectored_buffer::getSize() {
-  return (num_buffers * buffer_size);
+ssize_t vectored_buffer::getSize(bool recalculate) {
+
+  if (recalculate) {
+    ssize_t size = 0;
+
+    for (auto i: buffers) {
+      size += i->getSize();
+    }
+
+    return size;
+
+  } else {
+    return this->mysize;
+  }
+
 
 }
 
 off_t vectored_buffer::bufferOffset() {
 
-  return ( (buffer_pos.index * buffer_size) + buffer_pos.offset );
+    return ( (buffer_pos.index * buffer_size) + buffer_pos.offset );
 
 }
 
-off_t vectored_buffer::calculateOffset(off_t offset) {
+unsigned int vectored_buffer::getEffectiveNumberOfBuffers() {
+  return (this->getNumberOfBuffers() - buffer_pos.index);
+}
 
-  return ( (buffer_pos.index * buffer_size) + buffer_pos.offset ) + offset;
+struct iovec *vectored_buffer::iovec_ptr() {
+  return this->iovecs + buffer_pos.index;
+}
+
+void vectored_buffer::calculateOffset(ssize_t offset) {
+
+  ssize_t buff_offset = offset;
+
+  do {
+
+    buff_offset -= this->iovec_ptr()->iov_len;
+
+  } while ( (buffer_pos.index < this->getNumberOfBuffers())
+            && (buff_offset >= (ssize_t) iovec_ptr()->iov_len) );
+
+  /*
+   * Current buffer needs to be adjusted to the correct offset reflected by effective
+   * bytes written.
+   */
+  this->iovecs[buffer_pos.index].iov_base = (char *)this->iovecs[buffer_pos.index].iov_base + buff_offset;
+  this->iovecs[buffer_pos.index].iov_len -= buff_offset;
 
 }
 
-void vectored_buffer::setOffset(off_t offset) {
+void vectored_buffer::setOffset(ssize_t offset) {
 
-  if ( (offset + bufferOffset()) < calculateOffset(offset) )
-    throw CIOUringIssue("invalid position in vectored buffer: new offset is lower than current offset");
+  if (offset > getSize() ) {
+    std::ostringstream oss;
+    oss << "new vectored buffer position exceeds total size (new pos="
+        << offset << " > size=" << getSize() << ")";
+    throw CIOUringIssue(oss.str());
+  }
 
-  if ( calculateOffset(offset) > getSize() )
-    throw CIOUringIssue("new vectored buffer position exceeds total size");
+  /* num_buffers couldn't be zero here , but we are paranoid and recheck */
+  if (num_buffers == 0) {
+    throw CIOUringIssue("number of buffers in vectored buffer are invalid (=0)");
+  }
 
-  buffer_pos.index = (unsigned int)(offset / (num_buffers * buffer_size));
-  buffer_pos.offset += offset;
+  calculateOffset(offset);
 
 }
 
@@ -157,16 +268,12 @@ IOUringInstance::~IOUringInstance() {
 
 }
 
-void IOUringInstance::setup(std::shared_ptr<BackupFile> file) {
+void IOUringInstance::setup() {
 
   int result;
 
   if (available()) {
     throw CIOUringIssue("io_uring already setup, call exit() before");
-  }
-
-  if (! file->isOpen() ) {
-    throw CIOUringIssue("could not establish io_uring instance: file not opened");
   }
 
   result = io_uring_queue_init(this->queue_depth, &this->ring, 0);
@@ -175,7 +282,6 @@ void IOUringInstance::setup(std::shared_ptr<BackupFile> file) {
     throw CIOUringIssue(strerror(-result), result);
   }
 
-  this->file = file;
   this->initialized = ( result >= 0 );
 
 }
@@ -210,8 +316,7 @@ void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
   /*
    * Must match queue depth and blocksize
    */
-  if ( (this->queue_depth != buf->getNumberOfBuffers())
-       || (this->block_size != buf->getBufferSize()) ) {
+  if (this->block_size != buf->getBufferSize()) {
 
     throw CIOUringIssue("queue depth and buffer sizes must match io_uring initialization");
 
@@ -227,21 +332,24 @@ void IOUringInstance::read(std::shared_ptr<ArchiveFile> file,
   /* submit read request */
   io_uring_prep_readv(sqe,
                       file->getFileno(),
-                      buf->iovecs,
-                      buf->getNumberOfBuffers(),
+                      buf->iovec_ptr(),
+                      buf->getEffectiveNumberOfBuffers(),
                       pos);
 
   io_uring_submit(&ring);
 
 }
 
-ssize_t IOUringInstance::handle_current_io(std::shared_ptr<vectored_buffer> buffer) {
+ssize_t IOUringInstance::handle_current_io(std::shared_ptr<vectored_buffer> rbuf, bool set_position) {
 
   io_uring_cqe *cqe = NULL;
-  ssize_t result = (size_t) 0;
+  ssize_t result = (ssize_t) 0;
 
   if (!available())
     throw CIOUringIssue("could not handle I/O request, uring not available");
+
+  if (rbuf == nullptr)
+    throw CIOUringIssue("could not complete I/O request with undefined buffer");
 
   /* wait for any completions */
   wait(&cqe);
@@ -249,18 +357,22 @@ ssize_t IOUringInstance::handle_current_io(std::shared_ptr<vectored_buffer> buff
   /* check return codes */
   if (cqe->res >= 0) {
 
-    result = cqe->res;
-    buffer->setEffectiveSize(cqe->res, true);
-    BOOST_LOG_TRIVIAL(debug) << "handle_current_io(): effective size  " << cqe->res;
+    result = (ssize_t) cqe->res;
+
+    /* Reflect size of request in I/O buffers in case there were some bytes left to be read/written */
+    if (cqe->res > 0 && set_position)
+      rbuf->setOffset((off_t) cqe->res);
+
     seen(&cqe);
 
   } else {
 
-    seen(&cqe);
-
     /* handle error condition */
     ostringstream oss;
-    oss << "could not handle I/O request: " << strerror(cqe->res);
+    oss << "could not handle I/O request: " << strerror(-cqe->res);
+
+    /* mark completed queue event as seen before throwing */
+    seen(&cqe);
     throw CIOUringIssue(oss.str());
 
   }
@@ -285,10 +397,8 @@ void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
   /*
    * Must match queue depth and block size.
    */
-  if ( (this->queue_depth != buf->getNumberOfBuffers())
-       || (this->block_size != buf->getBufferSize()) ) {
-
-    throw CIOUringIssue("queue depth and buffer sizes must match io_uring initialization");
+  if (this->block_size != buf->getBufferSize()) {
+    throw CIOUringIssue("buffer sizes must match io_uring initialization");
 
   }
 
@@ -301,8 +411,8 @@ void IOUringInstance::write(std::shared_ptr<ArchiveFile> file,
   /* submit write request */
   io_uring_prep_writev(sqe,
                        file->getFileno(),
-                       buf->iovecs,
-                       buf->getNumberOfBuffers(),
+                       buf->iovec_ptr(),
+                       buf->getEffectiveNumberOfBuffers(),
                        pos);
 
   io_uring_submit(&ring);
@@ -327,13 +437,12 @@ size_t IOUringInstance::getBlockSize() {
 
 }
 
-void IOUringInstance::alloc_buffer(std::shared_ptr<vectored_buffer> &vbuf) {
+void IOUringInstance::alloc_buffer(std::shared_ptr<vectored_buffer> &vbuf, size_t total_size) {
 
   if (!available())
     throw CIOUringIssue("cannot allocate buffer if IOUringInstance is not setup correctly");
 
-  vbuf = std::make_shared<vectored_buffer>(block_size,
-                                           queue_depth);
+  vbuf = std::make_shared<vectored_buffer>(total_size, block_size);
 
 }
 
@@ -352,7 +461,13 @@ bool IOUringInstance::available() {
 
 int IOUringInstance::wait(struct io_uring_cqe **cqe) {
 
-  return io_uring_wait_cqe(&ring, cqe);
+  int rc = io_uring_wait_cqe(&ring, cqe);
+
+  if (rc < 0) {
+    throw CIOUringIssue(strerror(rc));
+  }
+
+  return rc;
 
 }
 
@@ -363,7 +478,6 @@ void IOUringInstance::exit() {
 
   io_uring_queue_exit(&ring);
   initialized = false;
-  file = nullptr;
 
 }
 

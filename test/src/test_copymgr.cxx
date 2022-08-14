@@ -1,4 +1,5 @@
 #define BOOST_TEST_MODULE TestCopyManager
+#include <vector>
 #include <boost/test/unit_test.hpp>
 #include <common.hxx>
 #include <fs-copy.hxx>
@@ -86,13 +87,10 @@ BOOST_AUTO_TEST_CASE(TestTempFile)
 
 }
 
-#ifdef PG_BACKUP_CTL_HAS_LIBURING
-
-BOOST_AUTO_TEST_CASE(TestIOUring)
+BOOST_AUTO_TEST_CASE(TestCopyManager)
 {
 
-  std::string test_data = "This is some test data";
-  //std::shared_ptr<IOUringInstance> iouring = std::make_shared<IOUringInstance>();
+  std::string test_data = "B";
   std::shared_ptr<BackupCopyManager> copyMgr = nullptr;
 
   path sourcePath = path(BackupDirectory::system_temp_directory() / "_copyMgrTestSource");
@@ -123,33 +121,44 @@ BOOST_AUTO_TEST_CASE(TestIOUring)
 
   /**
    * Create a temp file
+   *
+   * We use a larger, a small and an empty file.
    */
-  std::shared_ptr<ArchiveFile> infile
+  std::shared_ptr<ArchiveFile> infile_large
+    = std::make_shared<ArchiveFile>(sourceDir->basedir() / BackupDirectory::temp_filename());
+  std::shared_ptr<ArchiveFile> infile_small
+    = std::make_shared<ArchiveFile>(sourceDir->basedir() / BackupDirectory::temp_filename());
+  std::shared_ptr<ArchiveFile> infile_empty
           = std::make_shared<ArchiveFile>(sourceDir->basedir() / BackupDirectory::temp_filename());
-  std::shared_ptr<ArchiveFile> outfile
-          = std::make_shared<ArchiveFile>(BackupDirectory::system_temp_directory()
-                                          / BackupDirectory::temp_filename());
 
-  std::cerr << "infile: \""
-            << infile->getFileName()
-            << "\" outfile: \""
-            << outfile->getFileName()
-            << "\""
-            << std::endl;
+  std::map<std::shared_ptr<ArchiveFile>, size_t> test_files;
 
-  /* Open the file and write, sync */
-  infile->setOpenMode("w+");
-  infile->open();
-  infile->write(test_data.c_str(), test_data.length());
-  infile->fsync();
-  infile->close();
+  test_files.emplace(std::make_pair(infile_large, 210000000));
+  test_files.emplace(std::make_pair(infile_small, 32799));
+  test_files.emplace(std::make_pair(infile_empty, 0));
+
+  for (auto fp : test_files) {
+
+    std::shared_ptr<ArchiveFile> fh = fp.first;
+    size_t fh_size = fp.second;
+
+    /* Open the file and write, sync */
+    fh->setOpenMode("w+");
+    fh->open();
+
+    for (size_t i = 0; i < fh_size; i++) {
+      fh->write(test_data.c_str(), test_data.length());
+    }
+    fh->fsync();
+    fh->close();
+  }
 
   copyMgr = std::make_shared<BackupCopyManager>(sourceDir, targetDir);
+  copyMgr->setNumberOfCopyInstances(4);
   copyMgr->start();
+  copyMgr->wait();
 
   //boost::filesystem::remove_all(sourcePath);
   //boost::filesystem::remove_all(targetPath);
 
 }
-
-#endif
