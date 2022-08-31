@@ -7,13 +7,9 @@ using namespace pgbckctl;
  * **************************************************************************/
 
 TargetDirectory::TargetDirectory(path directory)
-  : RootDirectory(directory){
+  : RootDirectory(directory){}
 
-}
-
-TargetDirectory::~TargetDirectory() {
-
-}
+TargetDirectory::~TargetDirectory() {}
 
 /* **************************************************************************
  * BaseCopyManager
@@ -57,14 +53,7 @@ BaseCopyManager::get(std::shared_ptr<StreamingBaseBackupDirectory> in,
 
 }
 
-BaseCopyManager::~BaseCopyManager() {
-
-  /* target file was just written, make sure to sync them */
-  //out->fsync();
-
-  /* Make sure we close files properly */
-
-}
+BaseCopyManager::~BaseCopyManager() {}
 
 void BaseCopyManager::assignSigStopHandler(JobSignalHandler *handler) {
 
@@ -318,7 +307,8 @@ void IOUringCopyManager::makeCopyItem(const directory_entry &de,
                            << new_target.string()
                            << "\"";
 
-  /* Check whether this is a file or directory. The latter isn't handled by
+  /*
+   * Check whether this is a file or directory. The latter isn't handled by
    * a _copyItem instance, instead, we are creating the target directory
    * directly here.
    */
@@ -456,7 +446,6 @@ void IOUringCopyManager::start() {
 
       if (ops.ops_free.empty()) {
         /* wait until we are notified that thread(s) have finished. */
-        BOOST_LOG_TRIVIAL(debug) << "copy dispatcher main thread waiting for new work";
         ops.notify_cv.wait(lock, [this] { return ops.needs_work; });
       }
 
@@ -464,8 +453,6 @@ void IOUringCopyManager::start() {
        * Loop until no more free slots are available.
        */
       while (!ops.ops_free.empty() && !walker.end()) {
-
-        BOOST_LOG_TRIVIAL(debug) << "copy dispatcher main thread woken up, new copy item";
 
         /* pop free copy item from stack */
         slot_id = ops.ops_free.top();
@@ -489,8 +476,6 @@ void IOUringCopyManager::start() {
 void IOUringCopyManager::wait() {
 
   if (ops.finalize) {
-
-    BOOST_LOG_TRIVIAL(debug) << "finalizing copy threads";
 
     while (ops.ops_free.size() < getNumberOfCopyInstances()) {
       unique_lock<std::mutex> lock(ops.active_ops_mutex);
@@ -694,7 +679,6 @@ void LegacyCopyManager::start() {
 
       if (ops.ops_free.empty()) {
         /* wait until we are notified that thread(s) have finished. */
-        BOOST_LOG_TRIVIAL(debug) << "copy dispatcher main thread waiting for new work";
         ops.notify_cv.wait(lock, [this] { return ops.needs_work; });
       }
 
@@ -702,8 +686,6 @@ void LegacyCopyManager::start() {
        * Loop until no more free slots are available.
        */
       while (!ops.ops_free.empty() && !walker.end()) {
-
-        BOOST_LOG_TRIVIAL(debug) << "copy dispatcher main thread woken up, new copy item";
 
         /* pop free copy item from stack */
         slot_id = ops.ops_free.top();
@@ -728,8 +710,6 @@ void LegacyCopyManager::start() {
 void LegacyCopyManager::wait() {
 
   if (ops.finalize) {
-
-    BOOST_LOG_TRIVIAL(debug) << "finalizing copy threads";
 
     while (ops.ops_free.size() < getNumberOfCopyInstances()) {
       unique_lock<std::mutex> lock(ops.active_ops_mutex);
