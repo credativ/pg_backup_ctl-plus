@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(TestCopyManager)
   copyMgr->start();
   copyMgr->wait();
 
-  //boost::filesystem::remove_all(sourcePath);
-  //boost::filesystem::remove_all(targetPath);
+  boost::filesystem::remove_all(sourcePath);
+  boost::filesystem::remove_all(targetPath);
 
 }
