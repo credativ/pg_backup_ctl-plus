@@ -333,10 +333,12 @@ endif()
 
 if(BUILD_UNIT_TESTS)
 
-  message("unit tests enabled")
+  message("Unit tests enabled")
 
   # Unit Tests
   enable_testing ()
+
+  message("Testing enabled, will place test sqlite database in ${CMAKE_BINARY_DIR}")
 
   ## We need a SQLite database for testing with 'test', so we
   ## create a custom target createdb with a custom command which
@@ -347,11 +349,17 @@ if(BUILD_UNIT_TESTS)
   ## which is the main part for the unit tests against the sqlite database.
 
   add_custom_command(OUTPUT .pg_backup_ctl.sqlite
-    COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ../src/sql/catalog.sql"
+    COMMAND ${SQLITE3} .pg_backup_ctl.sqlite ".read ${PROJECT_SOURCE_DIR}/src/sql/catalog.sql"
     DEPENDS src/sql/catalog.sql)
 
+  add_custom_target(dropdb
+          DEPENDS ${CMAKE_BINARY_DIR}/.pg_backup_ctl.sqlite)
+
+  add_custom_command(TARGET dropdb POST_BUILD
+          COMMAND rm -f ${CMAKE_BINARY_DIR}/.pg_backup_ctl.sqlite)
+
   add_custom_target(createdb
-    DEPENDS .pg_backup_ctl.sqlite)
+          DEPENDS .pg_backup_ctl.sqlite)
 
   add_dependencies(pgbckctl-common createdb)
 
