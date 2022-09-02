@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(TestPGProtCopyBothStateWriteCopyData)
     context.output_buffer->read_buffer((void*)dummy, size - 4);
     dummy[size - 4] = '\0';
     msg2 = std::string(dummy);
-    delete dummy;
+    delete[] dummy;
   }
 
   BOOST_TEST(msg1 == msg2);

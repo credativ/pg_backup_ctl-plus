@@ -108,6 +108,7 @@ add_library (pgbckctl-common SHARED
   src/jobs/daemon.cxx
   src/jobs/server.cxx
   src/filesystem/fs-archive.cxx
+  src/filesystem/io_uring_instance.cxx
   src/catalog/catalog.cxx
   src/catalog/backuplockinfo.cxx
   src/catalog/retention.cxx
@@ -120,7 +121,29 @@ add_library (pgbckctl-common SHARED
   src/recovery/restore.cxx
   src/main/memorybuffer.cxx
   src/catalog/output.cxx
-)
+        src/filesystem/copymgr.cxx)
+
+## Make sure we build with the proper precompiler definitions
+## To compare the build types correctly, convert them to lower case first,
+## got that idea from
+## https://stackoverflow.com/questions/57022145/how-to-define-preprocessor-definition-for-each-configuration-in-clion#57026786
+if (CMAKE_CONFIGURATION_TYPES)
+    string(TOLOWER "${CMAKE_CONFIGURATION_TYPES}" CMAKE_CONFIGURATION_TYPES_LOWER)
+else()
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_CONFIGURATION_TYPES_LOWER)
+endif()
+
+foreach(config ${CMAKE_CONFIGURATION_TYPES_LOWER})
+    if (${config} MATCHES "debug")
+        #add preprocessor definition something like this bellow
+        target_compile_definitions(pg_backup_ctl++ PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+        target_compile_definitions(pgbckctl-common PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+        target_compile_definitions(pgbckctl-proto PUBLIC "-D__DEBUG__ -D__PG_PROTO_DEBUG__ -D__DEBUG_XLOG__")
+    elseif(${config} MATCHES "release")
+        # release builds normally set the sqlite3 database default definition
+        # but this is left to packagers. keep the default here.
+    endif()
+endforeach()
 
 IF(APPLE)
    target_link_libraries (pg_backup_ctl++ pthread pgbckctl-proto pgbckctl-common)
@@ -238,6 +261,22 @@ if (libpq_FOUND)
 else()
    message(FATAL_ERROR "libpq development header and PostgreSQL server includes required")
 endif(libpq_FOUND)
+
+##
+## Optionally compile with io_uring support
+##
+find_package(liburing OPTIONAL_COMPONENTS)
+if(liburing_FOUND)
+  message("using io_uring support")
+  set(PG_BACKUP_CTL_HAS_LIBURING "#define PG_BACKUP_CTL_HAS_LIBURING")
+  # set(PG_BACKUP_CTL_HAS_LIBURING "#undef PG_BACKUP_CTL_HAS_LIBURING")
+  include_directories(${liburing_INCLUDE_DIR})
+  target_link_libraries(pgbckctl-common ${liburing_LIBRARIES})
+  message("linking liburing in ${liburing_LIBRARIES}")
+else()
+  message("liburing not available, disabling io_uring support")
+  set(PG_BACKUP_CTL_HAS_LIBURING "#undef PG_BACKUP_CTL_HAS_LIBURING")
+endif()
 
 ##
 ## Force GNU/gettext
@@ -386,6 +425,16 @@ if(BUILD_UNIT_TESTS)
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
     )
   add_test(NAME TestParser COMMAND test_parser)
+
+  add_executable(test_copymgr test/src/test_copymgr.cxx)
+  target_link_libraries (test_copymgr
+    pgbckctl-common
+    pgbckctl-proto
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}
+    )
+  add_test(NAME TestCopyMgr COMMAND test_copymgr)
 
   add_executable(test_pgmessage test/src/test_pgmessage.cxx)
   target_link_libraries (test_pgmessage

@@ -22,18 +22,6 @@ using boost::regex;
  * StreamingBaseBackupDirectory Implementation
  ******************************************************************************/
 
-DirectoryTreeWalker StreamingBaseBackupDirectory::walker(path handle) {
-
-  return DirectoryTreeWalker(handle);
-
-}
-
-DirectoryTreeWalker StreamingBaseBackupDirectory::walker() {
-
-  return DirectoryTreeWalker(this->streaming_subdir);
-
-}
-
 StreamingBaseBackupDirectory::StreamingBaseBackupDirectory(std::string streaming_dirname,
                                                            path archiveDir)  : BackupDirectory(archiveDir) {
   this->streaming_subdir = this->basedir() / streaming_dirname;
@@ -91,7 +79,7 @@ void StreamingBaseBackupDirectory::fsync() {
     throw CArchiveIssue(oss.str());
   }
 
-  BackupDirectory::fsync(this->streaming_subdir);
+  RootDirectory::fsync(this->streaming_subdir);
 
 }
 
@@ -152,9 +140,9 @@ BaseBackupVerificationCode StreamingBaseBackupDirectory::verify(std::shared_ptr<
   return BASEBACKUP_OK;
 }
 
-size_t StreamingBaseBackupDirectory::size() {
+ssize_t StreamingBaseBackupDirectory::size() {
 
-  size_t result = 0;
+  ssize_t result = 0;
 
   for(recursive_directory_iterator it(this->streaming_subdir);
       it != recursive_directory_iterator(); ++it) {
@@ -165,25 +153,6 @@ size_t StreamingBaseBackupDirectory::size() {
     }
 
   return result;
-}
-
-std::shared_ptr<std::list<directory_entry>> StreamingBaseBackupDirectory::stat() {
-
-  DirectoryTreeWalker dirwalker = walker();
-  std::shared_ptr<std::list<directory_entry>> result
-    = std::make_shared<std::list<directory_entry>>();
-
-  dirwalker.open();
-
-  while (! dirwalker.end() ) {
-
-    directory_entry diritem = dirwalker.next();
-    result->push_back(diritem);
-
-  }
-
-  return result;
-
 }
 
 std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string name,
@@ -284,7 +253,6 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
 
 }
 
-
 path StreamingBaseBackupDirectory::getPath() {
   return this->streaming_subdir;
 }
@@ -306,6 +274,10 @@ DirectoryTreeWalker::DirectoryTreeWalker(path handle) {
 DirectoryTreeWalker::~DirectoryTreeWalker() {}
 
 directory_entry DirectoryTreeWalker::next() {
+
+  if (!opened) {
+    throw CArchiveIssue("cannot iterate without a directory worker not opened");
+  }
 
   directory_entry value = *(this->dit);
   this->dit++;
@@ -477,8 +449,8 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
     std::string direntname = entry.path().filename().string();
 
-    unsigned int current_tli = 0;
-    unsigned int current_segno = 0;
+    long unsigned int current_tli = 0;
+    long unsigned int current_segno = 0;
     WALSegmentFileStatus current_status = WAL_SEGMENT_UNKNOWN;
 
     current_status = determineXlogSegmentStatus(entry.path());
@@ -1079,8 +1051,235 @@ std::shared_ptr<BackupFile> ArchiveLogDirectory::allocateHistoryFile(int timelin
 }
 
 /******************************************************************************
+ * RootDirectory Implementation
+ ******************************************************************************/
+RootDirectory::RootDirectory(path handle) {
+  this->handle = canonical(handle);
+}
+
+RootDirectory::~RootDirectory() {}
+
+path RootDirectory::getPath() {
+  return handle;
+}
+
+DirectoryTreeWalker RootDirectory::walker(path handle) {
+
+  return DirectoryTreeWalker(handle);
+
+}
+
+DirectoryTreeWalker RootDirectory::walker() {
+
+  return DirectoryTreeWalker(getPath());
+
+}
+
+std::shared_ptr<std::list<directory_entry>> RootDirectory::stat() {
+
+  DirectoryTreeWalker dirwalker = walker();
+  std::shared_ptr<std::list<directory_entry>> result
+  = std::make_shared<std::list<directory_entry>>();
+
+  dirwalker.open();
+
+  while (! dirwalker.end() ) {
+
+    directory_entry diritem = dirwalker.next();
+    result->push_back(diritem);
+
+  }
+
+  return result;
+
+}
+
+void RootDirectory::fsync(path syncPath) {
+
+  int dh; /* directory descriptor handle */
+
+  /*
+   * Open the directory to get a valid descriptor for
+   * syncing.
+   */
+  if ((dh = open(syncPath.string().c_str(), O_RDONLY)) < 0) {
+    /* error, check errno for error condition  and
+     * throw an exception */
+    std::ostringstream oss;
+
+    oss << "could not open directory \""
+    << syncPath.string()
+    << "\" for syncing: "
+    << strerror(errno);
+    throw CArchiveIssue(oss.str());
+  }
+
+  if (::fsync(dh) != 0) {
+    std::ostringstream oss;
+    oss << "error fsyncing directory \""
+    << syncPath.string()
+    << "\": "
+    << strerror(errno);
+
+    /* Should be a valid descriptor here, make sure it's closed */
+    close(dh);
+
+    throw CArchiveIssue(oss.str());
+  }
+
+  close(dh);
+}
+
+void RootDirectory::fsync() {
+
+  /*
+   * If not a directory, error out.
+   */
+  if (!boost::filesystem::exists(this->handle)) {
+    ostringstream oss;
+    oss << "archive directory " << this->handle.string() << " does not exist";
+    throw CArchiveIssue(oss.str());
+  }
+
+  this->fsync(this->handle);
+
+}
+
+void RootDirectory::fsync_recursive(path handle) {
+
+  if (is_directory(handle)) {
+
+    vector<path> listing;
+
+    copy(directory_iterator(handle), directory_iterator(), std::back_inserter(listing));
+
+    for (vector<path>::const_iterator it(listing.begin()), it_end(listing.end()); it != it_end; ++it) {
+      path subhandle = *it;
+
+      /*
+       * fsync() contents of current directory, call
+       * fsync_worker() recursively on subdir.
+       */
+      try {
+        RootDirectory::fsync(handle);
+      } catch(CArchiveIssue &e) {
+        /* ignore any errors while recursing */
+      }
+
+      BackupDirectory::fsync_recursive(subhandle);
+    }
+
+  } else if (is_regular_file(handle)) {
+
+    ArchiveFile file(handle);
+
+    file.setOpenMode("r");
+
+    try {
+      file.open();
+      file.fsync();
+      file.close();
+    } catch (CArchiveIssue &e) {
+      /*
+       * Ignore any errors while recursing, but don't
+       * leak possible opened file descriptors
+       */
+      if (file.isOpen())
+        file.close();
+    }
+
+  }
+
+}
+
+/******************************************************************************
  * BackupDirectory Implementation
  ******************************************************************************/
+
+void BackupDirectory::fsync() {
+
+  RootDirectory::fsync();
+
+  /*
+   * Don't forget to fsync backup subdirectories belong
+   * to this archive handle.
+   */
+  RootDirectory::fsync(this->logdir());
+  RootDirectory::fsync(this->basedir());
+
+}
+
+path BackupDirectory::system_temp_directory() {
+
+  try {
+
+    path result = temp_directory_path();
+
+    BOOST_LOG_TRIVIAL(debug) << "system temp directory located at  " << result.string();
+
+    if (!boost::filesystem::exists(result)
+        || !boost::filesystem::is_directory(result)) {
+
+      throw CArchiveIssue("could not determine system temporary directory");
+
+    } else {
+
+      return result;
+
+    }
+
+  } catch (filesystem_error &fe) {
+
+    /* re-throw as CArchiveIssue */
+    throw CArchiveIssue(fe.what());
+
+  }
+
+}
+
+path BackupDirectory::relative_path(const path &aDir, const path &bDir) {
+
+  path result("");
+  auto bit = bDir.begin();
+
+  for (auto ait = aDir.begin(); ait != aDir.end(); ++ait) {
+
+    if (bit == bDir.end()) {
+
+      result /= *ait;
+      continue;
+
+    }
+
+    if (ait->string() != bit->string()) {
+      result /= *ait;
+    }
+
+    ++bit;
+
+  }
+
+  return result;
+
+}
+
+path BackupDirectory::temp_filename() {
+
+  try {
+
+    path result = boost::filesystem::unique_path();
+
+    BOOST_LOG_TRIVIAL(debug) << "creating temp filename " << result.string();
+
+    return result;
+
+  } catch(filesystem_error &fe) {
+
+    /* re-throw as CArchiveIssue */
+    throw CArchiveIssue(fe.what());
+  }
+
+}
 
 string BackupDirectory::verificationCodeAsString(BaseBackupVerificationCode code) {
 
@@ -1166,9 +1365,8 @@ path BackupDirectory::getArchiveDir() {
   return this->handle;
 }
 
-BackupDirectory::BackupDirectory(path handle) {
+BackupDirectory::BackupDirectory(path handle) : RootDirectory(handle) {
 
-  this->handle = canonical(handle);
   this->base = handle / "base";
   this->log  = handle / "log";
 
@@ -1297,53 +1495,6 @@ std::shared_ptr<BackupFile> BackupDirectory::basebackup(std::string name,
 
 }
 
-void BackupDirectory::fsync_recursive(path handle) {
-
-  if (is_directory(handle)) {
-
-    vector<path> listing;
-
-    copy(directory_iterator(handle), directory_iterator(), std::back_inserter(listing));
-
-    for (vector<path>::const_iterator it(listing.begin()), it_end(listing.end()); it != it_end; ++it) {
-      path subhandle = *it;
-
-      /*
-       * fsync() contents of current directory, call
-       * fsync_worker() recursively on subdir.
-       */
-      try {
-        BackupDirectory::fsync(handle);
-      } catch(CArchiveIssue &e) {
-        /* ignore any errors while recursing */
-      }
-
-      BackupDirectory::fsync_recursive(subhandle);
-    }
-
-  } else if (is_regular_file(handle)) {
-
-    ArchiveFile file(handle);
-
-    file.setOpenMode("r");
-
-    try {
-      file.open();
-      file.fsync();
-      file.close();
-    } catch (CArchiveIssue &e) {
-      /*
-       * Ignore any errors while recursing, but don't
-       * leak possible opened file descriptors
-       */
-      if (file.isOpen())
-        file.close();
-    }
-
-  }
-
-}
-
 void BackupDirectory::unlink_path(path backup_path) {
 
   /* backup_path should exist */
@@ -1358,64 +1509,6 @@ void BackupDirectory::unlink_path(path backup_path) {
 
   remove_all(backup_path);
 
-}
-
-void BackupDirectory::fsync() {
-
-  /*
-   * If not a directory, error out.
-   */
-  if (!boost::filesystem::exists(this->handle)) {
-    ostringstream oss;
-    oss << "archive directory " << this->handle.string() << " does not exist";
-    throw CArchiveIssue(oss.str());
-  }
-
-  this->fsync(this->handle);
-
-  /*
-   * Don't forget to fsync backup subdirectories belong
-   * to this archive handle.
-   */
-  this->fsync(this->logdir());
-  this->fsync(this->basedir());
-
-}
-
-void BackupDirectory::fsync(path syncPath) {
-
-  int dh; /* directory descriptor handle */
-
-  /*
-   * Open the directory to get a valid descriptor for
-   * syncing.
-   */
-  if ((dh = open(syncPath.string().c_str(), O_RDONLY)) < 0) {
-    /* error, check errno for error condition  and
-     * throw an exception */
-    std::ostringstream oss;
-
-    oss << "could not open directory \""
-        << syncPath.string()
-        << "\" for syncing: "
-        << strerror(errno);
-    throw CArchiveIssue(oss.str());
-  }
-
-  if (::fsync(dh) != 0) {
-    std::ostringstream oss;
-    oss << "error fsyncing directory \""
-        << syncPath.string()
-        << "\": "
-        << strerror(errno);
-
-    /* Should be a valid descriptor here, make sure it's closed */
-    close(dh);
-
-    throw CArchiveIssue(oss.str());
-  }
-
-  close(dh);
 }
 
 shared_ptr<ArchiveLogDirectory> BackupDirectory::logdirectory() {
@@ -1591,6 +1684,10 @@ void CPGBackupCtlFS::readArchiveDirectory() {
 
 }
 
+/* ****************************************************************************
+ * Implementation of BackupFile
+ * ****************************************************************************/
+
 BackupFile::BackupFile(path handle) {
   this->handle = handle;
 
@@ -1615,6 +1712,14 @@ BackupFile::BackupFile(path handle) {
 }
 
 BackupFile::~BackupFile(){}
+
+void BackupFile::setTemporary() {
+  this->temporary = true;
+}
+
+bool BackupFile::isTemporary() {
+  return temporary;
+}
 
 void BackupFile::setCompressed(bool compressed) {
   this->compressed = compressed;
@@ -1867,7 +1972,7 @@ size_t ArchivePipedProcess::write(const char *buf, size_t len) {
 
 size_t ArchivePipedProcess::read(char *buf, size_t len) {
 
-  size_t result = 0;
+  ssize_t result = 0;
 
   if (this->path_is_directory) {
     throw CArchiveIssue("write into a piped archive handle with a directory is not supported");
@@ -1922,6 +2027,10 @@ off_t ArchivePipedProcess::lseek(off_t offset, int whence) {
 
 void ArchivePipedProcess::setOpenMode(string mode) {
   this->mode = mode;
+}
+
+std::string ArchivePipedProcess::getOpenMode() {
+  return this->mode;
 }
 
 void ArchivePipedProcess::fsync() {
@@ -2140,6 +2249,10 @@ void ArchiveFile::open() {
     throw CArchiveIssue(oss.str());
   }
 
+  if (this->temporary) {
+    unlink(this->handle.c_str());
+  }
+
   this->opened = true;
 
 }
@@ -2165,6 +2278,10 @@ void ArchiveFile::remove() {
         << " (errno) " << errno;
     throw CArchiveIssue(oss.str());
   }
+}
+
+std::string ArchiveFile::getOpenMode() {
+  return this->mode;
 }
 
 void ArchiveFile::setOpenMode(std::string mode) {
@@ -2359,6 +2476,10 @@ void CompressedArchiveFile::setOpenMode(std::string mode) {
 
 }
 
+std::string CompressedArchiveFile::getOpenMode() {
+  return this->mode;
+}
+
 void CompressedArchiveFile::setCompressionLevel(int level) {
 
   throw CArchiveIssue("overriding default compression level (9) not yet supported");
@@ -2408,6 +2529,12 @@ void CompressedArchiveFile::open() {
         << "file handle already initialized";
     throw CArchiveIssue(oss.str());
   }
+
+  /*
+   * We currently don't allow temporary compressed archive files
+   */
+  if (this->temporary)
+      throw CArchiveIssue("temporary compressed archive files currently not supported");
 
   this->fp = fopen(this->handle.string().c_str(),
                    this->mode.c_str());
@@ -2509,7 +2636,7 @@ size_t CompressedArchiveFile::write(const char *buf, size_t len) {
     throw CArchiveIssue(oss.str());
   }
 
-  int wbytes = gzwrite(this->zh, buf, len);
+  ssize_t wbytes = gzwrite(this->zh, buf, len);
 
   /*
    * NOTE: return value 0 means for
@@ -2559,7 +2686,7 @@ size_t CompressedArchiveFile::read(char *buf, size_t len) {
    * In opposite to gzwrite, an error from gzread is indicated
    * with a return code -1.
    */
-  int rbytes = gzread(this->zh, buf, len);
+  ssize_t rbytes = gzread(this->zh, buf, len);
 
   if (rbytes < 0) {
 
@@ -2679,11 +2806,11 @@ void BackupHistoryFile::rename(path& newname) {
   throw CArchiveIssue("renaming backup history files not supported");
 }
 
-size_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
+ssize_t BackupHistoryFile::read_mem(MemoryBuffer &mybuffer) {
   throw CArchiveIssue("not yet implemented");
 }
 
-size_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
+ssize_t BackupHistoryFile::write_mem(MemoryBuffer &mybuffer) {
   throw CArchiveIssue("not yet implemented");
 }
 
@@ -2695,6 +2822,10 @@ size_t BackupHistoryFile::read(char *buf, size_t len) {
 
 void BackupHistoryFile::remove() {
   throw CArchiveIssue("removing a backup history is not yet supported");
+}
+
+std::string BackupHistoryFile::getOpenMode() {
+  return "rb";
 }
 
 void BackupHistoryFile::setOpenMode(std::string mode) {

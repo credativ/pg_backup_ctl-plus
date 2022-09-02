@@ -38,7 +38,7 @@ bool ConditionalSignalHandler::check() {
 
   /*
    * Having a NULL pointer here causes
-   * chech() to always return FALSE.
+   * check() to always return FALSE.
    */
   if (this->ref_bvalue == nullptr)
     return false;

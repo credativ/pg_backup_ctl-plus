@@ -33,6 +33,17 @@
  */
 #define PGBCKCTL_MAX_WORKERS 256
 
+/*
+ * Maximum number of allowed parallel copy instances
+ *
+ * This setting is currently used in connection with
+ * IOUringCopyManager and controls the number of paired copy
+ * threads for read/write. So the total number of threads is
+ *
+ * #NUMBER_OF_THREADS = MAX_PARALLEL_COPY_INSTANCES * 2
+ */
+#define MAX_PARALLEL_COPY_INSTANCES 64
+
 #define MAX_WORKER_INSTRUMENTATION_SLOTS 5
 #define MAX_WORKER_CHILDS 5
 
@@ -44,5 +55,10 @@
 #ifndef HAVE_SHMATT_T_TYPE
 #define shmatt_t int
 #endif
+
+/*
+ * Define io_uring support via liburing
+ */
+@PG_BACKUP_CTL_HAS_LIBURING@
 
 #endif
