@@ -15,17 +15,17 @@ namespace pgbckctl {
 
   public:
 
-    CPGBackupCtlFailure(const char *errString) throw() : errstr() {
+    explicit CPGBackupCtlFailure(const char *errString) noexcept(false) : errstr() {
       errstr = errString;
     }
 
-    CPGBackupCtlFailure(std::string errString) throw() : errstr() {
+    explicit CPGBackupCtlFailure(std::string errString) noexcept(false) : errstr() {
       errstr = errString;
     }
 
-    virtual ~CPGBackupCtlFailure() throw() {}
+    virtual ~CPGBackupCtlFailure()  {}
 
-    const char *what() const throw() {
+    const char *what() const noexcept(true) override {
       return errstr.c_str();
     }
 
