@@ -1,4 +1,4 @@
-%define upstream_pgdg_version 12
+%define upstream_pgdg_version 14
 %define major_version 0.1
 %define patchlevel 6
 
@@ -78,7 +78,8 @@ cd build
 # NOTE: on RHEL7, we require a newer boost library version, usually installed from EPEL
 CXXFLAGS="-D__DEBUG__ -D__DEBUG_XLOG__" \
         CXX="ccache g++" \
-        cmake3 -DPG_BACKUP_CTL_SQLITE:FILEPATH=/var/lib/pg_backup_ctl-plus/pg_backup_ctl.sqlite \
+        cmake3 -DCMAKE_BUILD_TYPE=release
+        -DPG_BACKUP_CTL_SQLITE:FILEPATH=/var/lib/pg_backup_ctl-plus/pg_backup_ctl.sqlite \
         -DPG_CONFIG=/usr/pgsql-%{upstream_pgdg_version}/bin/pg_config \
         -DCMAKE_INSTALL_PREFIX:PATH=/usr \
         -DCMAKE_SKIP_RPATH=TRUE \
