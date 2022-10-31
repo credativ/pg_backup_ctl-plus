@@ -23,7 +23,7 @@ namespace pgbckctl {
       errstr = errString;
     }
 
-    virtual ~CPGBackupCtlFailure()  {}
+    ~CPGBackupCtlFailure() override = default;
 
     const char *what() const noexcept(true) override {
       return errstr.c_str();
