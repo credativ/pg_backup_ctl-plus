@@ -138,15 +138,15 @@ char& MemoryBuffer::operator[](unsigned int index) {
   return this->memory_buffer[index];
 }
 
-MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& out) {
+MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& src) {
 
   /*
    * NOTE: allocate already frees the internal buffer
    *       and creates an new one with the appropiate size.
    */
-  out.allocate(this->getSize());
-  out.write(this->memory_buffer, this->getSize(), 0);
-  return out;
+  this->allocate(src.getSize());
+  this->write(src.memory_buffer, src.getSize(), 0);
+  return *this;
 
 }
 
