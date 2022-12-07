@@ -140,6 +140,10 @@ char& MemoryBuffer::operator[](unsigned int index) {
 
 MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& src) {
 
+  if (this == &src) {
+    throw CPGBackupCtlFailure("request for memory buffer self assignment");
+  }
+
   /*
    * NOTE: allocate already frees the internal buffer
    *       and creates an new one with the appropiate size.
