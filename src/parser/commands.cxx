@@ -2466,6 +2466,13 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     backupHandle->setCompression(backupProfile->compress_type);
 
     /*
+     * Prepare backup handler. Should successfully create
+     * target streaming directory...
+     */
+    backupHandle->initialize();
+    backupHandle->create();
+
+    /*
      * Get connection to the PostgreSQL instance.
      */
     pgstream.connect();
@@ -2532,20 +2539,20 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     bbp = pgstream.basebackup(backupProfile);
 
-    /*
-     * Set signal handler
-     */
-    bbp->assignStopHandler(this->stopHandler);
-
-
 #ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug)
       << "DEBUG: basebackup stream handle initialize";
 #endif
 
     /*
+     * Set signal handler
+     */
+    bbp->assignStopHandler(this->stopHandler);
+
+    /*
      * Enter basebackup stream.
      */
+    bbp->prepareStream(backupHandle);
     bbp->start();
 
     /*
@@ -2563,13 +2570,6 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     this->catalog->startTransaction();
 
     try {
-
-      /*
-       * Prepare backup handler. Should successfully create
-       * target streaming directory...
-       */
-      backupHandle->initialize();
-      backupHandle->create();
 
       basebackupDescr->archive_id = temp_descr->id;
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
@@ -2607,37 +2607,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     /*
      * Loop through tablespaces and stream their contents.
      */
-    while(bbp->stepTablespace(backupHandle,
-                               tablespaceDescr)) {
-#ifdef __DEBUG__
-      BOOST_LOG_TRIVIAL(debug) << "streaming tablespace OID "
-                               << tablespaceDescr->spcoid
-                               << ",size " << tablespaceDescr->spcsize;
-#endif
-      /*
-       * Since we register each backup tablespace, we need
-       * to record the backup id, it belongs to.
-       */
-      tablespaceDescr->backup_id = basebackupDescr->id;
-      catalog->registerTablespaceForBackup(tablespaceDescr);
-      bbp->backupTablespace(tablespaceDescr);
-
-      /*
-       * Check the state of the last tablespace being
-       * copied. If we were interrupted, we abort the
-       * backup processing loop here immediately.
-       */
-      if (bbp->getState() != BASEBACKUP_TABLESPACE_READY)
-        throw StreamingFailure("streaming basebackup aborted");
-    }
-
-    /*
-     * Get backup manifest data, if requested. We always
-     * save the file along with the backup files.
-     */
-    if (backupProfile->manifest) {
-      bbp->receiveManifest(backupHandle);
-    }
+    bbp->stream(catalog);
 
     /*
      * Call end position in backup stream.
@@ -3646,6 +3616,29 @@ void CreateBackupProfileCatalogCommand::verify(bool print_version) {
       app.close();
       break;
     }
+
+  case BACKUP_COMPRESS_TYPE_LZ4:
+  {
+    path lz("lz4");
+    ArchivePipedProcess app(lz);
+    char buf[4];
+
+    if (!CPGBackupCtlBase::resolve_file_path(lz.string())) {
+      throw CArchiveIssue("cannot resolv path for binary lz");
+    }
+
+    app.setExecutable(lz);
+    app.pushExecArgument("--version");
+
+    app.setOpenMode("r");
+    app.open();
+
+    while (app.read(buf, 1) >= 1)
+      cout << buf;
+
+    app.close();
+    break;
+  }
 
   default:
     break; /* nothing to do here */

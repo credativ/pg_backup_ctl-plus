@@ -161,6 +161,9 @@ BackupProfileCompressType BackupProfileDescr::compressionType(std::string type) 
   if (boost::iequals(type, "PLAIN"))
     return BACKUP_COMPRESS_TYPE_PLAIN;
 
+  if (boost::iequals(type, "LZ4"))
+    return BACKUP_COMPRESS_TYPE_LZ4;
+
   throw CPGBackupCtlFailure("cannot convert backup compress type string");
 
 }
@@ -178,6 +181,8 @@ std::string BackupProfileDescr::compressionType(BackupProfileCompressType type) 
     return "XZ";
   case BACKUP_COMPRESS_TYPE_PLAIN:
     return "PLAIN";
+  case BACKUP_COMPRESS_TYPE_LZ4:
+    return "LZ4";
   default:
     throw CPGBackupCtlFailure("cannot convert backup compress type id");
   }
@@ -691,7 +696,7 @@ void CatalogDescr::restoreTablespaceAllFromParserState(std::string const& locati
     throw CCatalogIssue("cannot assign tablespace restore location");
 
   /*
-   * We add the invalid_oid as a place holder for "ALL".
+   * We add the invalid_oid as a placeholder for "ALL".
    */
   restoreDescr->prepareTablespaceDescrForMap(0);
   restoreDescr->stackTablespaceDescrForMap(location);

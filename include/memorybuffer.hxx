@@ -1,6 +1,8 @@
 #ifndef __HAVE_MEMORY_BUFFER__
 #define __HAVE_MEMORY_BUFFER__
 
+#include <memory>
+
 namespace pgbckctl {
 
   /**
@@ -12,15 +14,33 @@ namespace pgbckctl {
     /**
      * Internal buffer array.
      */
-    char *memory_buffer = NULL;
+    char *memory_buffer = nullptr;
 
     /**
      * Internal memory buffer size.
      */
     size_t size;
+
+    /**
+     * Helper function to initialize internal buffer.
+     */
+    void alloc_internal(size_t size);
+
+    /**
+     * Guts of writing to internal buffer
+     */
+     size_t _write(const void *buf, size_t bufsize, size_t off);
+
+    /**
+     * Guts of assigning contents of an existing new buffer.
+     */
+    void _assign(void *buf, size_t sz);
+
   public:
-    MemoryBuffer();
-    MemoryBuffer(size_t initialsz);
+
+    explicit MemoryBuffer();
+    explicit MemoryBuffer(size_t initialsz);
+    explicit MemoryBuffer(char *buf);
     virtual ~MemoryBuffer();
 
     /**
@@ -64,7 +84,8 @@ namespace pgbckctl {
     virtual void assign(void *buf, size_t sz);
 
     std::ostream& operator<<(std::ostream& out);
-    MemoryBuffer& operator=(MemoryBuffer &out);
+    MemoryBuffer& operator=(MemoryBuffer &src);
+    MemoryBuffer& operator=(std::shared_ptr<MemoryBuffer> &src);
     char& operator[](unsigned int index);
 
     /**
@@ -75,6 +96,21 @@ namespace pgbckctl {
      * pointer will cause a CPGBackupCtlFailure exception!
      */
     virtual char * ptr();
+
+    /**
+     * Own the specified buffer of size sz.
+     *
+     * "Owning" means that the buffer is assigned internally and
+     * everything before will be deallocated. This will not copy
+     * the contents of buffer (in opposite to assign()), which causes
+     * any MemoryBuffer instance to own the pointer to buffer. Thus the caller
+     * must ensure that buffer is *not* deallocated elsewhere, which will cause
+     * unexpected results. Since a MemoryInstance will own the pointer, deallocation
+     * of the buffer will happen once either a MemoryInstance will own another
+     * pointer or will be deconstructed.
+     */
+    virtual void own(char *buffer, size_t sz);
+
   };
 
 }

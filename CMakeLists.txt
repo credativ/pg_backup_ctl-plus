@@ -121,7 +121,7 @@ add_library (pgbckctl-common SHARED
   src/recovery/restore.cxx
   src/main/memorybuffer.cxx
   src/catalog/output.cxx
-        src/filesystem/copymgr.cxx)
+        src/filesystem/copymgr.cxx src/backup/basebackupmsg.cxx)
 
 ## Make sure we build with the proper precompiler definitions
 ## To compare the build types correctly, convert them to lower case first,

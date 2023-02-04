@@ -22,7 +22,7 @@ interface for easy use.
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, command line tool
 Group:   Application/Databases
 BuildRequires: systemd-rpm-macros popt-devel readline-devel gcc-c++ ccache cmake3 make
-Requires: libpgbckctl-common libpgbckctl-proto zstd xz
+Requires: libpgbckctl-common libpgbckctl-proto zstd xz lz4
 Provides: pg_backup_ctl-plus
 
 %description cli

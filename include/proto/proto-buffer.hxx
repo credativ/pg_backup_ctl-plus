@@ -113,6 +113,16 @@ namespace pgbckctl {
      * position to the first byte of the buffer.
      */
     virtual void allocate(size_t size);
+
+    /**
+     * Own the specified buffer of size sz.
+     *
+     * This causes to take any ProtocolBuffer ownership of the pointer to buffer. The
+     * caller has to ensure that the buffer is not deallocated or modified outside
+     * the control of the ProtocolBuffer instance afterwards.
+     */
+     void own(char *buffer, size_t sz) override;
+
   };
 
 }

@@ -329,6 +329,13 @@ void ProtocolBuffer::allocate(size_t size) {
 
 }
 
+void ProtocolBuffer::own(char *buffer, size_t sz) {
+
+  MemoryBuffer::own(buffer, sz);
+  this->first();
+
+}
+
 void ProtocolBuffer::clear() {
 
   MemoryBuffer::clear();

@@ -84,7 +84,8 @@ namespace pgbckctl {
     BACKUP_COMPRESS_TYPE_GZIP = 1,
     BACKUP_COMPRESS_TYPE_ZSTD = 2,
     BACKUP_COMPRESS_TYPE_XZ   = 3,
-    BACKUP_COMPRESS_TYPE_PLAIN = 4
+    BACKUP_COMPRESS_TYPE_PLAIN = 4,
+    BACKUP_COMPRESS_TYPE_LZ4   = 5
 
   } BackupProfileCompressType;
 
@@ -983,26 +984,78 @@ namespace pgbckctl {
     bool manifest           = false;
     std::string manifest_checksums = "CRC32C";
 
-    static BackupProfileCompressType compressionType(std::string type);
-    static std::string compressionType(BackupProfileCompressType type);
+    static BackupProfileCompressType compressionType(std::string type) noexcept(false);
+    static std::string compressionType(BackupProfileCompressType type) noexcept(false);
 
   };
 
-  /*
+  /**
+   * @BackupElemType
+   *
+   * Types of elements expected in a basebackup stream.
+   */
+  typedef enum {
+
+    /** Stream element is a tablespace archive */
+    BASEBACKUP_ELEM_TBLSPC   = 0,
+
+    /** Stream element is a manifest file */
+    BASEBACKUP_ELEM_MANIFEST = 1,
+
+    /** Any other kind of elements which doesn't need to be qualified currently. */
+    BASEBACKUP_ELEM_OTHER    = 2,
+
+    /** Marks an empty element */
+    BASEBACKUP_EMPTY_ELEM = 3
+
+  } BackupElemType;
+
+  /**
+   * @ref BackupElemDescr
+   *
+   * This descriptor encapsulates access to any elements contained
+   * in a basebackup stream. See
+   */
+  class BackupElemDescr : public PushableCols {
+  public:
+
+    virtual BackupElemType getType() { return BASEBACKUP_ELEM_OTHER; }
+
+  };
+
+  /**
+   * @ref BackupTablespaceDescr
+   *
    * A BackupTablespaceDescr is a descriptor handle which
    * directly references tablespace meta information in the backup
    * catalog.
    */
-  class BackupTablespaceDescr : public PushableCols {
+  class BackupTablespaceDescr : public BackupElemDescr {
   public:
     int id = -1;
     int backup_id = -1;
     unsigned int spcoid;
     std::string spclocation;
     unsigned long long spcsize;
+
+    virtual BackupElemType getType() { return BASEBACKUP_ELEM_TBLSPC ;}
   };
 
-  /*
+  /**
+   * @ref BackupManifestDescr
+   *
+   * Identifies a basebackup manifest file.
+   */
+  class BackupManifestDescr : public BackupElemDescr {
+  private:
+    BackupElemType elem_type = BASEBACKUP_ELEM_MANIFEST;
+  public:
+    unsigned long long size = 0L;
+
+    virtual BackupElemType getType() { return BASEBACKUP_ELEM_MANIFEST; }
+  };
+
+  /**
    * BaseBackupDescr represents a
    * catalog entry for either a running
    * or finalized basebackup.

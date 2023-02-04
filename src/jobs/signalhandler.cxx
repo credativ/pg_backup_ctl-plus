@@ -90,3 +90,22 @@ bool AtomicSignalHandler::check() {
 
   return false;
 }
+
+/* ************************************************************************************************
+ * Checker implementations
+ * ********************************************************************************************** */
+
+bool StopSignalChecker::stopHandlerWantsExit() {
+  if (this->stopHandler != nullptr) {
+    return this->stopHandler->check();
+  } else
+    return false;
+}
+
+void StopSignalChecker::assignStopHandler(pgbckctl::JobSignalHandler *handler) {
+  this->stopHandler = handler;
+}
+
+JobSignalHandler * StopSignalChecker::getSignalHandler() {
+  return this->stopHandler;
+}

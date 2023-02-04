@@ -6,15 +6,31 @@
 
 using namespace pgbckctl;
 
+MemoryBuffer::MemoryBuffer(char *buf) {
+
+  if (buf == nullptr) {
+    throw CPGBackupCtlFailure("cannot instantiate memory buffer from undefined source");
+  }
+
+  size_t sz = sizeof(buf);
+
+  /*
+   * Make a new internal buffer
+   */
+  this->alloc_internal(sz);
+
+  /* Copy over bytes from buf */
+  _write(buf, sz, 0);
+
+}
+
 MemoryBuffer::MemoryBuffer(size_t initialsz) {
 
-  this->allocate(initialsz);
+  this->alloc_internal(initialsz);
 
 }
 
-MemoryBuffer::MemoryBuffer() {
-
-}
+MemoryBuffer::MemoryBuffer() {}
 
 MemoryBuffer::~MemoryBuffer() {
 
@@ -24,11 +40,7 @@ MemoryBuffer::~MemoryBuffer() {
 
 }
 
-size_t MemoryBuffer::getSize() {
-  return this->size;
-}
-
-void MemoryBuffer::allocate(size_t size) {
+void MemoryBuffer::alloc_internal(size_t size) {
 
   if (this->memory_buffer != NULL) {
     delete [] this->memory_buffer;
@@ -41,9 +53,26 @@ void MemoryBuffer::allocate(size_t size) {
 
 }
 
-size_t MemoryBuffer::write(const void *buf, size_t bufsize, size_t off) {
+size_t MemoryBuffer::getSize() {
+  return this->size;
+}
 
-  char *buf_ptr;
+void MemoryBuffer::allocate(size_t size) {
+
+  this->alloc_internal(size);
+
+}
+
+size_t MemoryBuffer::_write(const void *buf, size_t bufsize, size_t off) {
+
+  char *buf_ptr = this->memory_buffer + off;
+  memcpy(buf_ptr, buf, bufsize);
+
+  return bufsize;
+
+}
+
+size_t MemoryBuffer::write(const void *buf, size_t bufsize, size_t off) {
 
   if (this->memory_buffer == NULL)
     throw CPGBackupCtlFailure("could not write into uninitialized memory buffer");
@@ -70,10 +99,7 @@ size_t MemoryBuffer::write(const void *buf, size_t bufsize, size_t off) {
     throw CPGBackupCtlFailure(oss.str());
   }
 
-  buf_ptr = this->memory_buffer + off;
-  memcpy(buf_ptr, buf, bufsize);
-
-  return bufsize;
+  return _write(buf, bufsize, off);
 
 }
 
@@ -109,15 +135,32 @@ size_t MemoryBuffer::read(void *buf, size_t readsz, size_t off) {
   return readsz;
 }
 
+void MemoryBuffer::own(char *buf, size_t sz) {
+
+  if (buf == nullptr) {
+    throw CPGBackupCtlFailure("memory buffer cannot own undefined pointer");
+  }
+
+  if (memory_buffer != nullptr) {
+    delete [] memory_buffer;
+  }
+
+  this->memory_buffer = buf;
+  this->size = sz;
+
+}
+
+void MemoryBuffer::_assign(void *buf, size_t sz) {
+
+  alloc_internal(sz);
+  _write(buf, sz, 0);
+
+}
+
 void MemoryBuffer::assign(void *buf, size_t sz) {
 
-  /*
-   * Make a new internal buffer
-   */
-  this->allocate(sz);
+  _assign(buf, sz);
 
-  /* Copy over bytes from buf */
-  this->write(buf, sz, 0);
 }
 
 void MemoryBuffer::clear() {
@@ -150,6 +193,22 @@ MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer& src) {
    */
   this->allocate(src.getSize());
   this->write(src.memory_buffer, src.getSize(), 0);
+  return *this;
+
+}
+
+MemoryBuffer& MemoryBuffer::operator=(std::shared_ptr<MemoryBuffer> &src) {
+
+  if (this == src.get()) {
+    throw CPGBackupCtlFailure("request for memory buffer self assignment");
+  }
+
+  /*
+   * NOTE: allocate already frees the internal buffer
+   *       and creates an new one with the appropiate size.
+   */
+  this->allocate(src->getSize());
+  this->write(src->memory_buffer, src->getSize(), 0);
   return *this;
 
 }

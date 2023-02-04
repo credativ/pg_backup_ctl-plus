@@ -359,6 +359,7 @@ completion_word create_bck_prof_compr_type[]
     { "NONE", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "ZSTD", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "XZ", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
+    { "LZ4", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "PLAIN", COMPL_KEYWORD, COMPL_STATIC_ARRAY, create_bck_prof_param_full + 1, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
@@ -438,6 +439,7 @@ completion_word retention_rule_compl[]
 completion_word create_retention_rule_compl[]
 = { { "KEEP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_rule_compl, NULL },
     { "DROP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, retention_rule_compl, NULL },
+    { "CLEANUP", COMPL_KEYWORD, COMPL_STATIC_ARRAY, NULL, NULL },
     { "", COMPL_EOL, COMPL_STATIC_ARRAY, NULL, NULL } };
 
 completion_word create_retention_ident[]

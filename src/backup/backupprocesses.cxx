@@ -2,7 +2,7 @@
 #include <backup.hxx>
 #include <backupprocesses.hxx>
 #include <xlogdefs.hxx>
-#include <memorybuffer.hxx>
+#include <proto-buffer.hxx>
 #include <boost/log/trivial.hpp>
 
 /* Required for select() */
@@ -409,25 +409,6 @@ void WALStreamerProcess::handleMessage(XLOGStreamMessage *message) {
 
   } /* switch...msgType */
 
-}
-
-bool WALStreamerProcess::stopHandlerWantsExit() {
-
-  if (this->stopHandler != nullptr) {
-    return this->stopHandler->check();
-  } else
-    return false;
-
-}
-
-void WALStreamerProcess::assignStopHandler(JobSignalHandler *handler) {
-
-  /* if handler is NULL, this is a no-op */
-  if (handler == nullptr) {
-    return;
-  }
-
-  this->stopHandler = handler;
 }
 
 void WALStreamerProcess::setReceiverStatusTimeout(long value) {
@@ -947,6 +928,808 @@ void WALStreamerProcess::start() {
 
 }
 
+/* ****************************************************************************
+ * Implementation TablespaceQueue
+ ******************************************************************************/
+
+TablespaceQueue::TablespaceQueue(PGconn *conn) {
+
+  this->conn = conn;
+
+}
+
+BaseBackupState TablespaceQueue::getTablespaceInfo(BaseBackupState &state) {
+
+  PGresult *res;
+  int i;
+  ExecStatusType es;
+
+  /*
+   * Stack tablespace meta info only if
+   * successfully started.
+   */
+  if (state != BASEBACKUP_STARTED)
+    throw StreamingFailure("reading tablespace meta information requires a started base backup process");
+
+  state = BASEBACKUP_TABLESPACE_META;
+
+  /*
+   * Read tablespace meta info from result set.
+   */
+  res = PQgetResult(this->conn);
+
+  if ((es = PQresultStatus(res)) != PGRES_TUPLES_OK) {
+    std::string sqlstate(PQresultErrorField(res, PG_DIAG_SQLSTATE));
+    std::ostringstream oss;
+
+    oss << "could not read tablespace meta info: "
+        << PQresultErrorMessage(res);
+    PQclear(res);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
+  if (PQntuples(res) < 1) {
+    PQclear(res);
+    throw StreamingFailure("unexpected number of tuples for tablespace meta info");
+  }
+
+  if (PQnfields(res) != 3) {
+    std::ostringstream oss;
+    oss << "unexpected number of fields for tablespace meta info, expected 3, got "
+        << PQnfields(res);
+    PQclear(res);
+    throw StreamingFailure(oss.str());
+  }
+
+  for (i = 0; i < PQntuples(res); i++) {
+
+    std::shared_ptr<BackupTablespaceDescr> descr = std::make_shared<BackupTablespaceDescr>();
+
+    /*
+     * Tablespace OID
+     */
+    descr->spcoid = CPGBackupCtlBase::strToUInt(std::string(PQgetvalue(res, i, 0)));
+
+    /*
+     * Tablespace location (path, can be NULL in case of base directory)
+     */
+    if (!PQgetisnull(res, i, 1))
+      descr->spclocation = std::string(PQgetvalue(res, i, 1));
+    else
+      descr->spclocation = "";
+
+    /*
+     * Tablespace size.
+     *
+     * Since we rely on PROGRESS in the BASE_BACKUP command, this is
+     * assumed to be never NULL!
+     */
+    descr->spcsize = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(res, i, 2)));
+
+    /*
+     * Push the new tablespace descriptor at the end of our internal
+     * tablespace queue. Please note that the order of the tablespaces
+     * retrieved via BASE_BACKUP does matter, so we use a FIFO concept here.
+     */
+    tablespaces.push(descr);
+  }
+
+  /*
+   * Free result set
+   */
+  PQclear(res);
+
+  /*
+   * okay, looks like all meta information is there...
+   */
+  state = BASEBACKUP_TABLESPACE_READY;
+  return state;
+
+}
+
+/* ****************************************************************************
+ * Implementation TablespaceStreamer
+ ******************************************************************************/
+
+TablespaceStreamer::TablespaceStreamer(std::shared_ptr<StreamBaseBackup> backupHandle,
+                                       PGconn *conn)
+                                       : TablespaceQueue(conn) {
+
+  this->conn = conn;
+  this->backupHandle = backupHandle;
+
+}
+
+BaseBackupState TablespaceStreamer::getState() {
+
+  return this->current_state;
+
+}
+
+void TablespaceStreamer::manifest() {
+
+  std::shared_ptr<BackupFile> manifest_file = nullptr;
+  bool interrupted = false;
+  char *copybuf = NULL;
+  PGresult *res;
+  int rc;
+
+  if (!backupHandle->isInitialized())
+    throw StreamingFailure("could not receive backup manifest");
+
+  if (current_state != BASEBACKUP_EOB)
+    throw StreamingFailure("unexpected state while retrieving backup manifest");
+
+  /* Should have a valid result set with copy data */
+  res = PQgetResult(conn);
+
+  if (PQresultStatus(res) != PGRES_COPY_OUT) {
+    std::ostringstream oss;
+
+    oss << "could not get COPY data for backup manifest: ";
+    oss << PQerrorMessage(conn);
+    PQclear(res);
+    throw StreamingFailure(oss.str());
+
+  }
+
+  /*
+   * Make the manifest file handle.
+   *
+   * The contents of a manifest are plain, so we have to
+   * make sure we get the right compression type and reset
+   * it to the former one to not confuse our callers.
+   */
+  BackupProfileCompressType former_compression = backupHandle->getCompression();
+  backupHandle->setCompression(BACKUP_COMPRESS_TYPE_NONE);
+  manifest_file = backupHandle->stackFile("backup_manifest");
+  backupHandle->setCompression(former_compression);
+
+  while(true) {
+
+    if (copybuf != NULL) {
+      PQfreemem(copybuf);
+      copybuf = NULL;
+    }
+
+    rc = PQgetCopyData(conn, &copybuf, 0);
+
+    if (rc == -1) {
+      /* end of copy data */
+      break;
+    } else if (rc == -2) {
+      std::ostringstream oss;
+
+      oss << "could not read manifest COPY data: ";
+      oss << PQerrorMessage(conn);
+      throw StreamingFailure(oss.str());
+
+    }
+
+    manifest_file->write(copybuf, rc);
+
+    /*
+     * Check if we are requested to stop.
+     *
+     * If true, we remember that we were interrupted.
+     */
+    if (this->stopHandlerWantsExit()) {
+      interrupted = true;
+      break;
+    }
+
+  }
+
+  /*
+   * Receiving the manifest is the last action during base backups,
+   * mark the internal start to finish backup.
+   */
+  if (!interrupted)
+    current_state = BASEBACKUP_EOB;
+  else
+    current_state = BASEBACKUP_MANIFEST_INTERRUPTED;
+
+}
+
+void TablespaceStreamer::tablespace(std::shared_ptr<BackupElemDescr> &descr) {
+
+  char *copybuf = nullptr;
+  bool interrupted = false;
+  int rc;
+
+  while(true) {
+
+    if (copybuf != nullptr) {
+      PQfreemem(copybuf);
+      copybuf = nullptr;
+    }
+
+    rc = PQgetCopyData(this->conn, &copybuf, 0);
+
+    if (rc == -1) {
+      /*
+       * End of COPY data stream.
+       *
+       * PostgreSQL sends a tar format stream as defined in
+       * POSIX 1003.1-2008 standard, but omits the last two trailing
+       * 512-bytes zero chunks.
+       */
+      char zerochunk[1024];
+      memset(zerochunk, 0, sizeof(zerochunk));
+
+      this->stepInfo.file->write(zerochunk, sizeof(zerochunk));
+      PQfreemem(copybuf);
+      break;
+    }
+
+    /*
+     * ... else write the chunk to the file.
+     *
+     * NOTE: We don't need to free the copy buffer here,
+     *       since we go through the next loop where PQfreemem()
+     *       will do this when necessary.
+     */
+    this->stepInfo.file->write(copybuf, rc);
+
+    /*
+     * Check if we are requested to stop.
+     *
+     * If true, we remember that we were interrupted.
+     */
+    if (this->stopHandlerWantsExit()) {
+      interrupted = true;
+      break;
+    }
+  }
+
+  /*
+   * Mark this tablespace as ready, but only in case we weren't
+   * interrupted.
+   */
+  if (!interrupted)
+    this->current_state = BASEBACKUP_TABLESPACE_READY;
+  else
+    this->current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
+
+}
+
+bool TablespaceStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
+
+  std::shared_ptr<BackupTablespaceDescr> descr = nullptr;
+
+  if (tablespaces.empty()) {
+    this->current_state = BASEBACKUP_EOB;
+    next = nullptr;
+    return false;
+  }
+
+  /*
+   * backupHandle must be initialized.
+   */
+  if (!backupHandle->isInitialized())
+    throw StreamingFailure("cannot write into uninitialized streaming backup handle");
+
+  /*
+   * Check, if we are starting to step into a fresh
+   * tablespace backup. This is indicated by an internal
+   * state of -1 stored in the stepInfo struct property.
+   *
+   * In case of -1, we need to initialize the PGresult
+   * handle of the current stepping.
+   */
+  this->incr();
+
+  /*
+   * Dequeue the current tablespace from the
+   * internal queue, if any.
+   */
+  this->stepInfo.descr = tablespaces.front();
+  tablespaces.pop();
+  this->stepInfo.handle = PQgetResult(this->conn);
+
+  if (PQresultStatus(this->stepInfo.handle) != PGRES_COPY_OUT) {
+
+    std::ostringstream oss;
+    oss << "could not get COPY data stream: " << PQerrorMessage(this->conn);
+    throw StreamingFailure(oss.str());
+  }
+
+  next = descr = this->stepInfo.descr;
+
+  /*
+   * Make the file access handle.
+   */
+  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::intToStr(descr->spcoid)
+                                                + ".tar");
+
+  if (descr->spclocation == "")
+    this->current_state = BASEBACKUP_STEP_TABLESPACE_BASE;
+  else
+    this->current_state = BASEBACKUP_STEP_TABLESPACE;
+
+  return true;
+
+}
+
+/******************************************************************************
+ * Implementation of TablespaceIterator
+ ******************************************************************************/
+
+size_t TablespaceIterator::consumed() {
+  return _consumed;
+}
+
+void TablespaceIterator::setConsumed(size_t bytes_consumed) {
+  this->_consumed += bytes_consumed;
+}
+
+void TablespaceIterator::reset() {
+  stepInfo.reset();
+}
+
+void TablespaceIterator::incr() {
+  this->stepInfo.current_step++;
+}
+
+/******************************************************************************
+ * Implementation of MessageStreamer
+ ******************************************************************************/
+
+MessageStreamer::MessageStreamer(std::shared_ptr<StreamBaseBackup> sb,
+                                 PGconn *pgconn) : TablespaceQueue(pgconn) {
+
+  backupHandle = sb;
+  conn = pgconn;
+
+}
+
+void MessageStreamer::data(std::shared_ptr<BaseBackupMessage> &msg) {
+
+  char *copybuf = nullptr;
+  int rc;
+
+  /*
+   * Protocol state must be either BASEBACKUP_TABLESPACE_STREAM or
+   * BASEBACKUP_MANIFEST_STREAM
+   */
+  if ( (current_state != BASEBACKUP_TABLESPACE_STREAM)
+       || (current_state != BASEBACKUP_MANIFEST_STREAM) ) {
+
+    throw StreamingFailure("invalid basebackup streaming state");
+
+  }
+
+  /* Buffer if this message should contain data for either manifest
+   * or archive. We don't care here about its type at the moment, so
+   * just write out its contents */
+  stepInfo.file->write(msg->data(), msg->buffer()->getSize());
+
+}
+
+bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
+
+  bool result      = false;
+
+  int rc; /* return code for PQgetCopyData() */
+
+  /**
+   * Entering streaming loop. We process the whole message according to
+   * its kind. If done, we handle the content and return a proper BackupElemDescr.
+   */
+  while (true) {
+
+    std::shared_ptr<BaseBackupMessage> msg = nullptr;
+    char *copy_buffer   = nullptr;
+
+    if (stopHandlerWantsExit()) {
+      current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
+      result = false;
+      break;
+    }
+
+    rc = PQgetCopyData(this->conn, &copy_buffer, 0);
+
+    /*
+     * PQgetCopyData() either returns -1 in case COPY has finished. There is no 0
+     * return expected, since that would mean we're in async mode waiting for additional
+     * data/start of data stream, which we're effectively aren't.
+     */
+
+    if (rc == -1) {
+      PQfreemem(copy_buffer);
+
+      /* We're done here, nothing more expected */
+      current_state = BASEBACKUP_EOB;
+      result = false;
+      break;
+    }
+
+    /* Create a message object representing the current contents. Since this copies
+     * the content of the current receive buffer, we deallocate it afterwards. The msg reference
+     * will hold a copy. */
+    msg = BaseBackupMessage::message(copy_buffer, rc);
+    PQfreemem(copy_buffer);
+
+    /*
+     * Depending on message type, prepare further actions or, if a data stream
+     * was received, save it to the already prepared output sink.
+     */
+    switch(msg->msgType()) {
+
+      case BBMSG_TYPE_PROGRESS:
+      {
+
+        /*
+         * A process update message. Update the consumed byte counter but don't
+         * exit here after processing that message. We get a next turn to try...
+         */
+        this->setConsumed(dynamic_pointer_cast<BaseBackupProgressMsg>(msg)->getProgressBytes());
+        continue;
+
+      }
+
+      case BBMSG_TYPE_DATA:
+      {
+
+        /*
+         * When arriving here we either already have processed archive or manifest
+         * start message.
+         */
+        data(msg);
+        continue;
+      }
+
+      case BBMSG_TYPE_ARCHIVE_START:
+      {
+        string archive_name = dynamic_pointer_cast<BaseBackupArchiveStartMsg>(msg)->getArchiveName();
+
+        /*
+         * We are starting to step into a fresh
+         * tablespace archive.
+         */
+        this->incr();
+
+        /*
+         * Prepare next descriptor
+         */
+        this->stepInfo.descr = tablespaces.front();
+        tablespaces.pop();
+
+
+        /* not required here, since we are in a COPY stream, still */
+        stepInfo.handle = nullptr;
+
+        /*
+         * Save this new descr handle. This is returned after having received the
+         * data messages for this specific archive.
+         */
+        next = stepInfo.descr;
+
+        /*
+         * Iterator and all other things are properly setup, stack the
+         * next file for streaming data.
+         */
+        backupHandle->stackFile(archive_name);
+
+        /*
+         * Update streaming status
+         */
+        current_state = BASEBACKUP_TABLESPACE_STREAM;
+
+        /* After having BBMSG_TYPE_ARCHIVE_START received, the next expected
+         * message is an BBSMSG_TYPE_DATA */
+        continue;
+
+      }
+      case BBMSG_TYPE_MANIFEST_START:
+      {
+        string archive_name = "backup.manifest";
+
+        /*
+         * NOTE:
+         * There is no need to handle the iterator here, since we just need it to make
+         * sure we have all tablespaces consumed. Also we don't want to have
+         * the manifest data being compressed, so we need to take care that the backup
+         * stream target prepares a proper handle for us.
+         */
+        current_state = BASEBACKUP_MANIFEST_STREAM;
+
+        /* Save compression used for the archive data */
+        BackupProfileCompressType former_compression = backupHandle->getCompression();
+
+        /* Get a new uncompressed handle for manifest data */
+        stepInfo.file = backupHandle->stackFile(archive_name);
+
+        /* Make sure we set compression level back, whatever it was before */
+        backupHandle->setCompression(former_compression);
+
+        continue;
+
+      }
+      case BBMSG_TYPE_UNKNOWN:
+        throw StreamingFailure("cannot process unknown message typ in basebackup stream");
+
+    }
+
+  }
+
+  return result;
+}
+
+/******************************************************************************
+ * Implementation of BaseBackupStream
+ ******************************************************************************/
+
+BaseBackupStream::BaseBackupStream(PGconn *prepared_con,
+                                   std::shared_ptr<StreamBaseBackup> sb,
+                                   std::shared_ptr<BackupProfileDescr> profileDescr) {
+
+  if (sb == nullptr) {
+    throw StreamingFailure("cannot use basebackup stream with undefined basebackup stream target");
+  }
+
+  if (profileDescr == nullptr) {
+    throw StreamingFailure("cannot use basebackup stream with undefined profile");
+  }
+
+  pgconn = prepared_con;
+  backupHandle = sb;
+  profile      = profileDescr;
+
+}
+
+void BaseBackupStream::getStartPosition(std::shared_ptr<BaseBackupDescr> &descr,
+                                        BaseBackupState &current_state) {
+
+  /* Initial state for reading tablespace info from result set */
+  PGresult *result   = nullptr;
+  ExecStatusType es;
+
+  current_state = BASEBACKUP_START_POSITION;
+  result = PQgetResult(this->pgconn);
+
+  /* Error checking */
+  if ((es = PQresultStatus(result)) != PGRES_TUPLES_OK) {
+    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
+    std::ostringstream oss;
+
+    oss << "basebackup streaming failed: " << PQresultErrorMessage(result);
+    PQclear(result);
+    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
+  }
+
+  if (PQntuples(result) != 1) {
+    std::ostringstream oss;
+    oss << "unexpected result for BASE_BACKUP command, expected(rows/fields) 1/2"
+        << " but got " << PQntuples(result) << "/" << PQnfields(result);
+    PQclear(result);
+    throw StreamingFailure(oss.str());
+  }
+
+  /* Initialize basebackup descriptor */
+  if (descr == nullptr) {
+    descr = std::make_shared<BaseBackupDescr>();
+  }
+
+  /*
+   * First result set is the starting position of
+   * the basebackup stream, with two columns:
+   * 1 - XLogRecPtr
+   * 2 - TimelineID
+   *
+   * This is also the time we record the start time and
+   * other properties into our internal basebackup descriptor.
+   */
+  descr->xlogpos = PQgetvalue(result, 0, 0);
+
+  /*
+   * We always expect the timeline from the server here. Older
+   * PostgreSQL instances than 9.3 don't send the timeline via
+   * the BASE_BACKUP result set, but those aren't supported anyways.
+   */
+  descr->timeline = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(result, 0, 1)));
+  PQclear(result);
+
+  current_state = BASEBACKUP_STARTED;
+
+}
+
+std::shared_ptr<BaseBackupStream>
+BaseBackupStream::makeStreamInstance(PGconn *prepared_conn,
+                                     std::shared_ptr<StreamBaseBackup> backupHandle,
+                                     std::shared_ptr<BackupProfileDescr> profileDescr) {
+
+  if (PQserverVersion(prepared_conn) < 130000) {
+    return std::make_shared<BaseBackupStream12>(prepared_conn, backupHandle, profileDescr);
+  } else if ((PQserverVersion(prepared_conn) >= 130000)
+      && (PQserverVersion(prepared_conn) <= 140000)) {
+    return std::make_shared<BaseBackupStream14>(prepared_conn, backupHandle, profileDescr);
+  } else if (PQserverVersion(prepared_conn) >= 150000) {
+    return std::make_shared<BaseBackupStream15>(prepared_conn, backupHandle, profileDescr);
+  } else {
+    std::ostringstream oss;
+
+    oss << "unsupported PostgreSQL version "
+        << PQserverVersion(prepared_conn);
+    throw StreamingFailure(oss.str());
+  }
+
+}
+
+/******************************************************************************
+ * Implementation of BaseBackupStream12
+ ******************************************************************************/
+
+BaseBackupStream12::BaseBackupStream12(PGconn *prepared_conn,
+                                       std::shared_ptr<StreamBaseBackup> backupHandle,
+                                       std::shared_ptr<BackupProfileDescr> profileDescr)
+        : BaseBackupStream(prepared_conn, backupHandle, profileDescr),
+          TablespaceStreamer(backupHandle, prepared_conn) {}
+
+BaseBackupStream12::~BaseBackupStream12() = default;
+
+BaseBackupState BaseBackupStream12::getTablespaceInfo(pgbckctl::BaseBackupState &state) {
+
+  return TablespaceQueue::getTablespaceInfo(state);
+
+}
+
+std::shared_ptr<BackupElemDescr>
+BaseBackupStream12::handleMessage(BaseBackupState &current_state) {
+
+  std::shared_ptr<BackupElemDescr> elem = nullptr;
+
+  if (current_state != BASEBACKUP_TABLESPACE_READY) {
+    throw StreamingFailure("could not stream list of tablespaces ");
+  }
+
+  /* Check whether we are forced to abort */
+  if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED) {
+    throw StreamingFailure("streaming tablespace archive aborted");
+  }
+
+  /* There is nothing else to expect here than a tablespace archive.
+   * So just call next() until we have reached the end of stream. */
+  if (next(elem)) {
+
+    current_state = BASEBACKUP_TABLESPACE_STREAM;
+
+    /*
+     * Store tablespace archive data
+     * There can't be anything else as a BackupTablespaceDescr carried
+     * by the backup element descriptor.
+     */
+
+    if (elem->getType() != BASEBACKUP_ELEM_TBLSPC) {
+      throw StreamingFailure("unexpected backup element from stream");
+    }
+
+    /* consume tablespace data from stream */
+    tablespace(elem);
+
+  } else {
+    current_state = BASEBACKUP_EOB;
+  }
+
+  return elem;
+
+}
+
+/******************************************************************************
+ * Implementation of BaseBackupStream14
+ ******************************************************************************/
+
+BaseBackupStream14::BaseBackupStream14(PGconn *prepared_conn,
+                                       std::shared_ptr<StreamBaseBackup> backupHandle,
+                                       std::shared_ptr<BackupProfileDescr> profileDescr)
+  : BaseBackupStream(prepared_conn, backupHandle, profileDescr),
+    TablespaceStreamer(backupHandle, prepared_conn) {}
+
+BaseBackupStream14::~BaseBackupStream14() noexcept {}
+
+BaseBackupState BaseBackupStream14::getTablespaceInfo(pgbckctl::BaseBackupState &state) {
+
+  return TablespaceQueue::getTablespaceInfo(state);
+
+}
+
+std::shared_ptr<BackupElemDescr>
+BaseBackupStream14::handleMessage(BaseBackupState &current_state) {
+
+  std::shared_ptr<BackupElemDescr> result       = nullptr;
+  std::shared_ptr<BackupTablespaceDescr> tblspc = nullptr;
+
+  /* Basebackup stream should have been started */
+  if (this->getState() != BASEBACKUP_STARTED) {
+    throw StreamingFailure("basebackup stream not in state started");
+  }
+
+  /* Check when we reach the end of the tablespace archive stream. If a manifest
+   * is requested, return that instead of terminating the stream. Manifest streams after
+   * the very last tablespace, so if a manifest ist requested we expect after next() has
+   * done its job. */
+  if (next(result)) {
+
+    /* Get tablespace archive data */
+    tablespace(result);
+    result = tblspc;
+
+  } else {
+
+    if (profile->manifest) {
+      manifest();
+    }
+
+  }
+
+  return result;
+
+}
+
+/******************************************************************************
+ * Implementation of BaseBackupStream15
+ ******************************************************************************/
+
+BaseBackupStream15::BaseBackupStream15(PGconn *prepared_conn,
+                                       std::shared_ptr<StreamBaseBackup> backupHandle,
+                                       std::shared_ptr<BackupProfileDescr> profileDescr)
+        : BaseBackupStream(prepared_conn, backupHandle, profileDescr),
+          MessageStreamer(backupHandle, prepared_conn){}
+
+BaseBackupStream15::~BaseBackupStream15() noexcept {}
+
+BaseBackupState BaseBackupStream15::getTablespaceInfo(pgbckctl::BaseBackupState &state) {
+
+  return TablespaceQueue::getTablespaceInfo(state);
+
+}
+
+std::shared_ptr<BackupElemDescr>
+BaseBackupStream15::handleMessage(BaseBackupState &current_state) {
+
+  char kind = '\0';
+  int copyrc;
+  bool interrupted = false;
+  std::shared_ptr<BackupElemDescr> result = nullptr;
+
+  /* Receive buffer */
+  char *copybuf = nullptr;
+
+  /* Check for correct state */
+  if (current_state != BASEBACKUP_TABLESPACE_READY) {
+    throw StreamingFailure("invalid protocol handler state");
+  }
+
+  /*
+   * We are in COPY mode now and need to dispatch the specific CopyOutResponse payloads.
+   * The first message bytes indicate the kind of message.
+   */
+  while(true) {
+
+    std::shared_ptr<BaseBackupMessage> msg = nullptr;
+
+    copyrc= PQgetCopyData(this->pgconn, &copybuf, 0);
+
+    if (copyrc == -1) {
+
+      /* PostgreSQL 15 writes a correct zero filled chunk terminator at the end. */
+      current_state = BASEBACKUP_END_POSITION;
+      break;
+
+    }
+
+    current_state = BASEBACKUP_STEP_TABLESPACE;
+    //msg = BaseBackupMessage::message(copybuf, copyrc);
+
+  }
+
+  if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED)
+    current_state = BASEBACKUP_TABLESPACE_READY;
+
+  return result;
+
+}
+
 /******************************************************************************
  * Implementation of BaseBackupProcess
  ******************************************************************************/
@@ -986,23 +1769,8 @@ BaseBackupProcess::~BaseBackupProcess() {
 
 }
 
-void BaseBackupProcess::assignStopHandler(JobSignalHandler *handler) {
-
-  /* if handler is NULL, this is a no-op */
-  if (handler == nullptr) {
-    return;
-  }
-
-  this->stopHandler = handler;
-}
-
-bool BaseBackupProcess::stopHandlerWantsExit() {
-
-  if (this->stopHandler != nullptr) {
-    return this->stopHandler->check();
-  } else
-    return false;
-
+void BaseBackupProcess::assignStopHandler(pgbckctl::JobSignalHandler *stopHandler) {
+  this->stopHandler = stopHandler;
 }
 
 void BaseBackupProcess::start() {
@@ -1099,38 +1867,8 @@ void BaseBackupProcess::start() {
     throw StreamingFailure(oss.str());
   }
 
-  result = PQgetResult(this->pgconn);
-
-  if ((es = PQresultStatus(result)) != PGRES_TUPLES_OK) {
-    std::string sqlstate(PQresultErrorField(result, PG_DIAG_SQLSTATE));
-    std::ostringstream oss;
-
-    oss << "basebackup streaming failed: " << PQresultErrorMessage(result);
-    PQclear(result);
-    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
-  }
-
-  if (PQntuples(result) != 1) {
-    std::ostringstream oss;
-    oss << "unexpected result for BASE_BACKUP command, expected(rows/fields) 1/2"
-        << " but got " << PQntuples(result) << "/" << PQnfields(result);
-    PQclear(result);
-    throw StreamingFailure(oss.str());
-  }
-
-  this->current_state = BASEBACKUP_START_POSITION;
-
-  /*
-   * First result set is the starting position of
-   * the basebackup stream, with two columns:
-   * 1 - XLogRecPtr
-   * 2 - TimelineID
-   *
-   * This is also the time we record the start time and
-   * other properties into our internal basebackup descriptor.
-   */
-  this->baseBackupDescr = std::make_shared<BaseBackupDescr>();
-  this->baseBackupDescr->xlogpos = PQgetvalue(result, 0, 0);
+  this->tinfo->getStartPosition(this->baseBackupDescr,
+                                this->current_state);
 
   /* Save system identifier and WAL segment size to descriptor */
 
@@ -1140,21 +1878,13 @@ void BaseBackupProcess::start() {
   /*
    * Also the backup profile used for this basebackup.
    *
-   * NOTE: This will be safed into the catalog later, which will
+   * NOTE: This will be saved into the catalog later, which will
    *       protect the used backup profile from being deleted,
    *       as long as this basebackup exists.
    */
   this->baseBackupDescr->used_profile = this->profile->profile_id;
 
-  /*
-   * We always expect the timeline from the server here. Older
-   * PostgreSQL instances than 9.3 don't send the timeline via
-   * the BASE_BACKUP result set!
-   */
-  this->baseBackupDescr->timeline
-    = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(result, 0, 1)));
-
-  if (this->profile->label != "")
+  if (!this->profile->label.empty())
     this->baseBackupDescr->label = this->profile->label;
 
   /*
@@ -1162,10 +1892,6 @@ void BaseBackupProcess::start() {
    */
   this->baseBackupDescr->started = CPGBackupCtlBase::current_timestamp();
 
-  /*
-   * Mark BaseBackupProcess as successfully started
-   */
-  this->current_state = BASEBACKUP_STARTED;
 }
 
 std::shared_ptr<BaseBackupDescr> BaseBackupProcess::getBaseBackupDescr() {
@@ -1188,98 +1914,13 @@ std::string BaseBackupProcess::getSystemIdentifier() {
 
 void BaseBackupProcess::readTablespaceInfo() {
 
-  PGresult *res;
-  int i;
-  ExecStatusType es;
+  current_state = this->tinfo->getTablespaceInfo(current_state);
 
-  /*
-   * Stack tablespace meta info only if
-   * successfully started.
-   */
-  if (this->current_state != BASEBACKUP_STARTED)
-    throw StreamingFailure("reading tablespace meta information requires a started base backup process");
-
-  this->current_state = BASEBACKUP_TABLESPACE_META;
-
-  /*
-   * Read tablespace meta info from result set.
-   */
-  res = PQgetResult(this->pgconn);
-
-  if ((es = PQresultStatus(res)) != PGRES_TUPLES_OK) {
-    std::string sqlstate(PQresultErrorField(res, PG_DIAG_SQLSTATE));
-    std::ostringstream oss;
-
-    oss << "could not read tablespace meta info: "
-        << PQresultErrorMessage(res);
-    PQclear(res);
-    throw StreamingExecutionFailure(oss.str(), es, sqlstate);
-  }
-
-  if (PQntuples(res) < 1) {
-    PQclear(res);
-    throw StreamingFailure("unexpected number of tuples for tablespace meta info");
-  }
-
-  if (PQnfields(res) != 3) {
-    std::ostringstream oss;
-    oss << "unexpected number of fields for tablespace meta info, expected 3, got "
-        << PQnfields(res);
-    PQclear(res);
-    throw StreamingFailure(oss.str());
-  }
-
-  for (i = 0; i < PQntuples(res); i++) {
-
-    std::shared_ptr<BackupTablespaceDescr> descr = std::make_shared<BackupTablespaceDescr>();
-
-    /*
-     * Tablespace OID
-     */
-    descr->spcoid = CPGBackupCtlBase::strToUInt(std::string(PQgetvalue(res, i, 0)));
-
-    /*
-     * Tablespace location (path, can be NULL in case of base directory)
-     */
-    if (!PQgetisnull(res, i, 1))
-      descr->spclocation = std::string(PQgetvalue(res, i, 1));
-    else
-      descr->spclocation = "";
-
-    /*
-     * Tablespace size.
-     *
-     * Since we rely on PROGRESS in the BASE_BACKUP command, this is
-     * assumed to be never NULL!
-     */
-    descr->spcsize = CPGBackupCtlBase::strToInt(std::string(PQgetvalue(res, i, 2)));
-
-    /*
-     * Push the new tablespace descriptor at the end of our internal
-     * tablespace queue. Please note that the order of the tablespaces
-     * retrieved via BASE_BACKUP does matter, so we use a FIFO concept here.
-     */
-    this->tablespaces.push(descr);
-  }
-
-  /*
-   * Free result set
-   */
-  PQclear(res);
-
-  /*
-   * okay, looks like all meta information is there...
-   */
-  this->current_state = BASEBACKUP_TABLESPACE_READY;
 }
 
 void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backupHandle) {
 
-  std::shared_ptr<BackupFile> manifest_file = nullptr;
-  bool interrupted = false;
-  char *copybuf = NULL;
-  PGresult *res;
-  int rc;
+
 
   /* This is a no-op in case PostgreSQL version is lower than 13.0 */
   if (PQserverVersion(this->pgconn) < 130000) {
@@ -1287,152 +1928,66 @@ void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backup
     return;
   }
 
-  if (!backupHandle->isInitialized())
-    throw StreamingFailure("could not receive backup manifest");
+}
 
-  if (this->current_state != BASEBACKUP_EOB)
-    throw StreamingFailure("unexpected state while retrieving backup manifest");
+void BaseBackupProcess::prepareStream(std::shared_ptr<StreamBaseBackup> &backupHandle) {
 
-  /* Should have a valid result set with copy data */
-  res = PQgetResult(pgconn);
-
-  if (PQresultStatus(res) != PGRES_COPY_OUT) {
-    std::ostringstream oss;
-
-    oss << "could not get COPY data for backup manifest: ";
-    oss << PQerrorMessage(pgconn);
-    PQclear(res);
-    throw StreamingFailure(oss.str());
-
+  /* This method requires a valid backup target handler */
+  if (backupHandle == nullptr) {
+    throw StreamingFailure("undefined basebackup stream target");
   }
 
-  /*
-   * Make the manifest file handle.
-   *
-   * The contents of a manifest are plain, so we have to
-   * make sure we get the right compression type and reset
-   * it to the former one to not confuse our callers.
-   */
-  BackupProfileCompressType former_compression = backupHandle->getCompression();
-  backupHandle->setCompression(BACKUP_COMPRESS_TYPE_NONE);
-  manifest_file = backupHandle->stackFile("backup_manifest");
-  backupHandle->setCompression(former_compression);
-
-  while(true) {
-
-    if (copybuf != NULL) {
-      PQfreemem(copybuf);
-      copybuf = NULL;
-    }
-
-    rc = PQgetCopyData(pgconn, &copybuf, 0);
-
-    if (rc == -1) {
-      /* end of copy data */
-      break;
-    } else if (rc == -2) {
-      std::ostringstream oss;
-
-      oss << "could not read manifest COPY data: ";
-      oss << PQerrorMessage(pgconn);
-      throw StreamingFailure(oss.str());
-
-    }
-
-    manifest_file->write(copybuf, rc);
-
-    /*
-     * Check if we are requested to stop.
-     *
-     * If true, we remember that we were interrupted.
-     */
-    if (this->stopHandlerWantsExit()) {
-      interrupted = true;
-      break;
-    }
-
+  /* Backup stream target should be properly initialized */
+  if (!backupHandle->isInitialized()) {
+    throw StreamingFailure("basebackup stream target not yet initialized");
   }
 
-  /*
-   * Receiving the manifest is the last action during base backups,
-   * mark the internal start to finish backup.
-   */
-  if (!interrupted)
-    this->current_state = BASEBACKUP_EOB;
-  else
-    this->current_state = BASEBACKUP_MANIFEST_INTERRUPTED;
+  /* Initialize the internal streaming protocol handler */
+  this->tinfo = BaseBackupStream::makeStreamInstance(this->pgconn, backupHandle, profile);
 
+  /* We want to have a stop handler for the basebackup stream */
+  this->tinfo->assignStopHandler(this->stopHandler);
 
 }
 
-bool BaseBackupProcess::stepTablespace(std::shared_ptr<StreamBaseBackup> backupHandle,
-                                       std::shared_ptr<BackupTablespaceDescr> &current_tablespace) {
+bool BaseBackupProcess::stream(std::shared_ptr<BackupCatalog> catalog) {
 
-  std::shared_ptr<BackupTablespaceDescr> descr = nullptr;
-
-  if (this->tablespaces.size() < 1) {
-    this->current_state = BASEBACKUP_EOB;
-    current_tablespace = nullptr;
-    return false;
+  /* Make sure everything is prepared properly */
+  if (this->tinfo == nullptr) {
+    throw StreamingFailure("cannot start data streaming without proper protocol handle");
   }
 
-  /*
-   * backupHandle must be initialized.
-   */
-  if (!backupHandle->isInitialized())
-    throw StreamingFailure("cannot write into uninitialized streaming backup handle");
-
-  if (this->current_state != BASEBACKUP_TABLESPACE_READY)
-    throw StreamingFailure("unexpected state in base backup stream, could not start tablespace backup");
-
-  /*
-   * Check, if we are starting to step into a fresh
-   * tablespace backup. This is indicated by an internal
-   * state of -1 stored in the stepInfo struct property.
-   *
-   * In case of -1, we need to initialize the PGresult
-   * handle of the current stepping.
-   */
-  if (this->stepInfo.current_step == -1) {
-
-    this->stepInfo.current_step = 0;
-
+  if (current_state != BASEBACKUP_TABLESPACE_READY) {
+    throw StreamingFailure("cannot start data streaming from improper state");
   }
-  else {
 
-    this->stepInfo.current_step++;
+  while(true) {
+
+    auto descr = tinfo->handleMessage(current_state);
+
+    /* Check state */
+    if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED) {
+      throw StreamingFailure("basebackup stream interrupted");
+    }
+
+    if (current_state == BASEBACKUP_EOB)
+      break;
+
+    if (descr->getType() == BASEBACKUP_ELEM_TBLSPC) {
+
+      dynamic_pointer_cast<BackupTablespaceDescr>(descr)->backup_id = baseBackupDescr->id;
+      catalog->registerTablespaceForBackup(dynamic_pointer_cast<BackupTablespaceDescr>(descr));
+
+    }
+
+    /* Next one */
+    current_state = BASEBACKUP_STEP_TABLESPACE;
 
   }
 
-  /*
-   * Dequeue the current tablespace from the
-   * internal queue, if any.
-   */
-  this->stepInfo.descr = this->tablespaces.front();
-  this->tablespaces.pop();
-  this->stepInfo.handle = PQgetResult(this->pgconn);
-
-  if (PQresultStatus(this->stepInfo.handle) != PGRES_COPY_OUT) {
-
-    std::ostringstream oss;
-    oss << "could not get COPY data stream: " << PQerrorMessage(this->pgconn);
-    throw StreamingFailure(oss.str());
-  }
-
-  current_tablespace = descr = this->stepInfo.descr;
-
-  /*
-   * Make the file access handle.
-   */
-  this->stepInfo.file = backupHandle->stackFile(CPGBackupCtlBase::intToStr(descr->spcoid)
-                                                + ".tar");
-
-  if (descr->spclocation == "")
-    this->current_state = BASEBACKUP_STEP_TABLESPACE_BASE;
-  else
-    this->current_state = BASEBACKUP_STEP_TABLESPACE;
-
+  /* success */
   return true;
+
 }
 
 void BaseBackupProcess::end() {
@@ -1484,68 +2039,6 @@ void BaseBackupProcess::end() {
    * Update internal state that we have reached XLOG end position.
    */
   this->current_state = BASEBACKUP_END_POSITION;
-}
-
-void BaseBackupProcess::backupTablespace(std::shared_ptr<BackupTablespaceDescr> descr) {
-
-  char *copybuf = NULL;
-  int rc;
-  bool interrupted = false;
-
-  while(true) {
-
-    if (copybuf != NULL) {
-      PQfreemem(copybuf);
-      copybuf = NULL;
-    }
-
-    rc = PQgetCopyData(this->pgconn, &copybuf, 0);
-
-    if (rc == -1) {
-      /*
-       * End of COPY data stream.
-       *
-       * PostgreSQL sends a tar format stream as defined in
-       * POSIX 1003.1-2008 standard, but omits the last two trailing
-       * 512-bytes zero chunks.
-       */
-      char zerochunk[1024];
-      memset(zerochunk, 0, sizeof(zerochunk));
-
-      this->stepInfo.file->write(zerochunk, sizeof(zerochunk));
-      PQfreemem(copybuf);
-      break;
-    }
-
-    /*
-     * ... else write the chunk to the file.
-     *
-     * NOTE: We don't need to free the copy buffer here,
-     *       since we go through the next loop where PQfreemem()
-     *       will do this when necessary.
-     */
-    this->stepInfo.file->write(copybuf, rc);
-
-    /*
-     * Check if we are requested to stop.
-     *
-     * If true, we remember that we were interrupted.
-     */
-    if (this->stopHandlerWantsExit()) {
-      interrupted = true;
-      break;
-    }
-  }
-
-  /*
-   * Mark this tablespace as ready, but only in case we werent'
-   * interrupted.
-   */
-  if (!interrupted)
-    this->current_state = BASEBACKUP_TABLESPACE_READY;
-  else
-    this->current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
-
 }
 
 BaseBackupState BaseBackupProcess::getState() {

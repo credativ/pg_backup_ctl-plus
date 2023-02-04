@@ -244,6 +244,26 @@ std::shared_ptr<BackupFile> StreamingBaseBackupDirectory::basebackup(std::string
       break;
     }
 
+    case BACKUP_COMPRESS_TYPE_LZ4:
+      {
+        /* Establish a compression pipe with lz4 */
+        std::shared_ptr<ArchivePipedProcess> myfile
+          = std::make_shared<ArchivePipedProcess>(this->streaming_subdir / (name + ".lz4"));
+        std::string filename = myfile->getFilePath();
+
+        if (!CPGBackupCtlBase::resolve_file_path("lz4"))
+          throw CArchiveIssue("cannot resolve path for binary lz4");
+
+        myfile->setExecutable("lz4");
+        myfile->pushExecArgument("-q");
+        myfile->pushExecArgument("-z");
+        myfile->pushExecArgument("-c");
+        myfile->pushExecArgument(">");
+        myfile->pushExecArgument(filename);
+
+        return myfile;
+        break;
+      }
   default:
     std::ostringstream oss;
     oss << "could not create archive file: invalid compression type: " << compression;

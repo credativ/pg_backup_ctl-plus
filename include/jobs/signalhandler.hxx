@@ -37,6 +37,36 @@ namespace pgbckctl {
     virtual int ref(volatile sig_atomic_t *ref_var, int ref_value);
     virtual bool check();
   };
+
+  /*
+   * A generic class suitable to inherit signal checker functionality
+   * into class implementations.
+   */
+  class StopSignalChecker {
+  protected:
+    JobSignalHandler *stopHandler = nullptr;
+  public:
+
+    /*
+     * Returns true if the assign stopHandler is set accordingly.
+     * If no stophandler was assigned, stopHandlerWantsExit() always
+     * returns false.
+     */
+    virtual bool stopHandlerWantsExit();
+
+    /**
+     * Assign a stop signal handler. This handler is used to check whether we
+     * received an asynchronous stop signal somehow.
+     */
+    virtual void assignStopHandler(JobSignalHandler *handler);
+
+    /**
+     * Returns a pointer to the signal handler assigned to a checker instance.
+     */
+    virtual JobSignalHandler * getSignalHandler();
+
+  };
+
 }
 
 #endif

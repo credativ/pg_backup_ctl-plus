@@ -852,7 +852,10 @@ namespace pgbckctl {
                    | no_case[lexeme[ lit("XZ") ]]
                    [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_XZ)]
                    | no_case[lexeme[ lit("PLAIN") ]]
-                   [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PLAIN)]);
+                   [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd, BACKUP_COMPRESS_TYPE_PLAIN)]
+                   | no_case[lexeme[ lit("LZ4") ]]
+                   [ boost::bind(&CatalogDescr ::setProfileCompressType, &cmd,
+                                 BACKUP_COMPRESS_TYPE_LZ4)]);
 
         /*
          * CREATE BACKUP PROFILE ...  MAX_RATE=<kbps>
