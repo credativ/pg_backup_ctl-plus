@@ -116,6 +116,7 @@ BaseBackupMessage::message(char *buffer,
 
       /* Data message, either manifest or archive data */
       result = std::make_shared<BaseBackupDataMsg>(buffer, sz);
+      break;
 
     }
 

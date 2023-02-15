@@ -5,6 +5,8 @@
 #include <proto-buffer.hxx>
 #include <boost/log/trivial.hpp>
 
+#include <stack>
+
 /* Required for select() */
 extern "C" {
 #include <sys/time.h>
@@ -1187,7 +1189,7 @@ void TablespaceStreamer::tablespace(std::shared_ptr<BackupElemDescr> &descr) {
    * interrupted.
    */
   if (!interrupted)
-    this->current_state = BASEBACKUP_TABLESPACE_READY;
+    this->current_state = BASEBACKUP_STEP_TABLESPACE;
   else
     this->current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
 
@@ -1232,6 +1234,7 @@ bool TablespaceStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
     std::ostringstream oss;
     oss << "could not get COPY data stream: " << PQerrorMessage(this->conn);
     throw StreamingFailure(oss.str());
+
   }
 
   next = descr = this->stepInfo.descr;
@@ -1285,24 +1288,38 @@ MessageStreamer::MessageStreamer(std::shared_ptr<StreamBaseBackup> sb,
 
 void MessageStreamer::data(std::shared_ptr<BaseBackupMessage> &msg) {
 
-  char *copybuf = nullptr;
-  int rc;
-
   /*
    * Protocol state must be either BASEBACKUP_TABLESPACE_STREAM or
    * BASEBACKUP_MANIFEST_STREAM
    */
   if ( (current_state != BASEBACKUP_TABLESPACE_STREAM)
-       || (current_state != BASEBACKUP_MANIFEST_STREAM) ) {
+       && (current_state != BASEBACKUP_MANIFEST_STREAM) ) {
 
     throw StreamingFailure("invalid basebackup streaming state");
 
   }
 
-  /* Buffer if this message should contain data for either manifest
+  /*
+   * This message should contain data for either manifest
    * or archive. We don't care here about its type at the moment, so
-   * just write out its contents */
-  stepInfo.file->write(msg->data(), msg->buffer()->getSize());
+   * just write out its contents
+   */
+  stepInfo.file->write(msg->data(), msg->dataSize());
+
+}
+
+void MessageStreamer::startCopyStream() {
+
+  PGresult *res = PQgetResult(conn);
+
+  if (PQresultStatus(res) != PGRES_COPY_OUT) {
+    std::ostringstream errormsg;
+
+    errormsg << "not in COPY mode: " << PQerrorMessage(conn);
+    throw StreamingFailure(errormsg.str());
+  }
+
+  PQclear(res);
 
 }
 
@@ -1319,7 +1336,7 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
   while (true) {
 
     std::shared_ptr<BaseBackupMessage> msg = nullptr;
-    char *copy_buffer   = nullptr;
+    char *copy_buffer                      = nullptr;
 
     if (stopHandlerWantsExit()) {
       current_state = BASEBACKUP_STEP_TABLESPACE_INTERRUPTED;
@@ -1332,8 +1349,16 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
     /*
      * PQgetCopyData() either returns -1 in case COPY has finished. There is no 0
      * return expected, since that would mean we're in async mode waiting for additional
-     * data/start of data stream, which we're effectively aren't.
+     * data/start of data stream, which we're effectively aren't. -2 indicates an error, so
+     * throw accordingly.
      */
+
+    if (rc == -2) {
+      std::ostringstream errormsg;
+
+      errormsg << "error streaming basebackup: " << PQerrorMessage(conn);
+      throw StreamingFailure(errormsg.str());
+    }
 
     if (rc == -1) {
       PQfreemem(copy_buffer);
@@ -1362,6 +1387,8 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
         /*
          * A process update message. Update the consumed byte counter but don't
          * exit here after processing that message. We get a next turn to try...
+         *
+         * Don't bother with the streaming state here either.
          */
         this->setConsumed(dynamic_pointer_cast<BaseBackupProgressMsg>(msg)->getProgressBytes());
         continue;
@@ -1372,16 +1399,30 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
       {
 
         /*
-         * When arriving here we either already have processed archive or manifest
-         * start message.
+         * Update streaming status
          */
+        current_state = BASEBACKUP_TABLESPACE_STREAM;
         data(msg);
+
         continue;
       }
 
       case BBMSG_TYPE_ARCHIVE_START:
       {
         string archive_name = dynamic_pointer_cast<BaseBackupArchiveStartMsg>(msg)->getArchiveName();
+
+        current_state = BASEBACKUP_STEP_TABLESPACE;
+
+        /*
+         * If there is already a handle, finalize it.
+         */
+        if (stepInfo.file != nullptr) {
+
+          stepInfo.file->fsync();
+          stepInfo.file->close();
+          stepInfo.reset();
+
+        }
 
         /*
          * We are starting to step into a fresh
@@ -1409,16 +1450,15 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
          * Iterator and all other things are properly setup, stack the
          * next file for streaming data.
          */
-        backupHandle->stackFile(archive_name);
+        stepInfo.file = backupHandle->stackFile(archive_name);
 
         /*
-         * Update streaming status
+         * After having BBMSG_TYPE_ARCHIVE_START received, the next expected
+         * message is an BBSMSG_TYPE_DATA. At this point we return to the caller the current
+         * tablespace handle and tell him to proceed.
          */
-        current_state = BASEBACKUP_TABLESPACE_STREAM;
-
-        /* After having BBMSG_TYPE_ARCHIVE_START received, the next expected
-         * message is an BBSMSG_TYPE_DATA */
-        continue;
+        result = true;
+        break;
 
       }
       case BBMSG_TYPE_MANIFEST_START:
@@ -1447,7 +1487,7 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
 
       }
       case BBMSG_TYPE_UNKNOWN:
-        throw StreamingFailure("cannot process unknown message typ in basebackup stream");
+        throw StreamingFailure("cannot process unknown message type in basebackup stream");
 
     }
 
@@ -1542,7 +1582,7 @@ BaseBackupStream::makeStreamInstance(PGconn *prepared_conn,
   if (PQserverVersion(prepared_conn) < 130000) {
     return std::make_shared<BaseBackupStream12>(prepared_conn, backupHandle, profileDescr);
   } else if ((PQserverVersion(prepared_conn) >= 130000)
-      && (PQserverVersion(prepared_conn) <= 140000)) {
+      && (PQserverVersion(prepared_conn) < 150000)) {
     return std::make_shared<BaseBackupStream14>(prepared_conn, backupHandle, profileDescr);
   } else if (PQserverVersion(prepared_conn) >= 150000) {
     return std::make_shared<BaseBackupStream15>(prepared_conn, backupHandle, profileDescr);
@@ -1574,23 +1614,124 @@ BaseBackupState BaseBackupStream12::getTablespaceInfo(pgbckctl::BaseBackupState 
 
 }
 
+std::string BaseBackupStream12::query(std::shared_ptr<BackupProfileDescr> profile,
+                                      PGconn *prepared_conn,
+                                      BaseBackupQueryType type) {
+
+  std::ostringstream query;
+  char escapedlabel[MAXPGPATH];
+  int  escape_error;
+
+  switch(type) {
+    case BASEBACKUP_QUERY_TYPE_BASEBACKUP:
+    {
+
+      /* We need a profile in this case */
+      if (profile == nullptr) {
+        throw StreamingFailure("backup profile required for BASEBACKUP_QUERY_TYPE_BASEBACKUP");
+      }
+
+      /*
+       * Sanity check: profile is not a nullptr.
+       */
+      query << "BASE_BACKUP";
+
+      if (this->profile == nullptr)
+        throw StreamingFailure("backup profile not initialized for streaming basebackup");
+
+      /*
+       * Special LABEL requested?
+       */
+      if (this->profile->label != "") {
+        PQescapeStringConn(this->pgconn,
+                           escapedlabel,
+                           this->profile->label.c_str(),
+                           this->profile->label.length(),
+                           &escape_error);
+        query << " LABEL '" << escapedlabel << "'";
+      }
+
+      /*
+       * We always request PROGRESS
+       */
+      query << " PROGRESS ";
+
+      /*
+       * immediate CHECKPOINT requested?
+       */
+      if (this->profile->fast_checkpoint)
+        query << " FAST ";
+
+      /*
+       * WAL stream request for base backup?
+       */
+      if (this->profile->include_wal)
+        query << " WAL ";
+
+      /*
+       * We usually wait for WAL segments to be archived.
+       */
+      if (!this->profile->wait_for_wal)
+        query << " NOWAIT ";
+
+      /*
+       * MAX_RATE limits the used bandwidth of the stream.
+       * Check if this is requested...
+       */
+      if (this->profile->max_rate > 0)
+        query << " MAX_RATE " << this->profile->max_rate;
+
+      /*
+       * Starting with PostgreSQL 11, we have the NOVERFIY_CHECKSUMS
+       * available.
+       */
+      if ( (this->profile->noverify_checksums)
+           && (PQserverVersion(this->pgconn) >= 110000) )
+        query << " NOVERIFY_CHECKSUMS ";
+
+      /*
+       * Backup manifests are supported starting with PostgreSQL 13 only.
+       * We don't throw an error here, since backup profiles are interchangeable, so
+       * give the caller just a hint via logging.
+       */
+      if (this->profile->manifest) {
+        BOOST_LOG_TRIVIAL(warning) << "manifests are support with PostgreSQL >= 13, ignoring";
+      }
+
+      /*
+       * We always request the tablespace map from the stream.
+       */
+      query << " TABLESPACE_MAP;";
+
+      break;
+    }
+    default:
+    {
+      throw StreamingFailure("unknown basebackup command type");
+    }
+  }
+
+  return query.str();
+
+}
+
 std::shared_ptr<BackupElemDescr>
 BaseBackupStream12::handleMessage(BaseBackupState &current_state) {
 
   std::shared_ptr<BackupElemDescr> elem = nullptr;
 
-  if (current_state != BASEBACKUP_TABLESPACE_READY) {
-    throw StreamingFailure("could not stream list of tablespaces ");
-  }
-
-  /* Check whether we are forced to abort */
-  if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED) {
-    throw StreamingFailure("streaming tablespace archive aborted");
+  if (current_state != BASEBACKUP_STEP_TABLESPACE) {
+    throw StreamingFailure("could not stream list of tablespaces");
   }
 
   /* There is nothing else to expect here than a tablespace archive.
    * So just call next() until we have reached the end of stream. */
   if (next(elem)) {
+
+    /* Check whether we are forced to abort */
+    if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED) {
+      throw StreamingFailure("streaming tablespace archive aborted");
+    }
 
     current_state = BASEBACKUP_TABLESPACE_STREAM;
 
@@ -1606,6 +1747,8 @@ BaseBackupStream12::handleMessage(BaseBackupState &current_state) {
 
     /* consume tablespace data from stream */
     tablespace(elem);
+
+    current_state = BASEBACKUP_STEP_TABLESPACE;
 
   } else {
     current_state = BASEBACKUP_EOB;
@@ -1633,15 +1776,118 @@ BaseBackupState BaseBackupStream14::getTablespaceInfo(pgbckctl::BaseBackupState 
 
 }
 
+std::string BaseBackupStream14::query(std::shared_ptr<BackupProfileDescr> profile,
+                                      PGconn *prepared_conn, pgbckctl::BaseBackupQueryType type) {
+
+  std::ostringstream query;
+  char escapedlabel[MAXPGPATH];
+  int  escape_error;
+
+  switch(type) {
+
+    case BASEBACKUP_QUERY_TYPE_BASEBACKUP:
+    {
+
+      /* We need a profile in this case */
+      if (profile == nullptr) {
+        throw StreamingFailure("backup profile required for BASEBACKUP_QUERY_TYPE_BASEBACKUP");
+      }
+
+      query << "BASE_BACKUP";
+
+      if (this->profile == nullptr)
+        throw StreamingFailure("backup profile not initialized for streaming basebackup");
+
+      /*
+       * Special LABEL requested?
+       */
+      if (this->profile->label != "") {
+        PQescapeStringConn(this->pgconn,
+                           escapedlabel,
+                           this->profile->label.c_str(),
+                           this->profile->label.length(),
+                           &escape_error);
+        query << " LABEL '" << escapedlabel << "'";
+      }
+
+      /*
+       * We always request PROGRESS
+       */
+      query << " PROGRESS ";
+
+      /*
+       * immediate CHECKPOINT requested?
+       */
+      if (this->profile->fast_checkpoint)
+        query << " FAST ";
+
+      /*
+       * WAL stream request for base backup?
+       */
+      if (this->profile->include_wal)
+        query << " WAL ";
+
+      /*
+       * We usually wait for WAL segments to be archived.
+       */
+      if (!this->profile->wait_for_wal)
+        query << " NOWAIT ";
+
+      /*
+       * MAX_RATE limits the used bandwidth of the stream.
+       * Check if this is requested...
+       */
+      if (this->profile->max_rate > 0)
+        query << " MAX_RATE " << this->profile->max_rate;
+
+      /*
+       * Starting with PostgreSQL 11, we have the NOVERFIY_CHECKSUMS
+       * available.
+       */
+      if ( (this->profile->noverify_checksums)
+           && (PQserverVersion(this->pgconn) >= 110000) )
+        query << " NOVERIFY_CHECKSUMS ";
+
+      /*
+       * PostgreSQL 13 introduces backup manifests, check
+       * if the profile requested that feature and make sure
+       * we have a server version >= 13.
+       */
+      if ( (this->profile->manifest)
+           && (PQserverVersion(this->pgconn) >= 130000) ) {
+
+        query << " MANIFEST 'yes' ";
+        query << " MANIFEST_CHECKSUMS "
+              << "'" << this->profile->manifest_checksums << "'";
+
+      }
+
+      /*
+       * We always request the tablespace map from the stream.
+       */
+      query << " TABLESPACE_MAP;";
+
+      break;
+    }
+
+    default:
+    {
+      throw StreamingFailure("unknown basebackup command type");
+    }
+
+  }
+
+  return query.str();
+
+}
+
 std::shared_ptr<BackupElemDescr>
 BaseBackupStream14::handleMessage(BaseBackupState &current_state) {
 
-  std::shared_ptr<BackupElemDescr> result       = nullptr;
-  std::shared_ptr<BackupTablespaceDescr> tblspc = nullptr;
+  std::shared_ptr<BackupElemDescr> result = nullptr;
 
-  /* Basebackup stream should have been started */
-  if (this->getState() != BASEBACKUP_STARTED) {
-    throw StreamingFailure("basebackup stream not in state started");
+  if (current_state != BASEBACKUP_STEP_TABLESPACE) {
+    throw StreamingFailure("could not stream list of tablespaces");
   }
 
   /* Check when we reach the end of the tablespace archive stream. If a manifest
@@ -1652,16 +1898,18 @@ BaseBackupStream14::handleMessage(BaseBackupState &current_state) {
 
     /* Get tablespace archive data */
     tablespace(result);
-    result = tblspc;
 
   } else {
 
     if (profile->manifest) {
       manifest();
+      result = std::make_shared<BackupManifestDescr>();
     }
 
   }
 
+  /* Return proper state to the caller */
+  current_state = this->getState();
   return result;
 
 }
@@ -1680,23 +1928,143 @@ BaseBackupStream15::~BaseBackupStream15() noexcept {}
 
 BaseBackupState BaseBackupStream15::getTablespaceInfo(pgbckctl::BaseBackupState &state) {
 
-  return TablespaceQueue::getTablespaceInfo(state);
+  state = TablespaceQueue::getTablespaceInfo(state);
+
+  /*
+   * When arriving here we either already have processed archive or manifest
+   * start message.
+   */
+  startCopyStream();
+  return state;
+
+}
+
+std::string BaseBackupStream15::query(std::shared_ptr<BackupProfileDescr> profile,
+                                      PGconn *prepared_conn, pgbckctl::BaseBackupQueryType type) {
+
+  std::ostringstream query;
+  char escapedlabel[MAXPGPATH];
+  int  escape_error;
+  std::stack<string> options;
+
+  /* We need a profile in this case */
+  if (profile == nullptr) {
+    throw StreamingFailure("backup profile required for BASEBACKUP_QUERY_TYPE_BASEBACKUP");
+  }
+
+  switch(type) {
+    case BASEBACKUP_QUERY_TYPE_BASEBACKUP:
+    {
+      query << "BASE_BACKUP (";
+
+      if (this->profile == nullptr)
+        throw StreamingFailure("backup profile not initialized for streaming basebackup");
+
+      /*
+       * Special LABEL requested?
+       */
+      if (this->profile->label != "") {
+        PQescapeStringConn(this->pgconn,
+                           escapedlabel,
+                           this->profile->label.c_str(),
+                           this->profile->label.length(),
+                           &escape_error);
+        options.push("LABEL " + string("'") + string(escapedlabel) + string("'"));
+      }
+
+      /*
+       * We always request PROGRESS
+       */
+      options.push("PROGRESS on");
+
+      /*
+       * immediate CHECKPOINT requested?
+       */
+      if (this->profile->fast_checkpoint)
+        options.push("CHECKPOINT fast");
+
+      /*
+       * WAL stream request for base backup?
+       */
+      if (this->profile->include_wal)
+        options.push(" WAL on");
+
+      /*
+       * We usually wait for WAL segments to be archived.
+       */
+      if (!this->profile->wait_for_wal)
+        options.push("WAIT off");
+
+      /*
+       * MAX_RATE limits the used bandwidth of the stream.
+       * Check if this is requested...
+       */
+      if (this->profile->max_rate > 0) {
+        std::ostringstream conv;
+        conv << "MAX_RATE " << this->profile->max_rate;
+        options.push(conv.str());
+      }
+
+
+      /*
+       * Starting with PostgreSQL 11, we have the NOVERFIY_CHECKSUMS
+       * available.
+       */
+      if (this->profile->noverify_checksums)
+        options.push("VERIFY_CHECKSUMS off");
+
+      /*
+       * PostgreSQL 13 introduces backup manifests, check
+       * if the profile requested that feature and make sure
+       * we have a server version >= 13.
+       */
+      if (this->profile->manifest) {
+
+        std::ostringstream oss;
+
+        oss << " MANIFEST 'yes' ";
+        oss << " MANIFEST_CHECKSUMS "
+            << "'" << this->profile->manifest_checksums << "'";
+        options.push(oss.str());
+
+      }
+
+      /*
+       * We always request the tablespace map from the stream.
+       */
+      options.push("TABLESPACE_MAP on");
+
+      /* Make the list of options */
+      while (!options.empty()) {
+        query << " " << options.top();
+        options.pop();
+        query << (!options.empty() ? "," : "");
+      }
+
+      /* Close the options list */
+      query << ")";
+
+      break;
+    }
+
+    default:
+    {
+      throw StreamingFailure("unknown basebackup command type");
+    }
+
+  }
+
+  return query.str();
 
 }
 
 std::shared_ptr<BackupElemDescr>
 BaseBackupStream15::handleMessage(BaseBackupState &current_state) {
 
-  char kind = '\0';
-  int copyrc;
-  bool interrupted = false;
   std::shared_ptr<BackupElemDescr> result = nullptr;
 
-  /* Receive buffer */
-  char *copybuf = nullptr;
-
   /* Check for correct state */
-  if (current_state != BASEBACKUP_TABLESPACE_READY) {
+  if (current_state != BASEBACKUP_STEP_TABLESPACE) {
     throw StreamingFailure("invalid protocol handler state");
   }
 
@@ -1704,27 +2072,16 @@ BaseBackupStream15::handleMessage(BaseBackupState &current_state) {
    * We are in COPY mode now and need to dispatch the specific CopyOutResponse payloads.
    * The first message bytes indicate the kind of message.
    */
-  while(true) {
+  if (next(result)) {
 
-    std::shared_ptr<BaseBackupMessage> msg = nullptr;
-
-    copyrc= PQgetCopyData(this->pgconn, &copybuf, 0);
-
-    if (copyrc == -1) {
-
-      /* PostgreSQL 15 writes a correct zero filled chunk terminator at the end. */
-      current_state = BASEBACKUP_END_POSITION;
-      break;
-
+    /* Checkt if we are interrupted by signal handler */
+    if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED) {
+      throw StreamingFailure("streaming tablespace archive aborted");
     }
 
-    current_state = BASEBACKUP_STEP_TABLESPACE;
-    //msg = BaseBackupMessage::message(copybuf, copyrc);
-
+  } else {
+    current_state = BASEBACKUP_EOB;
   }
-
-  if (current_state == BASEBACKUP_STEP_TABLESPACE_INTERRUPTED)
-    current_state = BASEBACKUP_TABLESPACE_READY;
 
   return result;
 
@@ -1777,91 +2134,28 @@ void BaseBackupProcess::start() {
 
   PGresult *result;
   ExecStatusType es;
-  std::ostringstream query;
+  std::string query;
   char escapedlabel[MAXPGPATH];
   int  escape_error;
 
   /*
-   * Sanity check: profile is not a nullptr.
+   * Check if the stream was properly prepared. This can be easily
+   * recognized if we already had properly called prepareStream() which should
+   * have initialized the PostgreSQL version aware stream handler
    */
-  query << "BASE_BACKUP";
-
-  if (this->profile == nullptr)
-    throw StreamingFailure("backup profile not initialized for streaming basebackup");
-
-  /*
-   * Special LABEL requested?
-   */
-  if (this->profile->label != "") {
-    PQescapeStringConn(this->pgconn,
-                       escapedlabel,
-                       this->profile->label.c_str(),
-                       this->profile->label.length(),
-                       &escape_error);
-    query << " LABEL '" << escapedlabel << "'";
+  if (tinfo == nullptr) {
+    throw StreamingFailure("attempt to start an unprepared basebackup stream");
   }
 
-  /*
-   * We always request PROGRESS
-   */
-  query << " PROGRESS ";
+  query = tinfo->query(profile, pgconn,
+                       BASEBACKUP_QUERY_TYPE_BASEBACKUP);
 
-  /*
-   * immediate CHECKPOINT requested?
-   */
-  if (this->profile->fast_checkpoint)
-    query << " FAST ";
-
-  /*
-   * WAL stream request for base backup?
-   */
-  if (this->profile->include_wal)
-    query << " WAL ";
-
-  /*
-   * We usually wait for WAL segments to be archived.
-   */
-  if (!this->profile->wait_for_wal)
-    query << " NOWAIT ";
-
-  /*
-   * MAX_RATE limits the used bandwidth of the stream.
-   * Check if this is requested...
-   */
-  if (this->profile->max_rate > 0)
-    query << " MAX_RATE " << this->profile->max_rate;
-
-  /*
-   * Starting with PostgreSQL 11, we have the NOVERFIY_CHECKSUMS
-   * available.
-   */
-  if ( (this->profile->noverify_checksums)
-       && (PQserverVersion(this->pgconn) >= 110000) )
-    query << " NOVERIFY_CHECKSUMS ";
-
-  /*
-   * PostgreSQL 13 introduces backup manifests, check
-   * if the profile requested that feature and make sure
-   * we have a server version >= 13.
-   */
-  if ( (this->profile->manifest)
-       && (PQserverVersion(this->pgconn) >= 130000) ) {
-
-    query << " MANIFEST 'yes' ";
-    query << " MANIFEST_CHECKSUMS "
-          << "'" << this->profile->manifest_checksums << "'";
-
-  }
-
-  /*
-   * We always request the tablespace map from the stream.
-   */
-  query << " TABLESPACE_MAP;";
+  BOOST_LOG_TRIVIAL(debug) << "replication command: " << query;
 
   /*
    * Fire the query...
    */
-  if (PQsendQuery(this->pgconn, query.str().c_str()) == 0) {
+  if (PQsendQuery(this->pgconn, query.c_str()) == 0) {
     std::ostringstream oss;
     oss << "BASE_BACKUP command failed: " << PQerrorMessage(this->pgconn);
     throw StreamingFailure(oss.str());
@@ -1961,6 +2255,9 @@ bool BaseBackupProcess::stream(std::shared_ptr<BackupCatalog> catalog) {
     throw StreamingFailure("cannot start data streaming from improper state");
   }
 
+  /* Prepare state to iterate through tablespaces */
+  current_state = BASEBACKUP_STEP_TABLESPACE;
+
   while(true) {
 
     auto descr = tinfo->handleMessage(current_state);
@@ -1970,8 +2267,10 @@ bool BaseBackupProcess::stream(std::shared_ptr<BackupCatalog> catalog) {
       throw StreamingFailure("basebackup stream interrupted");
     }
 
-    if (current_state == BASEBACKUP_EOB)
+    if (current_state == BASEBACKUP_EOB) {
+      BOOST_LOG_TRIVIAL(debug) << "end of backup stream reached";
       break;
+    }
 
     if (descr->getType() == BASEBACKUP_ELEM_TBLSPC) {
 
@@ -1980,9 +2279,10 @@ bool BaseBackupProcess::stream(std::shared_ptr<BackupCatalog> catalog) {
 
     }
 
-    /* Next one */
-    current_state = BASEBACKUP_STEP_TABLESPACE;
-
+    /* Should we get another state than BASEBACKUP_STEP_TABLESPACE, error out */
+    if (current_state != BASEBACKUP_STEP_TABLESPACE) {
+      throw StreamingFailure("unexpected state in basebackup stream");
+    }
   }
 
   /* success */

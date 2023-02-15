@@ -101,6 +101,19 @@ namespace pgbckctl {
 
   } BaseBackupState;
 
+  /**
+   * @ref BASEBACKUP_QUERY_TYPE defines type of query to construct by a BaseBackupStream class.
+   */
+  typedef enum {
+
+    /** BASE_BACKUP command */
+    BASEBACKUP_QUERY_TYPE_BASEBACKUP,
+
+    /** Unknown */
+    BASEBACKUP_QUERY_TYPE_UNKNOWN
+
+  } BaseBackupQueryType;
+
   /*
    * State of archiver (WAL Streamer).
    */
@@ -517,7 +530,18 @@ namespace pgbckctl {
      */
     std::shared_ptr<StreamBaseBackup> backupHandle = nullptr;
 
+    /**
+     * Receives a copy data stream.
+     * @param msg BaseBackupMessage message kind
+     */
     void data(std::shared_ptr<BaseBackupMessage> &msg);
+
+  protected:
+
+    /**
+     * Starts a COPY data stream.
+     */
+    void startCopyStream();
 
   public:
 
@@ -602,6 +626,10 @@ namespace pgbckctl {
                        std::shared_ptr<StreamBaseBackup> backupHandle,
                        std::shared_ptr<BackupProfileDescr> profileDescr);
 
+    virtual std::string query(std::shared_ptr<BackupProfileDescr> profile,
+                             PGconn *prepared_conn,
+                             BaseBackupQueryType type) = 0;
+
   };
 
   /**
@@ -618,6 +646,10 @@ namespace pgbckctl {
 
     BaseBackupState getTablespaceInfo(BaseBackupState &state) override;
     std::shared_ptr<BackupElemDescr> handleMessage(BaseBackupState &current_state) override;
+
+    std::string query(std::shared_ptr<BackupProfileDescr> profile,
+                      PGconn *prepared_conn,
+                      BaseBackupQueryType type) override;
 
   };
 
@@ -637,6 +669,10 @@ namespace pgbckctl {
     BaseBackupState getTablespaceInfo(BaseBackupState &state) override;
     std::shared_ptr<BackupElemDescr> handleMessage(BaseBackupState &current_state) override;
 
+    std::string query(std::shared_ptr<BackupProfileDescr> profile,
+                      PGconn *prepared_conn,
+                      BaseBackupQueryType type) override;
+
   };
 
   /**
@@ -654,6 +690,10 @@ namespace pgbckctl {
 
     BaseBackupState getTablespaceInfo(BaseBackupState &state) override;
     std::shared_ptr<BackupElemDescr> handleMessage(BaseBackupState &current_state) override;
+
+    std::string query(std::shared_ptr<BackupProfileDescr> profile,
+                      PGconn *prepared_conn,
+                      BaseBackupQueryType type) override;
 
   };
 
