@@ -1413,6 +1413,8 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
 
         current_state = BASEBACKUP_STEP_TABLESPACE;
 
+        BOOST_LOG_TRIVIAL(debug) << "processing archive " << archive_name;
+
         /*
          * If there is already a handle, finalize it.
          */
@@ -1464,6 +1466,8 @@ bool MessageStreamer::next(std::shared_ptr<BackupElemDescr> &next) {
       case BBMSG_TYPE_MANIFEST_START:
       {
         string archive_name = "backup.manifest";
+
+        BOOST_LOG_TRIVIAL(debug) << "processing backup manifest";
 
         /*
          * NOTE:
@@ -2022,7 +2026,7 @@ std::string BaseBackupStream15::query(std::shared_ptr<BackupProfileDescr> profil
 
         std::ostringstream oss;
 
-        oss << " MANIFEST 'yes' ";
+        oss << " MANIFEST on, ";
         oss << " MANIFEST_CHECKSUMS "
             << "'" << this->profile->manifest_checksums << "'";
         options.push(oss.str());

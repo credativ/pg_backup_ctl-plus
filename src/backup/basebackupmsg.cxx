@@ -277,7 +277,11 @@ void BaseBackupManifestStartMsg::read() {
 }
 
 BaseBackupManifestStartMsg::BaseBackupManifestStartMsg(char *buffer, size_t sz)
-  : BaseBackupMessage(buffer, sz) {}
+  : BaseBackupMessage(buffer, sz) {
+
+  kind = BBMSG_TYPE_MANIFEST_START;
+
+}
 
 /* ************************************************************************************************
  * Implementation of BaseBackupProgressMsg
