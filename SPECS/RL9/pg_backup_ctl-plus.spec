@@ -1,6 +1,6 @@
 %define upstream_pgdg_version 15
 %define major_version 0.1
-%define patchlevel 0
+%define patchlevel 1
 
 Name: pg_backup_ctl-plus
 Version: %{major_version}
