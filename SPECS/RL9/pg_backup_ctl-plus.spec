@@ -114,8 +114,7 @@ Release: %{patchlevel}%{?dist}
 Summary: An advanced streaming backup tool for PostgreSQL written in C++, protocol support
 Group:   Application/Databases
 License: GPLv3
-BuildRequires: cmake3 gcc-c++ make ccache boost-devel gcc-c++ ccache gettext-devel sqlite-devel
-postgresql%{upstream_pgdg_version}-devel systemd-rpm-macros liburing-devel
+BuildRequires: cmake3 gcc-c++ make ccache boost-devel gcc-c++ ccache gettext-devel sqlite-devel postgresql%{upstream_pgdg_version}-devel systemd-rpm-macros liburing-devel
 Requires: boost-regex boost-filesystem boost-iostreams boost-date-time boost-chrono sqlite postgresql%{upstream_pgdg_version}-libs
 Requires: libpgbckctl-common
 Provides: libpgbckctl-proto.so()(64bit)
