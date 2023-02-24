@@ -1,4 +1,4 @@
-%define upstream_pgdg_version 14
+%define upstream_pgdg_version 15
 %define major_version 0.1
 %define patchlevel 0
 
