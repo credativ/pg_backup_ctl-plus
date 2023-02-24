@@ -2381,11 +2381,9 @@ void StartBasebackupCatalogCommand::execute(bool background) {
    */
   if (this->backup_profile->name != "") {
 
-#ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug)
       << "DEBUG: checking for profile "
       << this->backup_profile->name;
-#endif
 
     this->catalog->startTransaction();
 
@@ -2426,10 +2424,8 @@ void StartBasebackupCatalogCommand::execute(bool background) {
       throw e;
     }
 
-#ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug)
       << "PROFILE keyword not specified, using \"default\" backup profile";
-#endif
 
     /*
      * Iff the "default" profile doesn't exist, tell
@@ -2477,19 +2473,15 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     pgstream.connect();
 
-#ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug)
       << "DEBUG: connecting stream";
-#endif
 
     /*
      * Identify this replication connection.
      */
     pgstream.identify();
 
-#ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug) << "DEBUG: identify stream";
-#endif
 
     /*
      * Check if we have a compatible previous
@@ -2500,7 +2492,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     switch(this->check(temp_descr->id, pgstream.streamident)) {
     case BASEBACKUP_CATALOG_FORCE_SYSTEMID_UPDATE:
       {
-        BOOST_LOG_TRIVIAL(debug)
+        BOOST_LOG_TRIVIAL(warning)
           << "WARNING: we are streaming a basebackup with a new systemid\n"
           << "         new systemid = "
           << pgstream.streamident.systemid;
@@ -2539,11 +2531,6 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     bbp = pgstream.basebackup(backupProfile);
 
-#ifdef __DEBUG__
-    BOOST_LOG_TRIVIAL(debug)
-      << "DEBUG: basebackup stream handle initialize";
-#endif
-
     /*
      * Set signal handler
      */
@@ -2575,7 +2562,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
       basebackupDescr->fsentry = backupHandle->backupDirectoryString();
       basebackupDescr->pg_version_num = pgstream.getServerVersion();
 
-      BOOST_LOG_TRIVIAL(info) << "directory handle path " << basebackupDescr->fsentry;
+      BOOST_LOG_TRIVIAL(debug) << "directory handle path " << basebackupDescr->fsentry;
 
       this->catalog->registerBasebackup(temp_descr->id,
                                         basebackupDescr);
@@ -2591,18 +2578,14 @@ void StartBasebackupCatalogCommand::execute(bool background) {
      */
     basebackup_registered = true;
 
-#ifdef __DEBUG__
-    BOOST_LOG_TRIVIAL(debug) << "DEBUG: basebackup stream started";
-#endif
+    BOOST_LOG_TRIVIAL(debug) << "basebackup stream started";
 
     /*
      * Initialize list of tablespaces, if any.
      */
     bbp->readTablespaceInfo();
 
-#ifdef __DEBUG__
-    BOOST_LOG_TRIVIAL(debug) << "DEBUG: basebackup tablespace meta info requested";
-#endif
+    BOOST_LOG_TRIVIAL(debug) << "basebackup tablespace meta info requested";
 
     /*
      * Loop through tablespaces and stream their contents.
@@ -2617,11 +2600,9 @@ void StartBasebackupCatalogCommand::execute(bool background) {
     /*
      * And disconnect
      */
-#ifdef __DEBUG__
     BOOST_LOG_TRIVIAL(debug) << "DEBUG: disconnecting stream";
-#endif
-
     pgstream.disconnect();
+
   } catch(CPGBackupCtlFailure& e) {
 
     bool txinprogress = false;
@@ -2640,7 +2621,7 @@ void StartBasebackupCatalogCommand::execute(bool background) {
         txinprogress = true;
 
 #ifdef __DEBUG__
-        BOOST_LOG_TRIVIAL(debug) << "DEBUG: marking basebackup as aborted";
+        BOOST_LOG_TRIVIAL(debug) << "marking basebackup as aborted";
 #endif
 
         this->catalog->abortBasebackup(bbp->getBaseBackupDescr());

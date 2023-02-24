@@ -469,7 +469,7 @@ string ArchiveLogDirectory::getXlogStartPosition(unsigned int &timelineID,
 
     std::string direntname = entry.path().filename().string();
 
-    long unsigned int current_tli = 0;
+    unsigned int current_tli = 0;
     long unsigned int current_segno = 0;
     WALSegmentFileStatus current_status = WAL_SEGMENT_UNKNOWN;
 
@@ -695,7 +695,7 @@ void ArchiveLogDirectory::removeXLogs(shared_ptr<BackupCleanupDescr> cleanupDesc
          * we unlink() the segment immediately.
          */
         unsigned int xlog_tli = 0;
-        unsigned int xlog_segno = 0;
+        long unsigned int xlog_segno = 0;
         XLogRecPtr recptr = InvalidXLogRecPtr;
         tli_cleanup_offsets::iterator it;
 

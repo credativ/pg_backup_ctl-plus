@@ -2136,11 +2136,7 @@ void BaseBackupProcess::assignStopHandler(pgbckctl::JobSignalHandler *stopHandle
 
 void BaseBackupProcess::start() {
 
-  PGresult *result;
-  ExecStatusType es;
   std::string query;
-  char escapedlabel[MAXPGPATH];
-  int  escape_error;
 
   /*
    * Check if the stream was properly prepared. This can be easily
@@ -2216,18 +2212,6 @@ void BaseBackupProcess::readTablespaceInfo() {
 
 }
 
-void BaseBackupProcess::receiveManifest(std::shared_ptr<StreamBaseBackup> backupHandle) {
-
-
-
-  /* This is a no-op in case PostgreSQL version is lower than 13.0 */
-  if (PQserverVersion(this->pgconn) < 130000) {
-    BOOST_LOG_TRIVIAL(warning) << "backup manifest requested, but upstream server does not have support for it, ignoring";
-    return;
-  }
-
-}
-
 void BaseBackupProcess::prepareStream(std::shared_ptr<StreamBaseBackup> &backupHandle) {
 
   /* This method requires a valid backup target handler */
@@ -2278,6 +2262,11 @@ bool BaseBackupProcess::stream(std::shared_ptr<BackupCatalog> catalog) {
 
     if (descr->getType() == BASEBACKUP_ELEM_TBLSPC) {
 
+      /*
+       * The backup id is retrieved by the basebackup descriptor and not (obviously) not
+       * provided directly within the basebackup stream. So we need to reference
+       * it explictely here before saving the descriptor to disc.
+       */
       dynamic_pointer_cast<BackupTablespaceDescr>(descr)->backup_id = baseBackupDescr->id;
       catalog->registerTablespaceForBackup(dynamic_pointer_cast<BackupTablespaceDescr>(descr));
 

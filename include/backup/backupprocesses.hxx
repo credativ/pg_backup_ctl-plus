@@ -791,14 +791,9 @@ namespace pgbckctl {
     virtual bool stream(std::shared_ptr<BackupCatalog> catalog);
 
     /**
-     * Receives a backup manifest, if requested by the backup profile.
-     */
-    void receiveManifest(std::shared_ptr<StreamBaseBackup> backupHandle);
-
-    /**
      * Assigns a stop signal handler.
      */
-    virtual void assignStopHandler(JobSignalHandler *stopHandler);
+    void assignStopHandler(JobSignalHandler *stopHandler) override;
   };
 
 }
